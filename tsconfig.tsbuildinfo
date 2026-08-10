@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/types.ts","./src/api/feishu.ts","./src/composables/usegame.ts","./src/game/logic.test.ts","./src/game/logic.ts","./src/app.vue","./src/components/endpanel.vue","./src/components/gamepanel.vue","./src/components/recordpanel.vue","./src/components/scorepanel.vue","./src/components/setuppanel.vue","./server/index.ts"],"errors":true,"version":"5.9.3"}
