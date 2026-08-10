@@ -1,0 +1,42 @@
+name: Deploy Pages
+on:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      # 安装 Bun 环境
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      # 安装依赖
+      - run: bun install
+
+      # vite打包
+      - run: bun run build
+
+      # 上传dist产物（普通vite产物根目录dist）
+      - name: Upload dist artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./dist
+
+      # 部署 Pages
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
