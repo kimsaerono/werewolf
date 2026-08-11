@@ -3,7 +3,6 @@ import { computed, ref } from "vue"
 import { theme, message } from "ant-design-vue"
 import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
-import SetupPanel from "@/components/SetupPanel.vue"
 import GamePanel from "@/components/GamePanel.vue"
 import ScorePanel from "@/components/ScorePanel.vue"
 import EndPanel from "@/components/EndPanel.vue"
@@ -13,7 +12,6 @@ const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs } = game
 const tabs = [
   { id: "board", label: "🎲 板子与选人" },
-  { id: "assign", label: "🎭 分配角色" },
   { id: "game", label: "🎮 对局操作" },
   { id: "score", label: "📊 分数明细" },
   { id: "end", label: "🏁 结算(MVP/SVP)" },
@@ -22,20 +20,13 @@ const tabs = [
 
 const boardNeed = computed(() => refs.getBoardRoles(state).length)
 const countMatch = computed(() => state.players.length === boardNeed.value && state.players.length > 0)
-const gameReady = computed(
-  () => countMatch.value && state.players.every((p) => p.role),
-)
+const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
 
 function onTabChange(key: string) {
   const locked = ["game", "score", "end", "record"]
-  if (key === "assign" && !countMatch.value) {
-    message.warning(`板子最终 ${boardNeed.value} 人，当前已选 ${state.players.length} 人，一致后才能进入「分配角色」`)
-    activeTab.value = prevTab.value
-    return
-  }
   if (locked.includes(key) && !gameReady.value) {
-    message.warning("请先在「分配角色」完成角色分配并点击「开始游戏」")
+    message.warning("请先在「板子与选人」确认参与玩家")
     activeTab.value = prevTab.value
     return
   }
@@ -49,7 +40,7 @@ function onTabChange(key: string) {
       <div class="page">
         <header class="page-header">
           <h1>🔮 狼人杀全自动计分法官</h1>
-          <p class="subtitle">法官手动指定角色 ｜ 自动判胜负 · 自动算技能分</p>
+          <p class="subtitle">法官发牌后夜晚睁眼确认身份 ｜ 自动判胜负 · 自动算技能分</p>
         </header>
 
         <div class="sticky-tabs">
@@ -62,13 +53,12 @@ function onTabChange(key: string) {
               v-for="t in tabs"
               :key="t.id"
               :tab="t.label"
-              :disabled="(t.id === 'assign' && !countMatch) || (['game', 'score', 'end', 'record'].includes(t.id) && !gameReady)"
+              :disabled="['game', 'score', 'end', 'record'].includes(t.id) && !gameReady"
             />
           </a-tabs>
         </div>
 
         <BoardSignupPanel v-show="activeTab === 'board'" :game="game" />
-        <SetupPanel v-show="activeTab === 'assign'" :game="game" />
         <GamePanel v-show="activeTab === 'game'" :game="game" />
         <ScorePanel v-show="activeTab === 'score'" :game="game" />
         <EndPanel v-show="activeTab === 'end'" :game="game" />

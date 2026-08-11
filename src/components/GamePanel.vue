@@ -43,15 +43,14 @@ const flow2Sel = ref("")
 const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const flowModal = ref(false)
-const wwkBaoZhaSel = ref("")
-const wwkTarSel = ref("")
 const idiotFlip = ref(false)
 const lastDawnDeaths = ref<string[]>([])
 
-const wwkModal = ref(false)
 const jinghuiModal = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
+const wolfConfirmOpen = ref(false)
+const wolfSel = ref<string[]>([])
 
 // ===== 发言倒计时（白天，全局唯一计时器） =====
 const speechRunning = ref(false)
@@ -96,6 +95,11 @@ function rollRand() {
   const n = aliveCount.value || state.players.length || 1
   randNo.value = Math.floor(Math.random() * n) + 1
 }
+/** 抽中的号对应的存活玩家（用于展示名字） */
+const randPlayer = computed(() => {
+  if (randNo.value == null) return null
+  return state.players.find((p) => p.alive && p.no === randNo.value) || null
+})
 function finishSpeech() {
   stopSpeech()
   markDoneStep("speech")
@@ -135,14 +139,18 @@ const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jin
 const jingHuiLabel = computed(() =>
   jingHuiObj.value ? refs.playerLabel(jingHuiObj.value) : state.jingHui,
 )
+const labelOf = (name: string) => {
+  const p = state.players.find((x) => x.name === name)
+  return p ? refs.playerLabel(p) : name
+}
 const hunterStatus = computed(() => {
   const h = hunterObj.value
   if (!h) return ""
-  if (!h.alive && h.mark.hunterIsPoisoned) return "⛔ 被毒哑火"
+  if (!h.alive && h.mark.hunterIsPoisoned) return "⛔ 被毒吞枪"
   if (state.hunterShotPending) return "🔴 可开枪"
   if (state.hunterShotDone) return "✅ 已开枪"
   if (!h.alive) return "❌ 已出局"
-  return "🔫 待触发"
+  return "🔫 正常可开枪"
 })
 const aliveCount = computed(() => state.players.filter((p) => p.alive).length)
 const phaseText = computed(() =>
@@ -163,7 +171,7 @@ const FLOW_EMOJI: Record<string, string> = {
   警徽: "📢",
   放逐: "🗳️",
   狼人自爆: "💥",
-  白狼王自爆: "👑💥",
+   白狼王自爆: "👑💥",
 }
 const flowGroups = computed(() => {
   const map: Record<number, typeof state.flow> = {}
@@ -173,10 +181,16 @@ const flowGroups = computed(() => {
   }
   return Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0]))
 })
+/** 流程标签里的人名统一转成 号码(身份) 展示 */
+function flowTargetLabel(target: string): string {
+  const p = state.players.find((x) => x.name === target)
+  return p ? refs.playerLabel(p) : target
+}
 function flowText(f: { label: string; target: string; detail: string }) {
   const base = `${FLOW_EMOJI[f.label] || "·"}${f.label}`
   if (f.label === "天亮") return base // 具体死亡情况由该晚标题后的情况标签展示
-  return f.target ? `${base}(${f.target}${f.detail ? `·${f.detail}` : ""})` : f.target === "" && f.detail ? `${base}(${f.detail})` : base
+  const t = f.target ? flowTargetLabel(f.target) : ""
+  return t ? `${base}(${t}${f.detail ? `·${f.detail}` : ""})` : f.target === "" && f.detail ? `${base}(${f.detail})` : base
 }
 function nightSituation(steps: { label: string; target: string; detail: string }[]): string {
   const dawn = steps.find((s) => s.label === "天亮")
@@ -208,10 +222,29 @@ const wolfPlainOptions = computed(() =>
     .filter((p) => p.role === "狼人")
     .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
 )
-/** 白狼王自爆带人：白狼王选项 */
-const wwkOptions = computed(() =>
+// ===== 首夜睁眼认人：板子角色配额与确认状态 =====
+const boardRolesArr = computed(() => refs.getBoardRoles(state))
+const wolfNeed = computed(() => boardRolesArr.value.filter((r) => r === "狼人").length)
+const wwkNeed = computed(() => boardRolesArr.value.filter((r) => r === "白狼王").length)
+const wolfCount = computed(() => state.players.filter((p) => p.role === "狼人").length)
+const wwkConfirmed = computed(() => state.players.some((p) => p.role === "白狼王"))
+const wolfConfirmed = computed(() => wolfCount.value >= wolfNeed.value)
+const wolfAllConfirmed = computed(() => (wwkNeed.value ? wwkConfirmed.value : true) && wolfConfirmed.value)
+const wolfPlayersLabel = computed(() => {
+  const ws = state.players.filter((p) => refs.isWolfRole(p.role))
+  return ws.length ? ws.map((p) => refs.playerLabel(p)).join("、") : "未确认"
+})
+/** 未确认身份且存活的玩家（用于睁眼认人） */
+const unassignedAliveOptions = computed(() =>
   aliveList.value
-    .filter((p) => p.role === "白狼王")
+    .filter((p) => !p.role)
+    .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+)
+/** 白狼王自爆带走目标：白狼王本人除外 */
+const wwkObj = computed(() => state.players.find((p) => p.role === "白狼王"))
+const wwkTarOptions = computed(() =>
+  aliveList.value
+    .filter((p) => p.name !== wwkObj.value?.name)
     .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
 )
 
@@ -300,15 +333,18 @@ const stepKeys = computed(() => {
   if (state.phase === "idle") return ["idle"]
   if (state.phase === "night") {
     const ks: string[] = []
+    const roles = refs.getBoardRoles(state)
+    const wolfQuotaN = roles.filter((r) => refs.isWolfRole(r)).length
+    const wolfDone = state.players.filter((p) => refs.isWolfRole(p.role)).length >= wolfQuotaN
     const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
     // 行动顺序：狼人 → 守卫 → 女巫 → 预言家 → 白痴(仅首夜) → 猎人(每夜) → 骑士(仅首夜) → 天亮
-    if (aliveWolf && !uiDone.value.wolf) ks.push("wolf")
-    if (hasGuard.value && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
-    if (hasWitch.value && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
-    if (hasProphet.value && !uiDone.value.prophet) ks.push("prophet")
-    if (state.round <= 1 && hasIdiot.value && !uiDone.value.idiotOpen) ks.push("idiotOpen")
-    if (hasHunter.value && !uiDone.value.hunterOpen) ks.push("hunterOpen")
-    if (state.round <= 1 && hasKnight.value && !uiDone.value.knight) ks.push("knight")
+    if (wolfQuotaN > 0 && (!wolfDone || aliveWolf) && !uiDone.value.wolf) ks.push("wolf")
+    if (roles.includes("守卫") && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
+    if (roles.includes("女巫") && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
+    if (roles.includes("预言家") && !uiDone.value.prophet) ks.push("prophet")
+    if (state.round <= 1 && roles.includes("白痴") && !uiDone.value.idiotOpen) ks.push("idiotOpen")
+    if (roles.includes("猎人") && !uiDone.value.hunterOpen) ks.push("hunterOpen")
+    if (state.round <= 1 && roles.includes("骑士") && !uiDone.value.knight) ks.push("knight")
     if (ks.length === 0) ks.push("dawn")
     return ks
   }
@@ -379,6 +415,33 @@ function doWolfKill(v: string) {
 function doWolfClose() {
   markDoneStep("wolf")
   playVoice("wolf_close")
+}
+
+// ===== 首夜睁眼认人：法官确认角色身份 =====
+function doConfirmRole(role: string, v: string) {
+  snapshot()
+  const err = actions.confirmRole(v, role)
+  if (err) return message.error(err)
+  message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
+}
+function openWolfConfirm() {
+  wolfSel.value = state.players.filter((p) => p.role === "狼人").map((p) => p.name)
+  wolfConfirmOpen.value = true
+}
+function confirmWolfSel() {
+  if (wolfSel.value.length !== wolfNeed.value) {
+    return message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${wolfSel.value.length} 个`)
+  }
+  snapshot()
+  const err = actions.confirmWolves(wolfSel.value)
+  if (err) return message.error(err)
+  wolfConfirmOpen.value = false
+  message.success("狼人身份已确认")
+}
+/** idle 步骤：开局重置后进入第 1 晚 */
+function doBeginGame() {
+  actions.startGame()
+  doFlow()
 }
 function doProphetCheck(v: string) {
   snapshot()
@@ -514,6 +577,16 @@ function openFlowModal() {
   flow2Sel.value = state.jingHuiFlow[1] || ""
   flowModal.value = true
 }
+/** 参考刀人弹窗：弹出单选玩家列表，重复选择同一人时自动交换顺位 */
+function setFlow(slot: 1 | 2, v: string) {
+  if (slot === 1) {
+    if (v === flow2Sel.value) flow2Sel.value = flow1Sel.value
+    flow1Sel.value = v
+  } else {
+    if (v === flow1Sel.value) flow1Sel.value = flow2Sel.value
+    flow2Sel.value = v
+  }
+}
 function finishFlow() {
   actions.setJingHuiFlow([flow1Sel.value, flow2Sel.value].filter(Boolean))
   flowModal.value = false
@@ -605,13 +678,12 @@ function doWolfBaoZha(v: string) {
   playVoice("explode")
   checkSheriffDeath()
 }
-function doWWKBoom() {
+function doWWKBoom(tar: string) {
+  const wwk = wwkObj.value
+  if (!wwk) return message.error("本局没有白狼王")
   snapshot()
-  const err = actions.wolfKingBaoZha(wwkBaoZhaSel.value, wwkTarSel.value)
+  const err = actions.wolfKingBaoZha(wwk.name, tar)
   if (err) return message.error(err)
-  wwkBaoZhaSel.value = ""
-  wwkTarSel.value = ""
-  wwkModal.value = false
   message.success("白狼王自爆带人，直接进入黑夜")
   effect("explode", "explode")
   playVoice("wwk_boom")
@@ -619,16 +691,22 @@ function doWWKBoom() {
 }
 function doKnightDuel(v: string) {
   snapshot()
-  const tarRole = v ? state.players.find((x) => x.name === v)?.role : ""
+  const tar = state.players.find((x) => x.name === v)
+  const tarRole = tar?.role || ""
   const err = actions.knightDuel(v)
   if (err) return message.error(err)
-  message.success("骑士决斗完成")
-  effect("knight", "sword")
-  if (refs.isWolfRole(tarRole || "")) playVoice("knight_duel_wolf")
-  else playVoice("knight_duel_good")
+  const lbl = tar ? refs.playerLabel(tar) : v
+  const isWolf = refs.isWolfRole(tarRole)
+  message.success(`骑士决斗：${lbl}${isWolf ? " 戳中狼人" : " 戳错，骑士出局"}`)
+  effect("knight", "sword", `决斗对象：${lbl}`)
+  playVoice(isWolf ? "knight_duel_wolf" : "knight_duel_good")
   checkSheriffDeath()
 }
 function doDawn() {
+  actions.autoFillCivilians()
+  if (state.players.some((p) => !p.role)) {
+    return message.error("还有玩家未确认身份，请先完成所有睁眼确认（剩余玩家会自动补为平民）后再天亮")
+  }
   snapshot()
   const before = aliveList.value.map((p) => p.name)
   const err = actions.dawnSettle()
@@ -732,50 +810,75 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <div v-if="currentStep === 'idle'" class="step-body">
           <div class="step-emoji">🚀</div>
           <h3 class="step-title">开始第 1 晚</h3>
-          <a-button type="primary" size="large" style="height: 48px; min-width: 220px" @click="doFlow">🌙 进入夜晚</a-button>
+          <p class="small" style="text-align: center">请先发角色卡，身份将在夜晚睁眼时由法官确认</p>
+          <a-button type="primary" size="large" style="height: 48px; min-width: 220px" @click="doBeginGame">🌙 发牌完毕，进入夜晚</a-button>
         </div>
 
         <!-- 守卫 -->
         <div v-else-if="currentStep === 'guard'" class="step-body">
           <div class="step-emoji">🛡️</div>
           <h3 class="step-title">守卫守人</h3>
-          <p class="small" style="text-align: center">
-            守卫：{{ guardObj ? refs.playerLabel(guardObj) : "-" }}
-            <template v-if="state.guardLastTarget">｜上局守护 {{ state.guardLastTarget }}（不能同守）</template>
-          </p>
-          <a-button type="primary" size="large" @click="openPicker('选择守护对象', aliveOptions, (v) => doGuard(v))">🛡️ 确认守人</a-button>
-          <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不守？', '守卫本晚不守护任何人，确认后进入下一步', () => markDoneStep('guard'))">本轮不守</a-button>
+          <template v-if="!hasGuard">
+            <p class="small" style="text-align: center">守卫睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('守卫', v))">🛡️ 确认守卫</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">
+              守卫：{{ guardObj ? refs.playerLabel(guardObj) : "-" }}
+              <template v-if="state.guardLastTarget">｜上局守护 {{ state.guardLastTarget }}（不能同守）</template>
+            </p>
+            <a-button type="primary" size="large" @click="openPicker('选择守护对象', aliveOptions, (v) => doGuard(v))">🛡️ 确认守人</a-button>
+            <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不守？', '守卫本晚不守护任何人，确认后进入下一步', () => markDoneStep('guard'))">本轮不守</a-button>
+          </template>
         </div>
 
         <!-- 狼人刀人 -->
         <div v-else-if="currentStep === 'wolf'" class="step-body">
           <div class="step-emoji">🌑</div>
           <h3 class="step-title">狼人刀人</h3>
-          <p class="small" style="text-align: center">选中狼人即自动标记为自刀</p>
-          <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', aliveOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
-          <div v-else class="prophet-result">
-            <div class="prophet-result-main">
-              🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? refs.playerLabel(v) : state.nightWolfKill })() }}
+          <template v-if="!wolfAllConfirmed">
+            <p class="small" style="text-align: center">狼人睁眼，法官确认身份后选择被刀对象</p>
+            <a-button v-if="wwkNeed && !wwkConfirmed" type="warning" size="large" @click="openPicker('确认白狼王（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('白狼王', v))">❄️🐺 确认白狼王</a-button>
+            <a-button v-if="!wolfConfirmed" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">狼人阵营：{{ wolfPlayersLabel }}｜选中狼人即自动标记为自刀</p>
+            <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', aliveOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
+            <div v-else class="prophet-result">
+              <div class="prophet-result-main">
+                🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? refs.playerLabel(v) : state.nightWolfKill })() }}
+              </div>
+              <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
             </div>
-            <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
-          </div>
+          </template>
         </div>
 
         <!-- 预言家 -->
         <div v-else-if="currentStep === 'prophet'" class="step-body">
           <div class="step-emoji">🔮</div>
           <h3 class="step-title">预言家验人</h3>
-          <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...aliveOptions], (v) => doProphetCheck(v))">🔮 确认查验</a-button>
-          <div v-else class="prophet-result">
-            <div class="prophet-result-main">{{ checkResult }}</div>
-            <a-button type="primary" danger @click="doProphetClose">已告知预言家，闭眼</a-button>
-          </div>
+          <template v-if="!hasProphet">
+            <p class="small" style="text-align: center">预言家睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('预言家', v))">🔮 确认预言家</a-button>
+          </template>
+          <template v-else>
+            <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...aliveOptions], (v) => doProphetCheck(v))">🔮 确认查验</a-button>
+            <div v-else class="prophet-result">
+              <div class="prophet-result-main">{{ checkResult }}</div>
+              <a-button type="primary" danger @click="doProphetClose">已告知预言家，闭眼</a-button>
+            </div>
+          </template>
         </div>
 
         <!-- 女巫 -->
         <div v-else-if="currentStep === 'witch'" class="step-body">
           <div class="step-emoji">🧪</div>
           <h3 class="step-title">女巫操作</h3>
+          <template v-if="!hasWitch">
+            <p class="small" style="text-align: center">女巫睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('女巫', v))">🧙 确认女巫</a-button>
+          </template>
+          <template v-else>
           <p class="small" style="text-align: center; margin-bottom: 4px">
             本晚被刀：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
           </p>
@@ -805,32 +908,58 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-button block style="margin-top: 4px" @click="doWitchDone">本轮不开药，闭眼</a-button>
           </a-space>
 
-          <div v-if="state.nightWitchSave" class="small">💚 已解救：{{ state.nightWitchSave }}</div>
-          <div v-if="state.nightWitchPoison" class="small">☠️ 已毒杀：{{ state.nightWitchPoison }}</div>
+          <div v-if="state.nightWitchSave" class="small">💚 已解救：{{ labelOf(state.nightWitchSave) }}</div>
+          <div v-if="state.nightWitchPoison" class="small">☠️ 已毒杀：{{ labelOf(state.nightWitchPoison) }}</div>
+          </template>
         </div>
 
-        <!-- 猎人睁眼（首夜） -->
+        <!-- 猎人睁眼 -->
         <div v-else-if="currentStep === 'hunterOpen'" class="step-body">
           <div class="step-emoji">🔫</div>
-          <h3 class="step-title">猎人睁眼（首夜）</h3>
-          <p class="small" style="text-align: center">确认你的枪状态，白天/夜里按规则触发开枪</p>
-          <a-button type="primary" @click="doHunterOpen">确认身份，闭眼</a-button>
+          <h3 class="step-title">猎人睁眼</h3>
+          <template v-if="!hasHunter">
+            <p class="small" style="text-align: center">猎人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('猎人', v))">🔫 确认猎人</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">确认你的枪状态，白天/夜里按规则触发开枪</p>
+            <a-tag
+              v-if="hunterStatus"
+              size="large"
+              :color="state.hunterShotPending ? 'error' : hunterObj?.mark.hunterIsPoisoned ? 'default' : 'green'"
+            >
+              {{ hunterStatus }}
+            </a-tag>
+            <a-button type="primary" @click="doHunterOpen">确认身份，闭眼</a-button>
+          </template>
         </div>
 
-        <!-- 白痴睁眼（首夜） -->
+        <!-- 白痴睁眼 -->
         <div v-else-if="currentStep === 'idiotOpen'" class="step-body">
           <div class="step-emoji">🙊</div>
-          <h3 class="step-title">白痴睁眼（首夜）</h3>
-          <p class="small" style="text-align: center">确认身份，继续闭眼摸鱼</p>
-          <a-button type="primary" @click="doIdiotOpen">确认身份，闭眼</a-button>
+          <h3 class="step-title">白痴睁眼</h3>
+          <template v-if="!hasIdiot">
+            <p class="small" style="text-align: center">白痴睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认白痴（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('白痴', v))">🙊 确认白痴</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">确认身份，继续闭眼摸鱼</p>
+            <a-button type="primary" @click="doIdiotOpen">确认身份，闭眼</a-button>
+          </template>
         </div>
 
-        <!-- 骑士睁眼（首夜） -->
+        <!-- 骑士睁眼 -->
         <div v-else-if="currentStep === 'knight'" class="step-body">
           <div class="step-emoji">⚔️</div>
-          <h3 class="step-title">骑士睁眼（首夜）</h3>
-          <p class="small" style="text-align: center">确认身份后闭眼，白天可用「骑士决斗」</p>
-          <a-button type="primary" @click="doKnightOpen">确认身份，闭眼</a-button>
+          <h3 class="step-title">骑士睁眼</h3>
+          <template v-if="!hasKnight">
+            <p class="small" style="text-align: center">骑士睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认骑士（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('骑士', v))">⚔️ 确认骑士</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">确认身份后闭眼，白天可用「骑士决斗」</p>
+            <a-button type="primary" @click="doKnightOpen">确认身份，闭眼</a-button>
+          </template>
         </div>
 
         <!-- 天亮 -->
@@ -866,18 +995,26 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <div class="step-emoji">🗣️</div>
           <h3 class="step-title">发言环节</h3>
           <p class="small" style="text-align: center">{{ speechOrderHint }}（计时 {{ SPEECH_SECONDS }}s）</p>
-          <a-space :wrap="true" :align="'center'">
+
+          <div class="speech-timer-box">
             <span class="countdown" :class="{ warning: speechRunning && speechLeft <= 7 }">
               {{ speechRunning ? `${speechLeft}s` : "待开始" }}
             </span>
-            <a-button type="primary" size="large" @click="speechRunning ? stopSpeech() : startSpeech()">
+            <a-button type="primary" size="large" block @click="speechRunning ? stopSpeech() : startSpeech()">
               {{ speechRunning ? "⏹ 停止 / 重置" : "▶ 开始计时" }}
             </a-button>
-          </a-space>
-          <a-space v-if="!state.jingHui" :wrap="true">
-            <a-button size="small" @click="rollRand">🎲 按人数抽随机发言</a-button>
-            <a-tag v-if="randNo" color="orange">抽中 {{ randNo }} 号</a-tag>
-          </a-space>
+          </div>
+
+          <div v-if="!state.jingHui" class="speech-rand-box">
+            <div class="speech-rand-title">🎲 无警长 · 随机发言顺序</div>
+            <div v-if="randNo" class="speech-rand-result">
+              <span class="speech-rand-num">{{ randNo }}</span>
+              <span class="speech-rand-hint">号玩家先发言<template v-if="randPlayer">（{{ randPlayer.name }}）</template></span>
+            </div>
+            <div v-else class="speech-rand-hint">抽一个号决定谁先发言</div>
+            <a-button type="dashed" size="large" block @click="rollRand">🎲 {{ randNo ? "重新抽随机发言" : "抽随机发言" }}</a-button>
+          </div>
+
           <a-button type="primary" size="large" style="margin-top: 6px" @click="finishSpeech">💬 发言结束，进入投票</a-button>
         </div>
 
@@ -907,16 +1044,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           </a-button>
         </div>
       </a-card>
-
-      <!-- 白天插入操作（白狼王；狼人自爆/警徽移交/骑士决斗已放右侧悬浮） -->
-      <a-flex
-        v-if="state.phase === 'day' && !state.skipVote && !state.finished"
-        :wrap="'wrap'"
-        :gap="10"
-        style="margin-top: 12px"
-      >
-        <a-button v-if="hasWWK" danger @click="wwkModal = true">👑💥 白狼王自爆带人</a-button>
-      </a-flex>
 
       <!-- 对局流程进度 -->
       <a-card v-if="flowGroups.length" type="inner" title="📊 对局流程进度（含每晚具体情况）" size="small" style="margin-top: 12px">
@@ -1006,6 +1133,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 
       <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 骑士决斗 + 回退一步 + 重播当前步 + 语音配置 -->
       <div class="floating-actions">
+        <a-tooltip v-if="hasWWK && state.phase === 'day' && !state.skipVote && !state.finished" title="白狼王自爆带人">
+          <a-button class="fab" type="warning" danger shape="circle" size="large" @click="openPicker('选择白狼王带走目标', wwkTarOptions, (v) => doWWKBoom(v))">👑💥</a-button>
+        </a-tooltip>
         <a-tooltip v-if="state.phase === 'day' && !state.skipVote && !state.finished" title="狼人自爆（跳过本日投票，直接入夜）">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
         </a-tooltip>
@@ -1029,22 +1159,26 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-tooltip>
       </div>
 
-      <!-- 弹窗：白狼王自爆带人 -->
-      <a-modal v-model:open="wwkModal" title="👑💥 白狼王自爆带人" :footer="null" width="380px">
-        <p class="small">白狼王出局并带走一个目标，直接进入黑夜</p>
-        <a-space direction="vertical" style="width: 100%">
-          <a-select v-model:value="wwkBaoZhaSel" placeholder="选择白狼王" :options="wwkOptions" style="width: 100%" />
-          <a-select v-model:value="wwkTarSel" placeholder="选择带走目标" :options="aliveOptions" style="width: 100%" />
-          <a-button danger block @click="doWWKBoom">确认自爆带人</a-button>
-        </a-space>
+      <!-- 弹窗：确认狼人（首夜睁眼认人） -->
+      <a-modal v-model:open="wolfConfirmOpen" title="🐺 确认狼人（睁眼认人）" :footer="null" width="420px">
+        <p class="small">勾选本板子的狼人玩家（{{ wolfSel.length }}/{{ wolfNeed }}），选满 {{ wolfNeed }} 个后确认</p>
+        <a-checkbox-group v-model:value="wolfSel" style="width: 100%">
+          <div v-for="p in aliveList.filter((x) => !x.role || x.role === '狼人')" :key="p.name" class="wolf-pick-item">
+            <a-checkbox :value="p.name" :disabled="!wolfSel.includes(p.name) && wolfSel.length >= wolfNeed">
+              {{ refs.playerLabel(p) }}
+            </a-checkbox>
+          </div>
+        </a-checkbox-group>
+        <a-button type="primary" danger block style="margin-top: 12px" @click="confirmWolfSel">确认狼人</a-button>
       </a-modal>
 
       <!-- 弹窗：警徽移交 -->
       <a-modal v-model:open="jinghuiModal" title="📢 警徽移交" :footer="null" width="380px">
         <p class="small">警长死亡后在此重新指定即完成移交</p>
-        <a-space :wrap="true" style="width: 100%">
-          <a-select v-model:value="jingHuiOwner" placeholder="选择新警长" allow-clear :options="aliveOptions" style="min-width: 180px; flex: 1" />
-          <a-button type="primary" @click="doJingHuiTransfer">确认移交</a-button>
+        <a-space direction="vertical" style="width: 100%">
+          <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', aliveOptions, (v) => (jingHuiOwner = v))">👤 选择新警长</a-button>
+          <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="jingHuiOwner = ''">{{ labelOf(jingHuiOwner) }}</a-tag>
+          <a-button type="primary" block @click="doJingHuiTransfer">确认移交</a-button>
         </a-space>
       </a-modal>
 
@@ -1079,13 +1213,19 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 
       <!-- 弹窗：警徽流 -->
       <a-modal v-model:open="flowModal" title="👑 设置警徽流" :footer="null" width="400px">
-        <p class="small" style="margin-bottom: 10px">
+        <p class="small" style="margin-bottom: 12px">
           当前警长：{{ jingHuiLabel }}｜出局后按此顺序移交警徽；无人可接则警徽流失
         </p>
-        <a-space direction="vertical" style="width: 100%">
-          <a-select v-model:value="flow1Sel" placeholder="警徽流 1（第一顺位）" allow-clear :options="aliveOptions" style="width: 100%" />
-          <a-select v-model:value="flow2Sel" placeholder="警徽流 2（第二顺位）" allow-clear :options="aliveOptions" style="width: 100%" />
-        </a-space>
+        <div class="flow-row">
+          <span class="flow-row-label">第一顺位</span>
+          <a-button v-if="!flow1Sel" type="dashed" block @click="openPicker('选择警徽流第一顺位', aliveOptions, (v) => setFlow(1, v))">👤 选择（弹出玩家列表）</a-button>
+          <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="flow1Sel = ''">{{ labelOf(flow1Sel) }}</a-tag>
+        </div>
+        <div class="flow-row">
+          <span class="flow-row-label">第二顺位</span>
+          <a-button v-if="!flow2Sel" type="dashed" block @click="openPicker('选择警徽流第二顺位', aliveOptions, (v) => setFlow(2, v))">👤 选择（弹出玩家列表）</a-button>
+          <a-tag v-else closable color="blue" style="font-size: 14px; padding: 4px 12px" @close="flow2Sel = ''">{{ labelOf(flow2Sel) }}</a-tag>
+        </div>
         <a-space style="width: 100%; margin-top: 14px">
           <a-button type="primary" block @click="finishFlow">保存警徽流</a-button>
         </a-space>
@@ -1210,6 +1350,10 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   font-size: 14px;
   color: #888;
 }
+.wolf-pick-item {
+  padding: 7px 4px;
+  border-bottom: 1px solid #22283a;
+}
 .pick-item.active .pick-check {
   color: #2ed573;
 }
@@ -1308,6 +1452,23 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   color: #ffa502;
   min-width: 62px;
 }
+.flow-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.flow-row-label {
+  flex: none;
+  width: 62px;
+  color: #888;
+  font-size: 13px;
+}
+.flow-row .a-button,
+.flow-row .a-tag {
+  flex: 1;
+  min-width: 0;
+}
 .logbox {
   max-height: 260px;
   overflow-y: auto;
@@ -1391,6 +1552,51 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 .countdown.warning {
   color: #ff6464;
   animation: fx-pop 0.6s ease-out infinite alternate;
+}
+.speech-timer-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #1d2233;
+  border: 1px solid #333c55;
+}
+.speech-rand-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+  padding: 16px;
+  border-radius: 12px;
+  background: #2a200f;
+  border: 1px dashed #ffa50288;
+}
+.speech-rand-title {
+  font-size: 13px;
+  color: #ffa502;
+  font-weight: 700;
+}
+.speech-rand-result {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.speech-rand-num {
+  font-size: 46px;
+  font-weight: 800;
+  color: #ffa502;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.speech-rand-hint {
+  font-size: 13px;
+  color: #bbb;
 }
 .floating-actions {
   position: fixed;

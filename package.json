@@ -8,6 +8,7 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "server": "bun run server/index.ts",
+    "sync-members": "bun run scripts/sync-members.ts",
     "test": "bun test"
   },
   "dependencies": {

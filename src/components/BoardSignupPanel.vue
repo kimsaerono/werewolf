@@ -58,7 +58,7 @@ const boardRoles = () => refs.getBoardRoles(state)
 // 玩家人数与板子人数一致时提示
 const enough = computed(() => playerCount.value > 0 && playerCount.value === boardRoles().length)
 watch(enough, (v, old) => {
-  if (v && !old) message.success(`玩家人数已齐（${playerCount.value} 人），可进入「分配角色」`)
+  if (v && !old) message.success(`玩家人数已齐（${playerCount.value} 人），可进入「对局操作」`)
 })
 
 const roleGroups = computed(() => {
@@ -132,8 +132,8 @@ function confirmPlayers() {
     return message.error(`板子最终 ${need} 人，当前已选 ${state.players.length} 人，一致后才能进入下一步`)
   }
   actions.confirmPlayers()
-  message.success(`已确认 ${state.players.length} 名玩家参与，自动进入「分配角色」`)
-  activeTab.value = "assign"
+  message.success(`已确认 ${state.players.length} 名玩家参与，进入「对局操作」发牌开局`)
+  activeTab.value = "game"
 }
 
 const dragIdx = ref(-1)

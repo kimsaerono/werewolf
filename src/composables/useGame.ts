@@ -205,11 +205,6 @@ export function useGame() {
       g.renumberPlayers(state)
       persist()
     },
-    assignRoleSlot(role: string, slotIndex: number, playerName: string): string | null {
-      const err = g.assignRoleSlot(state, role, slotIndex, playerName)
-      persist()
-      return err
-    },
     clearPlayers() {
       g.clearAllPlayers(state)
       persist()
@@ -240,8 +235,9 @@ export function useGame() {
       s.judgeScores = judgeScores
       s.winMode = winMode
       s.players = players
+      s.playersConfirmed = true
       Object.assign(state, s)
-      activeTab.value = "assign"
+      activeTab.value = "game"
       persist()
     },
     importPlayers(names: string[]): number {
@@ -253,16 +249,26 @@ export function useGame() {
       persist()
       return added
     },
-    setRole(idx: number, role: string): string | null {
-      const err = g.setRole(state, idx, role)
-      persist()
-      return err
+    /** 开局（idle 步骤）：清角色并重置对局状态，随后进入第 1 晚 */
+    startGame() {
+      clearPendingUndo()
+      g.startNewGame(state)
+      refresh()
     },
-    manualSaveRoles(): string | null {
-      const err = g.manualSaveRoles(state)
-      if (err === null) clearPendingUndo()
+    confirmRole(name: string, role: string): string | null {
+      const err = g.confirmRole(state, name, role)
       refresh()
       return err
+    },
+    confirmWolves(names: string[]): string | null {
+      const err = g.confirmWolves(state, names)
+      refresh()
+      return err
+    },
+    autoFillCivilians(): number {
+      const n = g.autoFillCivilians(state)
+      refresh()
+      return n
     },
 
     flowToggle() {

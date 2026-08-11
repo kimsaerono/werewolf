@@ -26,7 +26,7 @@ export const UNIQUE_ROLES = ["预言家", "女巫", "猎人", "守卫", "白痴"
 /** 角色头像表情，一眼认出 */
 export const ROLE_EMOJI: Record<string, string> = {
   狼人: "🐺",
-  白狼王: "👑🐺",
+  白狼王: "❄️🐺",
   预言家: "🔮",
   女巫: "🧙",
   猎人: "🔫",
@@ -247,6 +247,8 @@ export function normalizeState(s: GameState): GameState {
   })
   if (!st.judgeScores || typeof st.judgeScores !== "object") st.judgeScores = {}
   if (!st.uiDone || typeof st.uiDone !== "object") st.uiDone = {}
+  // v9：角色改为夜晚睁眼确认。已在局中的旧存档视为已确认参与，保留访问权限
+  if (st.players.length > 0 && (st.round > 0 || st.phase !== "idle")) st.playersConfirmed = true
   if (!Array.isArray(st.flow)) st.flow = []
   if (!Array.isArray(st.jingHuiFlow)) st.jingHuiFlow = []
   const legacy = (s as { judgeScore?: number }).judgeScore
@@ -375,6 +377,91 @@ export function setRole(state: GameState, idx: number, role: string): string | n
   return null
 }
 
+/** 所有非平民角色确认完时，把剩余未分配玩家自动填为平民；返回新填充人数 */
+export function autoFillCivilians(state: GameState): number {
+  const quota = roleQuota(state)
+  const nonCivil = Object.keys(quota).filter((r) => r !== "平民")
+  const allDone = nonCivil.every((r) => state.players.filter((p) => p.role === r).length === quota[r])
+  if (!allDone) return 0
+  const civilQuota = quota["平民"] || 0
+  const civilNow = state.players.filter((p) => p.role === "平民").length
+  if (civilNow >= civilQuota) return 0
+  let added = 0
+  for (const p of state.players) {
+    if (civilNow + added >= civilQuota) break
+    if (p.role) continue
+    p.role = "平民"
+    added++
+  }
+  return added
+}
+
+/** 法官在夜晚睁眼时确认某角色持有者；确认完所有神职后自动把剩余玩家填为平民 */
+export function confirmRole(state: GameState, name: string, role: string): string | null {
+  const p = state.players.find((x) => x.name === name)
+  if (!p) return "玩家不存在"
+  if (p.role) return `${name} 已确认过身份（${p.role}），不能重复确认`
+  const quota = roleQuota(state)
+  const quotaN = quota[role] || 0
+  if (quotaN === 0) return `本板子没有【${role}】角色`
+  const used = state.players.filter((x) => x.role === role).length
+  if (used >= quotaN) return `角色【${role}】已满（本板子 ${quotaN} 个）`
+  p.role = role
+  autoFillCivilians(state)
+  return null
+}
+
+/** 批量确认狼人（狼人睁眼时由法官一次确认） */
+export function confirmWolves(state: GameState, names: string[]): string | null {
+  const need = roleQuota(state)["狼人"] || 0
+  const now = state.players.filter((p) => p.role === "狼人").length
+  const unassigned = [...new Set(names)].filter(
+    (n) => n && !state.players.find((p) => p.name === n)?.role,
+  )
+  if (now + unassigned.length > need) {
+    return `狼人已确认 ${now} 个，本板子需要 ${need} 个，最多还能确认 ${need - now} 个`
+  }
+  for (const n of unassigned) confirmRole(state, n, "狼人")
+  return null
+}
+
+/** 开局重置：清角色与所有对局状态（角色在首夜睁眼时由法官确认） */
+export function startNewGame(state: GameState): void {
+  state.players.forEach((p) => {
+    p.role = ""
+    p.alive = true
+    p.scoreRound = 0
+    p.scoreDetail = []
+    p.mark = defaultMark()
+  })
+  state.round = 0
+  state.phase = "idle"
+  state.uiDone = {}
+  state.flow = []
+  state.witchSaveUsed = false
+  state.witchPoisonUsed = false
+  state.nightUsedDrug = null
+  state.nightWolfKill = ""
+  state.nightGuardTarget = ""
+  state.nightWitchPoison = ""
+  state.nightWitchSave = ""
+  state.nightSameSaveKill = false
+  state.nightSteps = { guard: false, wolf: false, prophet: false, witch: false }
+  state.guardLastTarget = ""
+  state.hunterShotPending = false
+  state.hunterShotDone = false
+  state.skipVote = false
+  state.winCamp = null
+  state.jingHui = ""
+  state.wolfSelfKill = false
+  state.knightDuelUsed = false
+  state.mvp = ""
+  state.svp = ""
+  state.beiguo = ""
+  state.finished = false
+  pushGlobalLog(state, "✅本局开始：发牌后由法官在夜晚睁眼时确认身份")
+}
+
 export function aliveNames(state: GameState): string[] {
   return state.players.filter((p) => p.alive).map((p) => p.name)
 }
@@ -430,19 +517,6 @@ export function movePlayer(state: GameState, from: number, to: number): void {
   if (from < 0 || to < 0 || from >= state.players.length || to >= state.players.length || from === to) return
   const [item] = state.players.splice(from, 1)
   state.players.splice(to, 0, item)
-}
-
-/** 给角色分配人（角色槽位视图）：把玩家分配到某角色，自动清空其旧角色、释放该槽位原有人 */
-export function assignRoleSlot(state: GameState, role: string, slotIndex: number, playerName: string): string | null {
-  const occupants = state.players.filter((p) => p.role === role)
-  const prev = occupants[slotIndex]
-  if (prev && prev.name !== playerName) prev.role = ""
-  if (playerName) {
-    const p = state.players.find((x) => x.name === playerName)
-    if (!p) return "玩家不存在"
-    p.role = role
-  }
-  return null
 }
 
 export function clearAllPlayers(state: GameState): void {
@@ -813,6 +887,10 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   p.alive = false
   t.alive = false
   state.skipVote = true
+  if (t.role === "猎人" && !t.mark.hunterIsPoisoned) {
+    state.hunterShotPending = true
+    pushGlobalLog(state, `🔫猎人${tar}被白狼王带走，可开枪`)
+  }
   pushGlobalLog(state, `💥白狼王${sel}自爆，带走${tar}，本日跳过投票`)
   pushFlow(state, "白狼王自爆", tar)
   return null
