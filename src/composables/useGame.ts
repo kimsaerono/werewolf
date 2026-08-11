@@ -1,6 +1,7 @@
 import { computed, reactive, ref } from "vue"
 import * as g from "@/game/logic"
 import type { GameState, Player } from "@/game/logic"
+import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
 
 const STORAGE_KEY = "werewolf_judge_v8"
@@ -425,6 +426,7 @@ export function useGame() {
       playerLabel: g.playerLabel,
       campBreakdown: g.campBreakdown,
       isWolfRole: g.isWolfRole,
+      roleAvatar,
     },
   }
 }

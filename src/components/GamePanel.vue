@@ -1080,6 +1080,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             class="alive-tag"
             :class="{ 'sheriff-tag': p.name === state.jingHui }"
           >
+            <img v-if="p.role && refs.roleAvatar(p.role)" class="alive-avatar" :src="refs.roleAvatar(p.role)" :alt="p.role" />
             <span v-if="p.name === state.jingHui" style="color:#ffd666">👑</span>{{ refs.playerLabel(p) }}{{ p.mark.idiotFlipped ? "🙊" : "" }} {{ p.alive ? "✅" : "❌" }}
           </a-tag>
         </div>
@@ -1622,6 +1623,15 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.alive-avatar {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+  margin-right: 2px;
+  vertical-align: -5px;
 }
 @media (max-width: 720px) {
   /* 移动端竖屏：按座位号分左右两列，小号左、大号右 */

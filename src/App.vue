@@ -277,6 +277,13 @@ body {
 .role-avatar {
   font-size: 18px;
 }
+.role-avatar-img {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  object-fit: cover;
+}
 .slot-no {
   width: 22px;
   height: 22px;

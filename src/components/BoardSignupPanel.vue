@@ -254,7 +254,8 @@ function onPoolPointerEnd(e: PointerEvent) {
       <a-divider style="margin: 12px 0 8px">角色组合（{{ boardRoles().length }} 人，可微调）</a-divider>
       <div class="role-editor">
         <div v-for="g in roleGroups" :key="g.role" class="role-chip">
-          <span class="role-avatar">{{ refs.ROLE_EMOJI[g.role] || "🎭" }}</span>
+          <img v-if="refs.roleAvatar(g.role)" class="role-avatar-img" :src="refs.roleAvatar(g.role)" :alt="g.role" />
+          <span v-else class="role-avatar">{{ refs.ROLE_EMOJI[g.role] || "🎭" }}</span>
           <span class="role-chip-name">{{ g.role }}</span>
           <span class="role-chip-count">×{{ g.count }}</span>
           <a-button size="small" type="primary" shape="circle" :disabled="!g.canAdd" class="role-btn" @click="addRole(g.role)">+</a-button>
@@ -363,7 +364,9 @@ function onPoolPointerEnd(e: PointerEvent) {
       <p class="small">已有角色用上方「+ / −」调整数量</p>
       <div v-if="remainingRoles.length" class="role-remaining">
         <div v-for="r in remainingRoles" :key="r" class="role-remaining-item" @click="addRole(r)">
-          <span>{{ refs.ROLE_EMOJI[r] || "🎭" }} {{ r }}</span>
+          <img v-if="refs.roleAvatar(r)" class="role-avatar-img" :src="refs.roleAvatar(r)" :alt="r" />
+          <span v-else>{{ refs.ROLE_EMOJI[r] || "🎭" }}</span>
+          <span>{{ r }}</span>
           <a-tag color="success">添加</a-tag>
         </div>
       </div>
