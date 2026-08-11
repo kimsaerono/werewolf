@@ -156,6 +156,7 @@ export interface GameState {
   jingHuiFlow: string[]
   wolfSelfKill: boolean
   knightDuelUsed: boolean
+  winMode: "edge" | "city"
   uiDone: Record<string, boolean>
   mvp: string
   svp: string
@@ -218,6 +219,7 @@ export function defaultState(): GameState {
     jingHuiFlow: [],
     wolfSelfKill: false,
     knightDuelUsed: false,
+    winMode: "edge",
     uiDone: {},
     mvp: "",
     svp: "",
@@ -234,6 +236,7 @@ export function normalizeState(s: GameState): GameState {
     st.voices.witch = DEFAULT_VOICES.witch
   }
   if (typeof st.knightDuelUsed !== "boolean") st.knightDuelUsed = false
+  if (st.winMode !== "city") st.winMode = "edge"
   st.players.forEach((p) => {
     p.mark = Object.assign(defaultMark(), p.mark || {})
     if (p.scoreRound === undefined) p.scoreRound = 0
@@ -450,10 +453,12 @@ export function resetWholeGame(state: GameState): GameState {
   const board = state.board
   const judge = state.judge
   const judgeScores = state.judgeScores
+  const winMode = state.winMode
   const s = defaultState()
   s.board = board
   s.judge = judge
   s.judgeScores = judgeScores
+  s.winMode = winMode
   return s
 }
 
@@ -505,6 +510,7 @@ export function manualSaveRoles(state: GameState): string | null {
   state.winCamp = null
   state.jingHui = ""
   state.wolfSelfKill = false
+  state.knightDuelUsed = false
   state.mvp = ""
   state.svp = ""
   state.beiguo = ""
@@ -564,9 +570,10 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
   pushNightLog(state, `🔮预言家查验${sel}，结果：${isWolf ? "狼人" : "好人"}`)
   pushGlobalLog(state, `🔮预言家查验：${sel} → ${isWolf ? "狼人" : "好人"}`)
   pushFlow(state, "预言家验人", sel, isWolf ? "狼" : "好")
+  // 预言家出局后仅流程性验人，不产生技能分
   if (state.round === 1 && isWolf) {
     const prop = state.players.find((p) => p.role === "预言家")
-    if (prop) prop.mark.prophetFirstDayWolf = true
+    if (prop && prop.alive) prop.mark.prophetFirstDayWolf = true
   }
   return { name: sel, isWolf }
 }
@@ -574,10 +581,11 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
 export function prophetNoCheck(state: GameState): string | null {
   const prop = state.players.find((p) => p.role === "预言家")
   if (!prop) return "本局没有预言家"
-  prop.mark.prophetNoCheckCount = (prop.mark.prophetNoCheckCount || 0) + 1
+  // 预言家出局后仅流程性跳过，不扣分
+  if (prop.alive) prop.mark.prophetNoCheckCount = (prop.mark.prophetNoCheckCount || 0) + 1
   state.nightSteps.prophet = true
   pushNightLog(state, `🔮预言家本晚未验人`)
-  pushGlobalLog(state, `🔮预言家本晚不验人，扣0.5分`)
+  pushGlobalLog(state, `🔮预言家本晚不验人${prop.alive ? "，扣0.5分" : "（已出局，仅走流程）"}`)
   return null
 }
 
@@ -1005,9 +1013,11 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   const started = allAssigned && (state.phase !== "idle" || state.round > 0)
   let wc: WinCamp = null
   if (started) {
-    if (aliveWolf.length > 0 && (aliveGod.length === 0 || aliveCivil.length === 0)) {
-      wc = "wolf"
-    } else if (aliveWolf.length === 0) {
+    if (aliveWolf.length > 0) {
+      // 屠边：神或民任一全灭；屠城：神与民全灭
+      const goodGone = state.winMode === "city" ? aliveGod.length === 0 && aliveCivil.length === 0 : aliveGod.length === 0 || aliveCivil.length === 0
+      if (goodGone) wc = "wolf"
+    } else {
       wc = aliveGod.length > 0 ? "god" : "civil"
     }
   }
@@ -1015,11 +1025,18 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   if (wc === "wolf") {
     const goneGod = aliveGod.length === 0
     const goneCivil = aliveCivil.length === 0
-    reason = goneGod && goneCivil ? "狼人存活，神职与平民全灭" : goneGod ? "神职全灭" : "平民全灭"
+    reason =
+      goneGod && goneCivil
+        ? "狼人存活，神职与平民全灭"
+        : state.winMode === "city"
+          ? "屠城：狼人存活，神职与平民尚未全灭"
+          : goneGod
+            ? "屠边：神职全灭"
+            : "屠边：平民全灭"
   } else if (wc === "god") {
-    reason = "所有狼人已出局，神职阵营获胜"
+    reason = "所有狼人已出局，好人胜利"
   } else if (wc === "civil") {
-    reason = "狼人与神职均已出局，剩余平民获胜"
+    reason = "所有狼人已出局，好人胜利"
   }
   const prev = state.winCamp
   state.winCamp = wc

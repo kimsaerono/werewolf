@@ -136,6 +136,14 @@ function confirmPlayers() {
   activeTab.value = "assign"
 }
 
+const dragIdx = ref(-1)
+function onDrop(to: number) {
+  const from = dragIdx.value
+  dragIdx.value = -1
+  if (from < 0 || from === to) return
+  actions.movePlayer(from, to)
+}
+
 // ===== 成员多选：tap 点选 / 长按拖动连选 / 拖动滚动 =====
 let pressMember = ""
 let pressX = 0
@@ -235,6 +243,13 @@ function onPoolPointerEnd(e: PointerEvent) {
           </a-select-option>
         </a-select>
       </div>
+      <div class="row">
+        <span class="field-label">胜负</span>
+        <a-radio-group :value="state.winMode" @change="(e: any) => actions.setWinMode(e.target.value)">
+          <a-radio value="edge">屠边（神或民任一全灭狼胜，默认）</a-radio>
+          <a-radio value="city">屠城（神与民全灭狼胜）</a-radio>
+        </a-radio-group>
+      </div>
 
       <a-divider style="margin: 12px 0 8px">角色组合（{{ boardRoles().length }} 人，可微调）</a-divider>
       <div class="role-editor">
@@ -317,12 +332,25 @@ function onPoolPointerEnd(e: PointerEvent) {
       <p class="small" style="margin: 6px 0">
         轻点 = 加入/移出；长按拖动 = 批量连选；滑动 = 滚动
       </p>
-      <a-divider style="margin: 12px 0">已参与玩家</a-divider>
-      <a-space :wrap="true">
-        <a-tag v-for="p in state.players" :key="p.name" color="green">
-          {{ refs.playerLabel(p) }}
-        </a-tag>
-      </a-space>
+      <a-divider style="margin: 12px 0">已参与玩家（可拖动排序，顺序即座位号）</a-divider>
+      <div
+        v-for="(p, idx) in state.players"
+        :key="p.name"
+        class="signed-row"
+        :class="{ dragging: dragIdx === idx }"
+        draggable="true"
+        @dragstart="dragIdx = idx"
+        @dragend="dragIdx = -1"
+        @dragover.prevent
+        @drop="onDrop(idx)"
+      >
+        <span class="seat-no">{{ p.no || idx + 1 }}</span>
+        <span class="signed-name">{{ p.name }}</span>
+        <span class="flex-spacer"></span>
+        <a-button size="small" :disabled="idx === 0" @click="actions.movePlayer(idx, idx - 1)">↑</a-button>
+        <a-button size="small" :disabled="idx === state.players.length - 1" @click="actions.movePlayer(idx, idx + 1)">↓</a-button>
+      </div>
+      <a-empty v-if="!state.players.length" :image-simple="true" description="暂无玩家" />
       <div class="row" style="margin-top: 12px">
         <a-button type="primary" size="large" @click="confirmPlayers">
           ✅ 确认参与玩家（{{ state.players.length }} 人）

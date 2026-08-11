@@ -139,10 +139,12 @@ function refresh(): void {
       log: [...state.globalLog],
     })
     saveHistory()
-    winNotice.value = { text: r.text, reason: r.reason, camps: g.campBreakdown(state) }
-    activeTab.value = "score"
+    // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利（屠边/屠城原因由 reason 说明）
+    const winText = state.winCamp === "wolf" ? "狼人胜利" : "好人胜利"
+    winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
+    // 对局结束后停留在「对局操作」，由法官点「开启下一局」
     // 胜利播报最高优先级：必须是最后的语音，后续非胜利播报应被抑制
-    speak(`${r.text}！${r.reason}`)
+    speak(`${winText}！${r.reason}`)
   }
   persist()
 }
@@ -156,6 +158,10 @@ export function useGame() {
   const actions = {
     setBoard(b: string) {
       g.applyBoard(state, b)
+      persist()
+    },
+    setWinMode(m: "edge" | "city") {
+      state.winMode = m
       persist()
     },
     setBoardRoles(roles: string[]): string | null {
@@ -215,18 +221,27 @@ export function useGame() {
       refresh()
       return true
     },
-    /** 开启下一局：重置本局但保留法官/法官累计分 */
+    /** 开启下一局：保留法官/法官累计分/参与玩家，清角色与分数，直跳分配角色 */
     startNextGame() {
       clearPendingUndo()
       const board = state.board
       const judge = state.judge
       const judgeScores = { ...state.judgeScores }
+      const winMode = state.winMode
+      // 保留上一局参与玩家（号码、姓名），清空角色/状态/分数
+      const players = state.players.map((p) => {
+        const np = g.newPlayer(p.name)
+        np.no = p.no
+        return np
+      })
       const s = g.defaultState()
       s.board = board
       s.judge = judge
       s.judgeScores = judgeScores
+      s.winMode = winMode
+      s.players = players
       Object.assign(state, s)
-      activeTab.value = "board"
+      activeTab.value = "assign"
       persist()
     },
     importPlayers(names: string[]): number {

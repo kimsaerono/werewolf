@@ -301,14 +301,14 @@ const stepKeys = computed(() => {
   if (state.phase === "night") {
     const ks: string[] = []
     const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
-    // 首夜神职睁眼确认身份
-    if (state.round <= 1 && hasHunter.value && !uiDone.value.hunterOpen) ks.push("hunterOpen")
-    if (state.round <= 1 && hasIdiot.value && !uiDone.value.idiotOpen) ks.push("idiotOpen")
-    if (state.round <= 1 && hasKnight.value && !uiDone.value.knight) ks.push("knight")
-    if (hasGuard.value && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
+    // 行动顺序：狼人 → 守卫 → 女巫 → 预言家 → 白痴(仅首夜) → 猎人(每夜) → 骑士(仅首夜) → 天亮
     if (aliveWolf && !uiDone.value.wolf) ks.push("wolf")
-    if (hasProphet.value && !uiDone.value.prophet) ks.push("prophet")
+    if (hasGuard.value && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
     if (hasWitch.value && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
+    if (hasProphet.value && !uiDone.value.prophet) ks.push("prophet")
+    if (state.round <= 1 && hasIdiot.value && !uiDone.value.idiotOpen) ks.push("idiotOpen")
+    if (hasHunter.value && !uiDone.value.hunterOpen) ks.push("hunterOpen")
+    if (state.round <= 1 && hasKnight.value && !uiDone.value.knight) ks.push("knight")
     if (ks.length === 0) ks.push("dawn")
     return ks
   }
@@ -437,6 +437,12 @@ function doWitchPoison(v: string) {
   if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
 }
 function doWitchDone() {
+  // 解药毒药都用完时直接闭眼，不再二次确认
+  if (state.witchSaveUsed && state.witchPoisonUsed) {
+    markDoneStep("witch")
+    playVoice("witch_close")
+    return
+  }
   modal.confirm({
     title: "本轮不开药？",
     content: "女巫本晚不使用解药和毒药，确认后闭眼",
@@ -636,8 +642,8 @@ function doDawn() {
       return p ? refs.playerLabel(p) : n
     })
     .join("、")
-  // 全屏过场动画同时展示玩家信息（平安夜 / 死亡名单）
-  effect("dawn", "rooster", lastDawnDeaths.value.length ? `昨夜死亡：${deathInfo}` : "平安夜")
+  // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页
+  effect("dawn", "rooster", lastDawnDeaths.value.length ? "天亮了" : "平安夜")
   // 平安夜 / 有人出局 的语音播报
   if (lastDawnDeaths.value.length) {
     playVoice("dawn")
@@ -649,7 +655,8 @@ function doDawn() {
     suppressStepVoiceUntil = Date.now() + 5000
     setTimeout(() => {
       if (state.finished) return
-      effect("death", "death")
+      // 骷髅死亡页：展示死亡玩家信息
+      effect("death", "death", `昨夜死亡：${deathInfo}`)
       const poisonedHunter = lastDawnDeaths.value.find((n) => {
         const p = state.players.find((x) => x.name === n)
         return p?.role === "猎人" && p.mark.hunterIsPoisoned
@@ -677,7 +684,7 @@ function doFlow() {
 
 function openNextGame() {
   actions.startNextGame()
-  message.success(`第 ${sessionNo.value} 局已开启，请配置板子与选人`)
+  message.success(`第 ${sessionNo.value} 局已开启，保留上一局玩家，请直接分配角色`)
 }
 
 // ===== 音效/动画 =====
@@ -901,7 +908,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </a-card>
 
-      <!-- 白天插入操作（白狼王/骑士决斗；狼人自爆/警徽移交已放右侧悬浮） -->
+      <!-- 白天插入操作（白狼王；狼人自爆/警徽移交/骑士决斗已放右侧悬浮） -->
       <a-flex
         v-if="state.phase === 'day' && !state.skipVote && !state.finished"
         :wrap="'wrap'"
@@ -909,7 +916,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         style="margin-top: 12px"
       >
         <a-button v-if="hasWWK" danger @click="wwkModal = true">👑💥 白狼王自爆带人</a-button>
-        <a-button v-if="hasKnight" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️ 骑士决斗</a-button>
       </a-flex>
 
       <!-- 对局流程进度 -->
@@ -998,7 +1004,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-row>
       </a-drawer>
 
-      <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 回退一步 + 重播当前步 + 语音配置 -->
+      <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 骑士决斗 + 回退一步 + 重播当前步 + 语音配置 -->
       <div class="floating-actions">
         <a-tooltip v-if="state.phase === 'day' && !state.skipVote && !state.finished" title="狼人自爆（跳过本日投票，直接入夜）">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
@@ -1008,6 +1014,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-tooltip>
         <a-tooltip v-if="state.phase === 'day' && state.round > 1 && !state.skipVote && !state.finished" title="警徽移交">
           <a-button class="fab" type="warning" shape="circle" size="large" @click="jinghuiModal = true">📢</a-button>
+        </a-tooltip>
+        <a-tooltip v-if="hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）">
+          <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️</a-button>
         </a-tooltip>
         <a-tooltip title="回退上一步">
           <a-button class="fab" type="primary" danger shape="circle" size="large" :disabled="!canUndo" @click="doUndo">↩️</a-button>
