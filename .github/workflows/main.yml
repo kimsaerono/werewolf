@@ -23,7 +23,7 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       # 安装依赖
-      - run: bun install --frozen-lockfile
+      - run: bun install 
 
       # vite打包
       - run: bun run build
