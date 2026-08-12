@@ -321,6 +321,16 @@ export function useGame() {
       refresh()
       return err
     },
+    wolfKingShoot(tar: string) {
+      const err = g.wolfKingShootConfirm(state, tar)
+      refresh()
+      return err
+    },
+    wolfKingGiveUp() {
+      const err = g.wolfKingGiveUpShot(state)
+      refresh()
+      return err
+    },
     knightDuel(tar: string) {
       const err = g.knightDuel(state, tar)
       refresh()
@@ -427,6 +437,8 @@ export function useGame() {
       campBreakdown: g.campBreakdown,
       isWolfRole: g.isWolfRole,
       roleAvatar,
+      decorateLog: g.decorateLog,
+      cleanLogLine: g.cleanLogLine,
     },
   }
 }

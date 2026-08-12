@@ -52,6 +52,41 @@ const witchModal = ref<"save" | "poison" | null>(null)
 const wolfConfirmOpen = ref(false)
 const wolfSel = ref<string[]>([])
 
+// ===== 遗言计时（首夜死亡 / 放逐死亡） =====
+const LAST_WORDS_SECONDS = 60
+const lastWordsShow = ref(false)
+const lastWordsRunning = ref(false)
+const lastWordsLeft = ref(0)
+const lastWordsName = ref("")
+function startLastWords() {
+  lastWordsRunning.value = true
+  lastBeep = 99
+  startCountdown(
+    LAST_WORDS_SECONDS,
+    (s) => {
+      lastWordsLeft.value = s
+      if (s >= 1 && s <= 7 && lastBeep !== s) {
+        lastBeep = s
+        playSfx("beep")
+      }
+      if (s <= 0) {
+        playSfx("ding")
+        message.warning("遗言时间到！")
+      }
+    },
+    () => {
+      lastWordsRunning.value = false
+      lastWordsLeft.value = 0
+    },
+  )
+  playSfx("beep")
+}
+function stopLastWords() {
+  stopCountdown()
+  lastWordsRunning.value = false
+  lastWordsLeft.value = 0
+}
+
 // ===== 发言倒计时（白天，全局唯一计时器） =====
 const speechRunning = ref(false)
 const speechLeft = ref(0)
@@ -152,6 +187,16 @@ const hunterStatus = computed(() => {
   if (!h.alive) return "❌ 已出局"
   return "🔫 正常可开枪"
 })
+const wolfKingObj = computed(() => state.players.find((p) => p.role === "狼王"))
+const wolfKingStatus = computed(() => {
+  const wk = wolfKingObj.value
+  if (!wk) return ""
+  if (!wk.alive && wk.mark.wolfKingIsPoisoned) return "⛔ 被毒吞枪"
+  if (state.wolfKingShotPending) return "🔴 可开枪"
+  if (state.wolfKingShotDone) return "✅ 已开枪"
+  if (!wk.alive) return "❌ 已出局"
+  return "🔫 正常可开枪"
+})
 const aliveCount = computed(() => state.players.filter((p) => p.alive).length)
 const phaseText = computed(() =>
   state.phase === "idle" ? "未开局" : state.phase === "night" ? "🌙夜晚" : "☀️白天",
@@ -165,8 +210,10 @@ const FLOW_EMOJI: Record<string, string> = {
   女巫解药: "💚",
   女巫毒药: "☠️",
   天亮: "🌅",
-  猎人开枪: "🔫",
-  猎人弃枪: "⏭️",
+   猎人开枪: "🔫",
+   猎人弃枪: "⏭️",
+   狼王开枪: "🔫",
+   狼王弃枪: "⏭️",
   骑士决斗: "⚔️",
   警徽: "📢",
   放逐: "🗳️",
@@ -195,8 +242,12 @@ function flowText(f: { label: string; target: string; detail: string }) {
 function nightSituation(steps: { label: string; target: string; detail: string }[]): string {
   const dawn = steps.find((s) => s.label === "天亮")
   if (!dawn) return ""
-  return dawn.target ? `昨夜：${dawn.target} 出局` : "平安夜"
+  if (!dawn.target) return "平安夜"
+  const labels = dawn.target.split("、").map((n) => flowTargetLabel(n)).join("、")
+  return `昨夜：${labels} 出局`
 }
+/** 日志展示：去时间前缀 + 玩家名转 号码(身份) */
+const displayLog = (l: string) => refs.decorateLog(state, refs.cleanLogLine(l))
 
 /** 统一玩家下拉选项：号码（姓名 角色），警长加👑标识 */
 const aliveOptions = computed(() =>
@@ -224,12 +275,30 @@ const wolfPlainOptions = computed(() =>
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
 const boardRolesArr = computed(() => refs.getBoardRoles(state))
-const wolfNeed = computed(() => boardRolesArr.value.filter((r) => r === "狼人").length)
-const wwkNeed = computed(() => boardRolesArr.value.filter((r) => r === "白狼王").length)
-const wolfCount = computed(() => state.players.filter((p) => p.role === "狼人").length)
-const wwkConfirmed = computed(() => state.players.some((p) => p.role === "白狼王"))
-const wolfConfirmed = computed(() => wolfCount.value >= wolfNeed.value)
-const wolfAllConfirmed = computed(() => (wwkNeed.value ? wwkConfirmed.value : true) && wolfConfirmed.value)
+const wolfCampRoles = computed(() => boardRolesArr.value.filter((r) => refs.isWolfRole(r)))
+const wolfCampStatus = computed(() => {
+  const map: Record<string, { need: number; have: number }> = {}
+  for (const r of wolfCampRoles.value) {
+    if (!map[r]) map[r] = { need: 0, have: 0 }
+    map[r].need++
+  }
+  for (const p of state.players) {
+    if (p.role && refs.isWolfRole(p.role)) {
+      if (!map[p.role]) map[p.role] = { need: 0, have: 0 }
+      map[p.role].have++
+    }
+  }
+  return map
+})
+const wolfAllConfirmed = computed(() =>
+  Object.values(wolfCampStatus.value).every((s) => s.have >= s.need),
+)
+const wolfCampUnconfirmed = computed(() =>
+  wolfCampRoles.value.filter((r) => (wolfCampStatus.value[r]?.have || 0) < (wolfCampStatus.value[r]?.need || 0)),
+)
+const wolfCampSingleUnconfirmed = computed(() => wolfCampUnconfirmed.value.filter((r) => r !== "狼人"))
+const wolfNeed = computed(() => wolfCampStatus.value["狼人"]?.need || 0)
+const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 const wolfPlayersLabel = computed(() => {
   const ws = state.players.filter((p) => refs.isWolfRole(p.role))
   return ws.length ? ws.map((p) => refs.playerLabel(p)).join("、") : "未确认"
@@ -262,7 +331,9 @@ const STEP_META: Record<string, { label: string; emoji: string }> = {
   idiotOpen: { label: "白痴睁眼", emoji: "🙊" },
   dawn: { label: "天亮", emoji: "🌅" },
   hunter: { label: "猎人开枪", emoji: "🔫" },
+  wolfkingShot: { label: "狼王开枪", emoji: "🔫" },
   jinghui: { label: "竞选警长", emoji: "📢" },
+  prophetReport: { label: "报验人", emoji: "🔮" },
   speech: { label: "发言环节", emoji: "🗣️" },
   vote: { label: "放逐投票", emoji: "🗳️" },
   night: { label: "进入夜晚", emoji: "🌙" },
@@ -350,8 +421,11 @@ const stepKeys = computed(() => {
   }
   if (state.skipVote) return ["night"]
   const ks: string[] = []
+  const roles = refs.getBoardRoles(state)
+  if (state.wolfKingShotPending) ks.push("wolfkingShot")
   if (state.hunterShotPending) ks.push("hunter")
   if (state.round <= 1 && !uiDone.value.jinghui) ks.push("jinghui")
+  if (state.round <= 1 && roles.includes("预言家") && !uiDone.value.prophetReport) ks.push("prophetReport")
   if (!uiDone.value.speech) ks.push("speech")
   if (!uiDone.value.vote) ks.push("vote")
   ks.push("night")
@@ -383,7 +457,11 @@ watch(
 watch(
   () => state.phase,
   (ph) => {
-    if (ph === "night") lastDawnDeaths.value = []
+    if (ph === "night") {
+      lastDawnDeaths.value = []
+      lastWordsShow.value = false
+      lastWordsName.value = ""
+    }
   },
 )
 // 步骤切换时清空弹窗选择（v28）
@@ -550,6 +628,26 @@ function doHunterGiveUp() {
     },
   })
 }
+function doWolfKingShoot(v: string) {
+  snapshot()
+  const err = actions.wolfKingShoot(v)
+  if (err) return message.error(err)
+  effect("hunter", "gunshot")
+  checkSheriffDeath()
+}
+function doWolfKingGiveUp() {
+  modal.confirm({
+    title: "放弃开枪？",
+    content: "狼王放弃开枪，确认后继续",
+    okText: "确认放弃",
+    okButtonProps: { danger: true },
+    cancelText: "取消",
+    onOk() {
+      snapshot()
+      actions.wolfKingGiveUp()
+    },
+  })
+}
 function confirmSkip(title: string, content: string, fn: () => void) {
   modal.confirm({
     title,
@@ -668,6 +766,9 @@ function doFinishVote(v: string) {
   markDone("vote")
   if (state.hunterShotPending) playVoice("hunter")
   checkSheriffDeath()
+  // 放逐玩家有遗言，弹计时
+  lastWordsName.value = v
+  lastWordsShow.value = true
 }
 function doWolfBaoZha(v: string) {
   snapshot()
@@ -753,6 +854,11 @@ function doDawn() {
   }
   checkSheriffDeath()
   promptHunterShot()
+  // 仅首夜夜晚死亡有遗言，其余夜晚无
+  if (lastDawnDeaths.value.length && state.round === 1 && !state.finished) {
+    lastWordsName.value = lastDawnDeaths.value.join("、")
+    lastWordsShow.value = true
+  }
 }
 function doFlow() {
   const enteringNight = state.phase !== "night"
@@ -837,9 +943,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <div class="step-emoji">🌑</div>
           <h3 class="step-title">狼人刀人</h3>
           <template v-if="!wolfAllConfirmed">
-            <p class="small" style="text-align: center">狼人睁眼，法官确认身份后选择被刀对象</p>
-            <a-button v-if="wwkNeed && !wwkConfirmed" type="warning" size="large" @click="openPicker('确认白狼王（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('白狼王', v))">❄️🐺 确认白狼王</a-button>
-            <a-button v-if="!wolfConfirmed" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
+            <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
+            <a-button v-if="(wolfCampStatus['狼人']?.have || 0) < (wolfCampStatus['狼人']?.need || 0)" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
+            <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="warning" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAliveOptions, (v) => doConfirmRole(cr, v))">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">狼人阵营：{{ wolfPlayersLabel }}｜选中狼人即自动标记为自刀</p>
@@ -982,12 +1088,33 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <a-button style="margin-top: 8px" @click="doHunterGiveUp">放弃开枪</a-button>
         </div>
 
+        <!-- 狼王开枪（狼枪） -->
+        <div v-else-if="currentStep === 'wolfkingShot'" class="step-body">
+          <div class="step-emoji">🔫</div>
+          <h3 class="step-title">狼王开枪</h3>
+          <p class="small" style="text-align: center">本局狼王：{{ wolfKingObj ? refs.playerLabel(wolfKingObj) : "-" }}</p>
+          <a-tag v-if="wolfKingStatus" :color="state.wolfKingShotPending ? 'error' : 'default'" size="large">
+            状态：{{ wolfKingStatus }}
+          </a-tag>
+          <a-button type="primary" danger size="large" @click="openPicker('选择狼王带走目标', aliveOptions, (v) => doWolfKingShoot(v))">🔫 确认开枪带走</a-button>
+          <a-button style="margin-top: 8px" @click="doWolfKingGiveUp">放弃开枪</a-button>
+        </div>
+
         <!-- 竞选警长 -->
         <div v-else-if="currentStep === 'jinghui'" class="step-body">
           <div class="step-emoji">📢</div>
           <h3 class="step-title">竞选警长</h3>
           <a-button type="primary" size="large" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
           <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">本轮不竞选</a-button>
+        </div>
+
+        <!-- 第一轮警长后报验人 -->
+        <div v-else-if="currentStep === 'prophetReport'" class="step-body">
+          <div class="step-emoji">🔮</div>
+          <h3 class="step-title">报告验人情况</h3>
+          <p class="small" style="text-align: center">竞选警长结束，法官公布首夜验人结果</p>
+          <a-tag v-if="state.prophetReport" color="geekblue" size="large" style="font-size: 16px; padding: 6px 14px">{{ state.prophetReport }}</a-tag>
+          <a-button type="primary" size="large" @click="markDoneStep('prophetReport')">已公布，进入发言</a-button>
         </div>
 
         <!-- 发言环节 -->
@@ -1045,29 +1172,45 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </a-card>
 
-      <!-- 对局流程进度 -->
-      <a-card v-if="flowGroups.length" type="inner" title="📊 对局流程进度（含每晚具体情况）" size="small" style="margin-top: 12px">
-        <div v-for="[night, steps] in flowGroups" :key="night" class="flow-night">
-          <span class="flow-night-title">第 {{ night }} 晚</span>
-          <a-tag
-            v-if="nightSituation(steps)"
-            :color="nightSituation(steps) === '平安夜' ? 'green' : 'error'"
-            style="padding: 2px 10px"
-          >
-            {{ nightSituation(steps) }}
-          </a-tag>
-          <a-space :wrap="true" :size="6">
-            <a-tag
-              v-for="(f, i) in steps"
-              :key="i"
-              color="blue"
-              style="padding: 2px 10px"
-            >
-              {{ flowText(f) }}
-            </a-tag>
-          </a-space>
+      <!-- 遗言计时（首夜夜晚死亡 / 放逐死亡） -->
+      <a-card v-if="lastWordsShow && state.phase === 'day'" class="last-words-card" :bordered="false">
+        <div class="last-words-title">💬 遗言（{{ lastWordsName }}）</div>
+        <div class="last-words-timer">
+          <span class="countdown" :class="{ warning: lastWordsRunning && lastWordsLeft <= 7 }">
+            {{ lastWordsRunning ? `${lastWordsLeft}s` : "待开始" }}
+          </span>
+          <a-button type="primary" @click="lastWordsRunning ? stopLastWords() : startLastWords()">
+            {{ lastWordsRunning ? "⏹ 停止计时" : "▶ 开始遗言计时" }}
+          </a-button>
+          <a-button v-if="lastWordsRunning" type="text" @click="stopLastWords">跳过</a-button>
         </div>
       </a-card>
+
+      <!-- 对局流程进度（可折叠） -->
+      <a-collapse v-if="flowGroups.length" style="margin-top: 12px">
+        <a-collapse-panel key="flow" header="📊 对局流程进度（含每晚具体情况）">
+          <div v-for="[night, steps] in flowGroups" :key="night" class="flow-night">
+            <span class="flow-night-title">第 {{ night }} 晚</span>
+            <a-tag
+              v-if="nightSituation(steps)"
+              :color="nightSituation(steps) === '平安夜' ? 'green' : 'error'"
+              style="padding: 2px 10px"
+            >
+              {{ nightSituation(steps) }}
+            </a-tag>
+            <a-space :wrap="true" :size="6">
+              <a-tag
+                v-for="(f, i) in steps"
+                :key="i"
+                color="blue"
+                style="padding: 2px 10px"
+              >
+                {{ flowText(f) }}
+              </a-tag>
+            </a-space>
+          </div>
+        </a-collapse-panel>
+      </a-collapse>
 
       <!-- 存活状态 -->
       <a-card type="inner" title="全部玩家存活状态" size="small" style="margin-top: 12px">
@@ -1090,7 +1233,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       <a-collapse style="margin-top: 12px">
         <a-collapse-panel key="log" header="📜 对局日志">
           <div class="logbox">
-            <div v-for="(l, i) in state.globalLog" :key="i">{{ l }}</div>
+            <div v-for="(l, i) in state.globalLog" :key="i">{{ i + 1 }}. {{ displayLog(l) }}</div>
           </div>
         </a-collapse-panel>
       </a-collapse>
@@ -1553,6 +1696,24 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 .countdown.warning {
   color: #ff6464;
   animation: fx-pop 0.6s ease-out infinite alternate;
+}
+.last-words-card {
+  background: #1f2333;
+  border: 1px solid #3a4260;
+  border-radius: 12px;
+  margin-top: 12px;
+}
+.last-words-title {
+  font-weight: 700;
+  color: #ffd666;
+  margin-bottom: 10px;
+}
+.last-words-timer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .speech-timer-box {
   display: flex;

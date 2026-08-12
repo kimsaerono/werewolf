@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { App as AntApp } from "ant-design-vue"
-import { buildCSV } from "@/game/logic"
+import { buildCSV, decorateLog, cleanLogLine } from "@/game/logic"
 import type { Game } from "@/types"
+import type { GameRecord } from "@/composables/useGame"
 
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
 const { state, actions, history, sessionNo } = props.game
+
+/** 历史记录日志展示：去时间 + 玩家名转 号码(身份) */
+function fmtLog(h: GameRecord, l: string, i: number): string {
+  return `${i + 1}. ${decorateLog({ players: h.players } as never, cleanLogLine(l))}`
+}
 
 function download(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime })
@@ -26,7 +32,7 @@ function exportCSV() {
   message.success("已导出CSV")
 }
 function exportTxt() {
-  download("狼人杀复盘.txt", state.recordText, "text/plain")
+  download("狼人杀复盘.txt", "\uFEFF" + state.recordText, "text/plain;charset=utf-8")
   message.success("已导出本局复盘TXT")
 }
 function clearRec() {
@@ -40,10 +46,10 @@ function exportAll() {
         h.players
           .map((p) => `玩家 ${p.no}.${p.name} 身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}`)
           .join("\n") +
-        `\n\n----对局日志----\n${h.log.join("\n")}\n\n`,
+        `\n\n----对局日志----\n${h.log.map((l, i) => fmtLog(h, l, i)).join("\n")}\n\n`,
     )
     .join("")
-  download("狼人杀历史复盘.txt", all, "text/plain")
+  download("狼人杀历史复盘.txt", "\uFEFF" + all, "text/plain;charset=utf-8")
   message.success(`已导出全部 ${history.value.length} 局复盘`)
 }
 </script>
@@ -85,7 +91,7 @@ function exportAll() {
           </a-space>
           <a-divider style="margin: 8px 0">对局日志</a-divider>
           <div class="logbox">
-            <div v-for="(l, j) in h.log" :key="j">{{ l }}</div>
+            <div v-for="(l, j) in h.log" :key="j">{{ fmtLog(h, l, j) }}</div>
           </div>
         </a-collapse-panel>
       </a-collapse>
