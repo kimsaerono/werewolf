@@ -52,8 +52,8 @@ const witchModal = ref<"save" | "poison" | null>(null)
 const wolfConfirmOpen = ref(false)
 const wolfSel = ref<string[]>([])
 
-// ===== 遗言计时（首夜死亡 / 放逐死亡） =====
-const LAST_WORDS_SECONDS = 60
+// ===== 遗言计时（白天出局玩家） =====
+const LAST_WORDS_SECONDS = 35
 const lastWordsShow = ref(false)
 const lastWordsRunning = ref(false)
 const lastWordsLeft = ref(0)
@@ -92,7 +92,7 @@ const speechRunning = ref(false)
 const speechLeft = ref(0)
 const randNo = ref<number | null>(null)
 let lastBeep = 99
-const SPEECH_SECONDS = 45
+const SPEECH_SECONDS = computed(() => (state.jingHui ? 45 : 35))
 const speechOrderHint = computed(() => {
   if (state.jingHui) return `警长 ${state.jingHui} 左右侧发言`
   return "无警长：死左 / 死右发言（可抽随机数）"
@@ -101,7 +101,7 @@ function startSpeech() {
   speechRunning.value = true
   lastBeep = 99
   startCountdown(
-    SPEECH_SECONDS,
+    SPEECH_SECONDS.value,
     (s) => {
       speechLeft.value = s
       if (s >= 1 && s <= 7 && lastBeep !== s) {
@@ -854,11 +854,6 @@ function doDawn() {
   }
   checkSheriffDeath()
   promptHunterShot()
-  // 仅首夜夜晚死亡有遗言，其余夜晚无
-  if (lastDawnDeaths.value.length && state.round === 1 && !state.finished) {
-    lastWordsName.value = lastDawnDeaths.value.join("、")
-    lastWordsShow.value = true
-  }
 }
 function doFlow() {
   const enteringNight = state.phase !== "night"
@@ -1172,7 +1167,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </a-card>
 
-      <!-- 遗言计时（首夜夜晚死亡 / 放逐死亡） -->
+      <!-- 遗言计时（白天出局玩家） -->
       <a-card v-if="lastWordsShow && state.phase === 'day'" class="last-words-card" :bordered="false">
         <div class="last-words-title">💬 遗言（{{ lastWordsName }}）</div>
         <div class="last-words-timer">
