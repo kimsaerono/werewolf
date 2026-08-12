@@ -5,7 +5,6 @@ import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
 import GamePanel from "@/components/GamePanel.vue"
 import ScorePanel from "@/components/ScorePanel.vue"
-import EndPanel from "@/components/EndPanel.vue"
 import RecordPanel from "@/components/RecordPanel.vue"
 
 const game = useGame()
@@ -14,7 +13,6 @@ const tabs = [
   { id: "board", label: "🎲 板子与选人" },
   { id: "game", label: "🎮 对局操作" },
   { id: "score", label: "📊 分数明细" },
-  { id: "end", label: "🏁 结算(MVP/SVP)" },
   { id: "record", label: "📋 复盘导出" },
 ]
 
@@ -24,7 +22,7 @@ const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
 
 function onTabChange(key: string) {
-  const locked = ["game", "score", "end", "record"]
+  const locked = ["game", "score", "record"]
   if (locked.includes(key) && !gameReady.value) {
     message.warning("请先在「板子与选人」确认参与玩家")
     activeTab.value = prevTab.value
@@ -53,7 +51,7 @@ function onTabChange(key: string) {
               v-for="t in tabs"
               :key="t.id"
               :tab="t.label"
-              :disabled="['game', 'score', 'end', 'record'].includes(t.id) && !gameReady"
+              :disabled="['game', 'score', 'record'].includes(t.id) && !gameReady"
             />
           </a-tabs>
         </div>
@@ -61,7 +59,6 @@ function onTabChange(key: string) {
         <BoardSignupPanel v-show="activeTab === 'board'" :game="game" />
         <GamePanel v-show="activeTab === 'game'" :game="game" />
         <ScorePanel v-show="activeTab === 'score'" :game="game" />
-        <EndPanel v-show="activeTab === 'end'" :game="game" />
         <RecordPanel v-show="activeTab === 'record'" :game="game" />
       </div>
 
