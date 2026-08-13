@@ -3,6 +3,7 @@ import * as g from "@/game/logic"
 import type { GameState, Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
+import { syncGameToFeishu, SYNC_ENABLED } from "@/api/feishuSync"
 
 const STORAGE_KEY = "werewolf_judge_v8"
 const HISTORY_KEY = "werewolf_history"
@@ -23,6 +24,7 @@ export interface GameRecord {
     scoreRound: number
     scoreTotal: number
     star: string
+    scoreDetail: string[]
   }[]
   log: string[]
 }
@@ -66,6 +68,8 @@ const winNoticeOpen = computed({
     if (!v) winNotice.value = null
   },
 })
+/** 飞书同步状态："" 空闲 / "syncing" 同步中 / 成功文案 / 失败文案 */
+const syncStatus = ref("")
 
 const sessionNo = computed(() => history.value.length + 1)
 const sessionTitle = computed(() => {
@@ -136,12 +140,24 @@ function refresh(): void {
         scoreRound: p.scoreRound,
         scoreTotal: p.scoreTotal,
         star: p.star,
+        scoreDetail: [...p.scoreDetail],
       })),
       log: [...state.globalLog],
     })
     saveHistory()
-    // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利（屠边/屠城原因由 reason 说明）
-    const winText = state.winCamp === "wolf" ? "狼人胜利" : "好人胜利"
+    // 结算后自动同步到飞书（异步，失败不阻塞本地）
+    if (SYNC_ENABLED) {
+      syncStatus.value = "syncing"
+      const rec = history.value[history.value.length - 1]
+      syncGameToFeishu(rec).then((err) => {
+        syncStatus.value = err ? `⚠️ 同步失败：${err}` : `✅ 已同步第${sessionNo.value}局到飞书`
+        setTimeout(() => {
+          syncStatus.value = ""
+        }, 6000)
+      })
+    }
+    // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利；第三方 → 第三方胜利（原因由 reason 说明）
+    const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
     // 对局结束后停留在「对局操作」，由法官点「开启下一局」
     // 胜利播报最高优先级：必须是最后的语音，后续非胜利播报应被抑制
@@ -204,6 +220,10 @@ export function useGame() {
     movePlayer(from: number, to: number) {
       g.movePlayer(state, from, to)
       g.renumberPlayers(state)
+      persist()
+    },
+    reorderPlayers(names: string[]) {
+      g.reorderPlayers(state, names)
       persist()
     },
     clearPlayers() {
@@ -270,6 +290,12 @@ export function useGame() {
       const n = g.autoFillCivilians(state)
       refresh()
       return n
+    },
+
+    cupidConnect(names: string[]): string | null {
+      const err = g.cupidConnect(state, names)
+      refresh()
+      return err
     },
 
     flowToggle() {
@@ -402,6 +428,18 @@ export function useGame() {
       state.recordText = ""
       persist()
     },
+    /** 手动同步最近一局到飞书（返回错误信息或 null） */
+    async syncLastGame(): Promise<string | null> {
+      const rec = history.value[history.value.length - 1]
+      if (!rec) return "暂无已结算的对局"
+      syncStatus.value = "syncing"
+      const err = await syncGameToFeishu(rec)
+      syncStatus.value = err ? `⚠️ 同步失败：${err}` : "✅ 已同步最近一局到飞书"
+      setTimeout(() => {
+        syncStatus.value = ""
+      }, 6000)
+      return err
+    },
   }
 
   return {
@@ -413,6 +451,7 @@ export function useGame() {
     history,
     sessionNo,
     sessionTitle,
+    syncStatus,
     playerCount,
     maxNeed,
     aliveList,
@@ -436,6 +475,7 @@ export function useGame() {
       playerLabel: g.playerLabel,
       campBreakdown: g.campBreakdown,
       isWolfRole: g.isWolfRole,
+      getChainType: g.getChainType,
       roleAvatar,
       decorateLog: g.decorateLog,
       cleanLogLine: g.cleanLogLine,

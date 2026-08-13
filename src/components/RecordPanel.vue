@@ -3,11 +3,18 @@ import { App as AntApp } from "ant-design-vue"
 import { buildCSV, decorateLog, cleanLogLine } from "@/game/logic"
 import type { Game } from "@/types"
 import type { GameRecord } from "@/composables/useGame"
+import { SYNC_ENABLED } from "@/api/feishuSync"
 
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, actions, history, sessionNo } = props.game
+const { state, actions, history, sessionNo, syncStatus } = props.game
+
+async function doManualSync() {
+  const err = await actions.syncLastGame()
+  if (err) message.error(err)
+  else message.success("已同步到飞书")
+}
 
 /** 历史记录日志展示：去时间 + 玩家名转 号码(身份) */
 function fmtLog(h: GameRecord, l: string, i: number): string {
@@ -71,6 +78,21 @@ function exportAll() {
         <a-button @click="exportCSV">导出本局CSV</a-button>
         <a-button danger size="small" @click="clearRec">清空本局文本</a-button>
       </a-space>
+    </a-card>
+
+    <!-- 飞书同步（本地桥接） -->
+    <a-card v-if="SYNC_ENABLED" title="☁️ 飞书表格同步" :bordered="false">
+      <div class="small" style="margin-bottom: 10px">
+        对局结算后写入飞书表格（每局复盘 + 积分统计）。需要本机已运行本地桥接（<code>bun run server</code>），或生产环境配置
+        <code>VITE_SYNC_URL=http://localhost:3457</code>。
+      </div>
+      <a-space :wrap="true">
+        <a-button size="small" type="primary" :disabled="!history.length" @click="doManualSync">
+          手动同步最近一局
+        </a-button>
+      </a-space>
+      <div v-if="syncStatus" class="small" style="margin-top: 8px; color: #ffd666">{{ syncStatus }}</div>
+      <div v-else class="small" style="margin-top: 8px; color: #888">结算时自动同步，此处可手动补同步</div>
     </a-card>
 
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
