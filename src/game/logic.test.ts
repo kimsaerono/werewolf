@@ -24,11 +24,16 @@ import {
   getBoardRoles,
   canAddRole,
   applyBoard,
+  reorderPlayers,
   setJudge,
   confirmPlayers,
   boardConfig,
   WIN_TEXT,
   NO_CHECK,
+  cupidConnect,
+  applyLoverDeaths,
+  getChainType,
+  isLover,
   type GameState,
   type Player,
 } from "./logic"
@@ -265,17 +270,19 @@ describe("算分引擎", () => {
     expect(g(st, "P0").scoreRound).toBe(3.5)
   })
 
-  it("神职胜利+3 / 平民胜利+2", () => {
+  it("好人胜利：神职+3 且平民+2（狼全灭同时发分）", () => {
     const st = setup()
     st.winCamp = "god"
     st.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
     recalcScore(st)
     expect(byRole(st, "预言家")!.scoreRound).toBe(3)
+    expect(byRole(st, "平民")!.scoreRound).toBe(2)
     const st2 = setup()
     st2.winCamp = "civil"
     st2.players.filter((p) => p.role !== "平民").forEach((p) => (p.alive = false))
     recalcScore(st2)
     expect(st2.players.find((p) => p.role === "平民")!.scoreRound).toBe(2)
+    expect(byRole(st2, "预言家")!.scoreRound).toBe(3)
   })
 
   it("MVP/SVP/背锅侠", () => {
@@ -521,5 +528,225 @@ describe("角色配额", () => {
     confirmPlayers(st)
     expect(st.playersConfirmed).toBe(true)
     expect(st.globalLog.some((l) => l.includes("确认"))).toBe(true)
+  })
+
+  it("reorderPlayers 按新顺序整序并重编座位号", () => {
+    const st = defaultState()
+    ;["A", "B", "C", "D"].forEach((n) => addPlayer(st, n))
+    reorderPlayers(st, ["D", "A", "C", "B"])
+    expect(st.players.map((p) => p.name)).toEqual(["D", "A", "C", "B"])
+    expect(st.players.map((p) => p.no)).toEqual([1, 2, 3, 4])
+    // 缺名/多名容错：未出现在新序中的玩家追加到末尾
+    reorderPlayers(st, ["B", "A"])
+    expect(st.players.map((p) => p.name)).toEqual(["B", "A", "D", "C"])
+  })
+})
+
+describe("丘比特 / 情侣", () => {
+  // 预女猎丘 4狼4民：P0-P3狼人 P4预言家 P5女巫 P6猎人 P7丘比特 P8-P11平民
+  function setupQ(): GameState {
+    const st = defaultState()
+    st.board = "12q"
+    st.players = [
+      "狼人", "狼人", "狼人", "狼人",
+      "预言家", "女巫", "猎人", "丘比特",
+      "平民", "平民", "平民", "平民",
+    ].map((r, i) => {
+      const p = newPlayer("P" + i)
+      p.role = r
+      return p
+    })
+    return st
+  }
+
+  it("丘比特连人：成功/重复/数量错误/连自己", () => {
+    const st = setupQ()
+    expect(cupidConnect(st, ["P0", "P8"])).toBeNull()
+    expect(st.lovers).toEqual(["P0", "P8"])
+    expect(getChainType(st)).toBe("WG")
+    expect(cupidConnect(st, ["P1", "P2"])).toContain("不能重复连接")
+    expect(cupidConnect(st, ["P3"])).toContain("两位")
+    expect(cupidConnect(st, ["P7", "P9"])).toContain("连自己")
+  })
+
+  it("链型判定：GG/WW/WG/未确认", () => {
+    const st = setupQ()
+    expect(getChainType(st)).toBe("")
+    cupidConnect(st, ["P0", "P8"])
+    expect(getChainType(st)).toBe("WG")
+    const st2 = setupQ()
+    cupidConnect(st2, ["P0", "P1"])
+    expect(getChainType(st2)).toBe("WW")
+    const st3 = setupQ()
+    cupidConnect(st3, ["P8", "P9"])
+    expect(getChainType(st3)).toBe("GG")
+    const st4 = setupQ()
+    g(st4, "P8").role = ""
+    cupidConnect(st4, ["P0", "P8"])
+    expect(getChainType(st4)).toBe("")
+  })
+
+  it("殉情：被刀后伴侣立刻出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋 P0狼恋人 P8好人恋人
+    nextNight(st)
+    wolfKill(st, "P8") // 狼刀好人恋人
+    resolveNightDeath(st)
+    expect(g(st, "P8").alive).toBe(false)
+    expect(g(st, "P0").alive).toBe(false) // 狼恋人殉情
+    expect(st.globalLog.some((l) => l.includes("殉情"))).toBe(true)
+  })
+
+  it("殉情：被毒后伴侣立刻出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P8", "P9"]) // 人人恋
+    nextNight(st)
+    wolfKill(st, "P5")
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P8"
+    st.nightSteps.witch = true
+    resolveNightDeath(st)
+    expect(g(st, "P8").alive).toBe(false)
+    expect(g(st, "P9").alive).toBe(false)
+  })
+
+  it("殉情：被放逐后伴侣出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P10", "P11"])
+    finishVote(st, "P10", false)
+    expect(g(st, "P10").alive).toBe(false)
+    expect(g(st, "P11").alive).toBe(false)
+  })
+
+  it("殉情：猎人被放逐可开枪，但殉情的猎人不触发开枪", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P10", "P6"]) // 平民恋人+猎人恋人
+    finishVote(st, "P10", false) // 平民先出局 → 猎人殉情
+    expect(g(st, "P6").alive).toBe(false)
+    expect(st.hunterShotPending).toBe(false)
+
+    const st2 = setupQ()
+    cupidConnect(st2, ["P6", "P8"]) // 猎人先出局
+    finishVote(st2, "P6", false)
+    expect(g(st2, "P6").alive).toBe(false)
+    expect(st2.hunterShotPending).toBe(true) // 猎人主动出局可开枪
+    expect(g(st2, "P8").alive).toBe(false) // 平民殉情
+  })
+
+  it("殉情：狼王被刀可开枪，殉情的狼王不可", () => {
+    const st2 = setupQ()
+    g(st2, "P7").role = "狼王"
+    st2.lovers = ["P10", "P7"] // 直接设恋人（狼王没有专属板，绕过丘比特）
+    finishVote(st2, "P7", false)
+    expect(g(st2, "P7").alive).toBe(false)
+    expect(st2.wolfKingShotPending).toBe(true)
+    expect(g(st2, "P10").alive).toBe(false)
+  })
+
+  it("互刀限制：狼恋人不能作为刀人目标", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0 狼恋人
+    nextNight(st)
+    const err = wolfKill(st, "P0")
+    expect(err).toContain("互刀")
+    expect(wolfKill(st, "P8")).toBeNull() // 好人恋人可以被刀
+  })
+
+  it("第三方胜：只剩丘比特+情侣时直接获胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋
+    st.round = 3
+    st.phase = "day"
+    // 丘比特 P7 + 恋人 P0 P8 存活；其余全死
+    st.players.forEach((p) => {
+      if (!["P7", "P0", "P8"].includes(p.name)) p.alive = false
+    })
+    const r = checkWin(st)
+    expect(r.ended).toBe(true)
+    expect(st.winCamp).toBe("third")
+    expect(r.text).toBe(WIN_TEXT.third)
+  })
+
+  it("人狼恋：只杀光单身狼不算好人赢（第三方情侣还在）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，P0狼恋人 P8好人恋人
+    st.round = 3
+    st.phase = "day"
+    ;["P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 单身狼死光
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 好人不能赢，第三方 P0/P8 还在
+  })
+
+  it("人狼恋：只达成屠边不算狼赢（第三方情侣还在）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false)) // 屠神，但丘比特 P7 不算神
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：丘比特死但情侣存活 → 第三方保留，好/狼不判胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    g(st, "P7").alive = false // 丘比特死
+    ;["P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：情侣双死 → 第三方解散，回归好狼对抗", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 情侣+所有狼死
+    const r = checkWin(st)
+    expect(st.winCamp).toBe("god")
+    expect(r.reason).toContain("好人")
+  })
+
+  it("人狼恋：情侣双死且屠边 → 狼胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    // 情侣 + 神 + 民 全部出局，只剩狼 P1 与丘比特 P7
+    ;["P0", "P8", "P4", "P5", "P6", "P9", "P10", "P11"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+
+  it("屠边不含丘比特：丘比特活着也算屠神成功", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P8", "P9"]) // 人人恋，丘比特属好人但不计神
+    st.round = 2
+    st.phase = "day"
+    ;["P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false)) // 预女猎死光
+    ;["P8", "P9"].forEach((n) => (g(st, n).alive = false)) // 情侣已死（无第三方影响）
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf") // 屠神成功（丘比特活着也不算神）
+  })
+
+  it("第三方算分：丘比特+情侣各+3", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.winCamp = "third"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
+    expect(g(st, "P0").scoreRound).toBe(3)
+    expect(g(st, "P8").scoreRound).toBe(3)
+    expect(g(st, "P1").scoreRound).toBe(0)
+  })
+
+  it("好人胜利时丘比特+3", () => {
+    const st = setupQ()
+    st.winCamp = "god"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
   })
 })

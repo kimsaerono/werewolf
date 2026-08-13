@@ -13,16 +13,18 @@ export const boardConfig: Record<string, string[]> = {
   "12": ["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "白痴", "平民", "平民", "平民", "平民"],
   "13": ["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "白痴", "平民", "平民", "平民", "平民", "平民"],
   "12k": ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "骑士", "白痴", "平民", "平民", "平民", "平民"],
+  "12q": ["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "丘比特", "平民", "平民", "平民", "平民"],
   "13w": ["白狼王", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "白痴", "平民", "平民", "平民", "平民", "平民"],
 }
-export const ALL_ROLE_OPT = ["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民"]
+export const ALL_ROLE_OPT = ["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"]
+/** 神职列表（丘比特独立特殊好人牌，不计神/民，不入此列） */
 export const GOD_LIST = ["预言家", "女巫", "猎人", "白痴", "守卫", "骑士"]
 /** 狼人阵营（含白狼王、狼王） */
 export function isWolfRole(role: string): boolean {
   return role === "狼人" || role === "白狼王" || role === "狼王"
 }
 /** 唯一性角色：每个最多 1 个，不能重复加 */
-export const UNIQUE_ROLES = ["预言家", "女巫", "猎人", "守卫", "白痴", "骑士", "白狼王", "狼王"]
+export const UNIQUE_ROLES = ["预言家", "女巫", "猎人", "守卫", "白痴", "骑士", "白狼王", "狼王", "丘比特"]
 /** 角色头像表情，一眼认出 */
 export const ROLE_EMOJI: Record<string, string> = {
   狼人: "🐺",
@@ -35,6 +37,7 @@ export const ROLE_EMOJI: Record<string, string> = {
   骑士: "⚔️",
   白痴: "🙊",
   平民: "👤",
+  丘比特: "💘",
 }
 
 export const boardLabels: Record<string, string> = {
@@ -50,6 +53,7 @@ export const boardLabels: Record<string, string> = {
   "12": "12人预女猎白｜4狼+预言家+女巫+猎人+白痴+4平民",
   "13": "13人预女猎白扩｜4狼+预言家+女巫+猎人+白痴+5平民",
   "12k": "12人预女猎骑白｜3狼+预言家+女巫+猎人+骑士+白痴+4平民",
+  "12q": "12人预女猎丘｜4狼+预言家+女巫+猎人+丘比特+4平民",
   "13w": "13人白狼王｜白狼王+3狼+预言家+女巫+猎人+白痴+5平民",
 }
 
@@ -87,11 +91,13 @@ export interface Player {
   mark: Mark
 }
 
-export type WinCamp = "wolf" | "god" | "civil" | null
+export type WinCamp = "wolf" | "god" | "civil" | "third" | null
 export type Phase = "idle" | "night" | "day"
 
 export const DEFAULT_VOICES: Record<string, string> = {
   night_start: "天黑请闭眼。",
+  cupid: "丘比特请睁眼！指认你选定的两位情侣，让大家感受爱情，看完赶紧闭眼。",
+  cupid_close: "丘比特请闭眼。",
   wolf: "狼崽子睁眼！认认你的同伙，商量今晚刀哪个大冤种，密谋完赶紧闭眼装好人。",
   wolf_close: "狼人请闭眼。",
   prophet: "算命大仙请睁眼！扒开一位玩家的底牌，看完把嘴捂严实，闭眼！",
@@ -169,6 +175,8 @@ export interface GameState {
   svp: string
   beiguo: string
   finished: boolean
+  /** 丘比特首夜连的情侣（2 人名字，顺序无关） */
+  lovers: string[]
 }
 
 export function defaultMark(): Mark {
@@ -238,6 +246,7 @@ export function defaultState(): GameState {
     svp: "",
     beiguo: "",
     finished: false,
+    lovers: [],
   }
 }
 
@@ -267,6 +276,7 @@ export function normalizeState(s: GameState): GameState {
   if (st.players.length > 0 && (st.round > 0 || st.phase !== "idle")) st.playersConfirmed = true
   if (!Array.isArray(st.flow)) st.flow = []
   if (!Array.isArray(st.jingHuiFlow)) st.jingHuiFlow = []
+  if (!Array.isArray(st.lovers)) st.lovers = []
   const legacy = (s as { judgeScore?: number }).judgeScore
   if (typeof legacy === "number" && st.judge) {
     st.judgeScores[st.judge] = (st.judgeScores[st.judge] || 0) + legacy
@@ -478,6 +488,7 @@ export function startNewGame(state: GameState): void {
   state.svp = ""
   state.beiguo = ""
   state.finished = false
+  state.lovers = []
   pushGlobalLog(state, "✅本局开始：发牌后由法官在夜晚睁眼时确认身份")
 }
 
@@ -511,6 +522,73 @@ export function pushNightLog(state: GameState, txt: string): void {
 /** 记录对局流程步骤（进度流用） */
 export function pushFlow(state: GameState, label: string, target = "", detail = ""): void {
   state.flow.push({ night: state.round, label, target, detail })
+}
+
+// ===================== 丘比特 / 情侣 =====================
+
+/** 判断某玩家是否为情侣成员 */
+export function isLover(state: GameState, name: string): boolean {
+  return state.lovers.includes(name)
+}
+
+/** 情侣中的另一位；非情侣或配偶不存在返回空串 */
+export function loverPartner(state: GameState, name: string): string {
+  if (!isLover(state, name)) return ""
+  return state.lovers.find((n) => n !== name) || ""
+}
+
+/** 链型：GG 人人恋 / WW 狼狼恋 / WG 人狼恋；身份未全部确认时返回空串 */
+export function getChainType(state: GameState): "GG" | "WW" | "WG" | "" {
+  const [a, b] = state.lovers
+  if (!a || !b) return ""
+  const pa = state.players.find((p) => p.name === a)
+  const pb = state.players.find((p) => p.name === b)
+  if (!pa || !pb || !pa.role || !pb.role) return ""
+  const aw = isWolfRole(pa.role)
+  const bw = isWolfRole(pb.role)
+  if (aw && bw) return "WW"
+  if (!aw && !bw) return "GG"
+  return "WG"
+}
+
+/** 丘比特首夜连人：连接两名玩家为情侣（顺序无关，不能连自己） */
+export function cupidConnect(state: GameState, names: string[]): string | null {
+  const cupid = state.players.find((p) => p.role === "丘比特")
+  if (!cupid) return "本局没有丘比特"
+  const list = [...new Set(names.filter(Boolean))]
+  if (list.length !== 2) return "请选择两位玩家作为情侣"
+  if (list.includes(cupid.name)) return "丘比特不能连自己"
+  for (const n of list) {
+    if (!state.players.some((p) => p.name === n)) return `未找到玩家 ${n}`
+  }
+  if (state.lovers.length) return "情侣已在首夜连过，不能重复连接"
+  state.lovers = list
+  const chain = getChainType(state)
+  const chainText = chain === "WG" ? "人狼恋" : chain === "WW" ? "狼狼恋" : chain === "GG" ? "人人恋" : "待身份确认后判定"
+  const third = chain === "WG" ? "（第三方阵营成立！）" : ""
+  pushGlobalLog(state, `💘丘比特将 ${list.join(" ❤ ") || ""} 连为情侣：${chainText}${third}`)
+  pushNightLog(state, `💘丘比特连人：${list.join(" ❤ ")}（${chainText}）`)
+  pushFlow(state, "丘比特连人", list.join("、"), chainText)
+  return null
+}
+
+/** 情侣一人出局 → 另一人立刻殉情（不开枪，连带死亡）；返回本次殉情出局的名字 */
+export function applyLoverDeaths(state: GameState): string[] {
+  const killed: string[] = []
+  for (const name of state.lovers) {
+    const p = state.players.find((x) => x.name === name)
+    if (!p || p.alive) continue
+    const partnerName = loverPartner(state, name)
+    if (!partnerName) continue
+    const partner = state.players.find((x) => x.name === partnerName)
+    if (partner && partner.alive) {
+      partner.alive = false
+      killed.push(partnerName)
+      pushGlobalLog(state, `💔${partnerName}因情侣殉情出局`)
+      pushNightLog(state, `💔${partnerName}殉情出局`)
+    }
+  }
+  return killed
 }
 
 // ===================== 操作函数（纯逻辑，返回错误信息或 null）=====================
@@ -548,6 +626,22 @@ export function movePlayer(state: GameState, from: number, to: number): void {
   if (from < 0 || to < 0 || from >= state.players.length || to >= state.players.length || from === to) return
   const [item] = state.players.splice(from, 1)
   state.players.splice(to, 0, item)
+}
+
+/** 拖动结束后按新顺序整序（跨列拖动用）：names 为新顺序的玩家名 */
+export function reorderPlayers(state: GameState, names: string[]): void {
+  const byName = new Map(state.players.map((p) => [p.name, p]))
+  const next: Player[] = []
+  for (const n of names) {
+    const p = byName.get(n)
+    if (p) {
+      next.push(p)
+      byName.delete(n)
+    }
+  }
+  for (const p of byName.values()) next.push(p)
+  state.players = next
+  renumberPlayers(state)
 }
 
 export function clearAllPlayers(state: GameState): void {
@@ -623,6 +717,7 @@ export function manualSaveRoles(state: GameState): string | null {
   state.svp = ""
   state.beiguo = ""
   state.finished = false
+  state.lovers = []
   pushGlobalLog(state, "✅法官手动分配角色完成，本局开始")
   return null
 }
@@ -650,6 +745,10 @@ export function wolfKill(state: GameState, sel: string): string | null {
   if (!sel) return "请选择被刀对象"
   const target = state.players.find((x) => x.name === sel)
   const isSelf = target ? isWolfRole(target.role) : false
+  // 情侣不能互刀：狼恋人不可作为刀人目标
+  if (target && isLover(state, sel) && isWolfRole(target.role)) {
+    return `情侣不能互刀，请重新选择刀人对象（${sel}是狼人恋人）`
+  }
   const prev = state.nightWolfKill
   state.nightSteps.wolf = true
   state.wolfSelfKill = isSelf
@@ -774,6 +873,7 @@ export function hunterShootConfirm(state: GameState, tarName: string): string | 
   else hunter.mark.hunterKillGood = true
   state.hunterShotPending = false
   state.hunterShotDone = true
+  applyLoverDeaths(state)
   pushNightLog(state, `🔫猎人${hunter.name}开枪带走${tarName}`)
   pushGlobalLog(state, `🔫猎人${hunter.name}开枪带走：${tarName}`)
   pushFlow(state, "猎人开枪", tarName)
@@ -807,6 +907,7 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   else wk.mark.wolfKingShotGood = true
   state.wolfKingShotPending = false
   state.wolfKingShotDone = true
+  applyLoverDeaths(state)
   pushNightLog(state, `🔫狼王${wk.name}开枪带走${tarName}`)
   pushGlobalLog(state, `🔫狼王${wk.name}开枪带走：${tarName}`)
   pushFlow(state, "狼王开枪", tarName)
@@ -840,12 +941,14 @@ export function knightDuel(state: GameState, tar: string): string | null {
   if (isWolfRole(t.role)) {
     t.alive = false
     knight.mark.hunterKillWolf = true
+    applyLoverDeaths(state)
     pushGlobalLog(state, `⚔️骑士${knight.name}决斗戳中狼人${tar}，狼人出局`)
     pushNightLog(state, `⚔️骑士决斗：${tar}是狼，被戳出局`)
     pushFlow(state, "骑士决斗", tar, "戳中狼")
   } else {
     knight.alive = false
     knight.mark.hunterKillGood = true
+    applyLoverDeaths(state)
     pushGlobalLog(state, `⚔️骑士${knight.name}决斗戳错好人${tar}，骑士自己出局`)
     pushNightLog(state, `⚔️骑士决斗戳错，骑士出局`)
     pushFlow(state, "骑士决斗", tar, "戳错")
@@ -921,6 +1024,7 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     pushFlow(state, "放逐", outName, "白痴翻牌")
   } else {
     outP.alive = false
+    applyLoverDeaths(state)
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
     if (outP.role === "猎人" && !outP.mark.hunterIsPoisoned) {
@@ -943,6 +1047,7 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   if (!isWolfRole(p.role)) return "只能选择狼人/白狼王自爆"
   p.alive = false
   state.skipVote = true
+  applyLoverDeaths(state)
   pushGlobalLog(state, `💥狼人自爆：${sel}，本日跳过投票`)
   pushFlow(state, "狼人自爆", sel)
   return null
@@ -963,6 +1068,7 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   p.alive = false
   t.alive = false
   state.skipVote = true
+  applyLoverDeaths(state)
   if (t.role === "猎人" && !t.mark.hunterIsPoisoned) {
     state.hunterShotPending = true
     pushGlobalLog(state, `🔫猎人${tar}被白狼王带走，可开枪`)
@@ -1027,6 +1133,9 @@ export function resolveNightDeath(state: GameState): string | null {
       }
     }
   })
+
+  // 殉情：情侣一方出局则另一方立刻同死（不开枪），并入天亮死亡名单
+  deathList.push(...applyLoverDeaths(state))
 
   state.guardLastTarget = state.nightGuardTarget
   state.skipVote = false
@@ -1159,23 +1268,38 @@ export function recalcScore(state: GameState): void {
         }
       }
     }
-    if (win === "god" && GOD_LIST.includes(p.role)) {
+    // 好人胜利（狼全灭）：神职与平民同时拿基础分
+    if ((win === "god" || win === "civil") && GOD_LIST.includes(p.role)) {
       s += 3
       detail.push("神职胜利+3")
     }
-    if (win === "civil" && p.role === "平民") {
+    if ((win === "god" || win === "civil") && p.role === "平民") {
       s += 2
       detail.push("平民胜利+2")
+    }
+    if (win === "third" && (p.role === "丘比特" || isLover(state, p.name))) {
+      s += 3
+      detail.push("第三方胜利+3")
+    }
+    if ((win === "god" || win === "civil") && p.role === "丘比特") {
+      s += 3
+      detail.push("好人胜利·丘比特+3")
     }
     p.scoreRound = Math.round(s * 10) / 10
     p.scoreDetail = detail
   })
 }
 
-export const WIN_TEXT: Record<"wolf" | "god" | "civil", string> = {
+export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third", string> = {
   wolf: "狼人胜利",
   god: "神职胜利",
   civil: "平民胜利",
+  third: "第三方胜利",
+}
+
+/** 第三方成员：丘比特 + 两位恋人（人狼恋时三人一体） */
+function isThirdMember(state: GameState, p: Player): boolean {
+  return p.role === "丘比特" || isLover(state, p.name)
 }
 
 /** 自动判定胜负；返回是否"本次刚判出胜负"、胜负文案及原因（用于弹窗） */
@@ -1187,9 +1311,20 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   const aliveCivil = state.players.filter((p) => p.alive && p.role === "平民")
   const allAssigned = state.players.length > 0 && state.players.every((p) => p.role)
   const started = allAssigned && (state.phase !== "idle" || state.round > 0)
+  // 人狼恋第三方：情侣仍存活（殉情保证两人同生共死）
+  const chain = getChainType(state)
+  const loversBothAlive = state.lovers.length === 2 && state.lovers.every((n) => state.players.find((p) => p.name === n)?.alive)
+  const thirdActive = started && chain === "WG" && loversBothAlive
   let wc: WinCamp = null
   if (started) {
-    if (aliveWolf.length > 0) {
+    if (thirdActive) {
+      // ① 第三方胜：存活玩家全部是第三方成员（丘比特/恋人）——丘比特已死时只剩情侣两人也算
+      const aliveAll = state.players.filter((p) => p.alive)
+      if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
+        wc = "third"
+      }
+      // 否则：情侣未死前，好/狼一律不判胜（第三方保留）
+    } else if (aliveWolf.length > 0) {
       // 屠边：神或民任一全灭；屠城：神与民全灭
       const goodGone = state.winMode === "city" ? aliveGod.length === 0 && aliveCivil.length === 0 : aliveGod.length === 0 || aliveCivil.length === 0
       if (goodGone) wc = "wolf"
@@ -1198,26 +1333,30 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
     }
   }
   let reason = ""
-  if (wc === "wolf") {
+  if (wc === "third") {
+    reason = "场上只剩丘比特与人狼情侣，第三方存活到最后"
+  } else if (wc === "wolf") {
     const goneGod = aliveGod.length === 0
     const goneCivil = aliveCivil.length === 0
     reason =
-      goneGod && goneCivil
-        ? "狼人存活，神职与平民全灭"
-        : state.winMode === "city"
-          ? "屠城：狼人存活，神职与平民尚未全灭"
-          : goneGod
-            ? "屠边：神职全灭"
-            : "屠边：平民全灭"
+      thirdActive
+        ? "狼人屠边且第三方情侣已出局"
+        : goneGod && goneCivil
+          ? "狼人存活，神职与平民全灭"
+          : state.winMode === "city"
+            ? "屠城：狼人存活，神职与平民尚未全灭"
+            : goneGod
+              ? "屠边：神职全灭"
+              : "屠边：平民全灭"
   } else if (wc === "god") {
-    reason = "所有狼人已出局，好人胜利"
+    reason = thirdActive ? "所有狼人与第三方均已出局，好人胜利" : "所有狼人已出局，好人胜利"
   } else if (wc === "civil") {
-    reason = "所有狼人已出局，好人胜利"
+    reason = thirdActive ? "所有狼人与第三方均已出局，好人胜利" : "所有狼人已出局，好人胜利"
   }
   const prev = state.winCamp
   state.winCamp = wc
   const ended = prev !== wc && wc !== null
-  return { ended, text: ended ? WIN_TEXT[wc as "wolf" | "god" | "civil"] : "", reason }
+  return { ended, text: ended ? WIN_TEXT[wc as "wolf" | "god" | "civil" | "third"] : "", reason }
 }
 
 // ===================== 荣誉 / 结算 / 导出 =====================
@@ -1257,6 +1396,11 @@ export function buildAutoRecord(state: GameState, title?: string): string {
   let txt = "====狼人杀对局复盘====\n"
   if (title) txt = `====${title}====\n`
   txt += `板子：${state.board}\n胜利阵营：${state.winCamp ? WIN_TEXT[state.winCamp] : "未结束"}\n`
+  if (state.lovers.length) {
+    const chain = getChainType(state)
+    const chainText = chain === "WG" ? "人狼恋·第三方" : chain === "WW" ? "狼狼恋" : chain === "GG" ? "人人恋" : "待判定"
+    txt += `情侣：${state.lovers.join(" ❤ ")}（${chainText}）\n`
+  }
   if (state.judge) txt += `法官：${state.judge}（+0.5/局，累计 ${state.judgeScores[state.judge] || 0} 分）\n`
   state.players.forEach((p) => {
     txt += `玩家【${p.name}】身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}（${p.scoreDetail.join("；") || "无加分"}）\n`
@@ -1273,12 +1417,18 @@ export function campBreakdown(state: GameState): string {
   const wolves = state.players.filter((p) => isWolfRole(p.role))
   const gods = state.players.filter((p) => GOD_LIST.includes(p.role))
   const civils = state.players.filter((p) => p.role === "平民")
+  const cupid = state.players.find((p) => p.role === "丘比特")
   const fmt = (arr: Player[]) => (arr.length ? arr.map((p) => `${p.no || 0}.${p.name}(${p.role})`).join("、") : "无")
-  return `🐺狼人阵营：${fmt(wolves)}\n🔮神职阵营：${fmt(gods)}\n👤平民阵营：${fmt(civils)}`
+  let txt = `🐺狼人阵营：${fmt(wolves)}\n🔮神职阵营：${fmt(gods)}\n👤平民阵营：${fmt(civils)}`
+  if (cupid || state.lovers.length) {
+    const thirdMembers = state.players.filter((p) => p.role === "丘比特" || isLover(state, p.name))
+    txt += `\n💘情侣阵营：${fmt(thirdMembers)}${getChainType(state) === "WG" ? "（人狼恋·第三方）" : "（丘比特属好人）"}`
+  }
+  return txt
 }
 
 export function buildCSV(state: GameState): string {
-  const campMap: Record<string, string> = { wolf: "狼人", god: "神职", civil: "平民" }
+  const campMap: Record<string, string> = { wolf: "狼人", god: "神职", civil: "平民", third: "第三方" }
   const rows: string[][] = [["玩家", "身份", "存活", "技能分明细", "本轮分", "总分"]]
   state.players.forEach((p) => {
     rows.push([p.name, p.role, p.alive ? "存活" : "出局", p.scoreDetail.join("；") || "-", p.scoreRound.toFixed(1), p.scoreTotal.toFixed(1)])
