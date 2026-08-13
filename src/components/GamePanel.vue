@@ -4,6 +4,7 @@ import { App as AntApp } from "ant-design-vue"
 import { speak, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
+import SeatBoard from "@/components/SeatBoard.vue"
 import type { Game } from "@/types"
 
 const { message, modal } = AntApp.useApp()
@@ -50,6 +51,8 @@ const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
 const wolfConfirmOpen = ref(false)
 const wolfSel = ref<string[]>([])
+const cupidConnectOpen = ref(false)
+const cupidSel = ref<string[]>([])
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35
@@ -167,6 +170,7 @@ const hasHunter = hasRole("猎人")
 const hasKnight = hasRole("骑士")
 const hasIdiot = hasRole("白痴")
 const hasWWK = hasRole("白狼王")
+const hasCupid = hasRole("丘比特")
 const hunterObj = computed(() => state.players.find((p) => p.role === "猎人"))
 const guardObj = computed(() => state.players.find((p) => p.role === "守卫"))
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
@@ -200,6 +204,16 @@ const aliveCount = computed(() => state.players.filter((p) => p.alive).length)
 const phaseText = computed(() =>
   state.phase === "idle" ? "未开局" : state.phase === "night" ? "🌙夜晚" : "☀️白天",
 )
+/** 当前板子配置摘要：角色 × 数量（用于顶部展示） */
+const boardSummary = computed(() => {
+  const roles = refs.getBoardRoles(state)
+  const counts: Record<string, number> = {}
+  roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
+  return Object.entries(counts)
+    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${role}×${n}`)
+    .join(" ")
+})
+const boardLabel = computed(() => refs.boardLabels[state.board] || state.board)
 
 // ===== 对局流程进度 =====
 const FLOW_EMOJI: Record<string, string> = {
@@ -209,6 +223,7 @@ const FLOW_EMOJI: Record<string, string> = {
   女巫解药: "💚",
   女巫毒药: "☠️",
   天亮: "🌅",
+  丘比特连人: "💘",
    猎人开枪: "🔫",
    猎人弃枪: "⏭️",
    狼王开枪: "🔫",
@@ -320,6 +335,7 @@ const wwkTarOptions = computed(() =>
 
 const STEP_META: Record<string, { label: string; emoji: string }> = {
   idle: { label: "开始游戏", emoji: "🚀" },
+  cupid: { label: "丘比特连人", emoji: "💘" },
   guard: { label: "守卫守人", emoji: "🛡️" },
   wolf: { label: "狼人刀人", emoji: "🌑" },
   prophet: { label: "预言家验人", emoji: "🔮" },
@@ -344,6 +360,7 @@ const STEP_VOICE: Record<string, string> = {
   prophet: "prophet",
   witch: "witch",
   knight: "knight",
+  cupid: "cupid",
   hunterOpen: "hunter_open",
   idiotOpen: "idiot_open",
   dawn: "dawn",
@@ -359,11 +376,14 @@ const STEP_CLOSE: Record<string, string> = {
   prophet: "prophet_close",
   witch: "witch_close",
   knight: "knight_close",
+  cupid: "cupid_close",
   hunterOpen: "hunter_close",
   idiotOpen: "idiot_close",
 }
 const VOICE_LABEL: Record<string, string> = {
   night_start: "进入夜晚（天黑请闭眼）",
+  cupid: "丘比特睁眼",
+  cupid_close: "丘比特闭眼",
   wolf: "狼人睁眼",
   wolf_close: "狼人闭眼",
   prophet: "预言家睁眼",
@@ -407,7 +427,8 @@ const stepKeys = computed(() => {
     const wolfQuotaN = roles.filter((r) => refs.isWolfRole(r)).length
     const wolfDone = state.players.filter((p) => refs.isWolfRole(p.role)).length >= wolfQuotaN
     const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
-    // 行动顺序：狼人 → 守卫 → 女巫 → 预言家 → 白痴(仅首夜) → 猎人(每夜) → 骑士(仅首夜) → 天亮
+    // 行动顺序：丘比特(仅首夜) → 狼人 → 守卫 → 女巫 → 预言家 → 白痴(仅首夜) → 猎人(每夜) → 骑士(仅首夜) → 天亮
+    if (state.round <= 1 && roles.includes("丘比特") && !uiDone.value.cupid) ks.push("cupid")
     if (wolfQuotaN > 0 && (!wolfDone || aliveWolf) && !uiDone.value.wolf) ks.push("wolf")
     if (roles.includes("守卫") && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
     if (roles.includes("女巫") && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
@@ -515,6 +536,60 @@ function confirmWolfSel() {
   wolfConfirmOpen.value = false
   message.success("狼人身份已确认")
 }
+
+// ===== 丘比特连人 =====
+const cupidObj = computed(() => state.players.find((p) => p.role === "丘比特"))
+const chainText = computed(() => {
+  const c = refs.getChainType(state)
+  if (c === "WG") return "人狼恋·第三方"
+  if (c === "WW") return "狼狼恋"
+  if (c === "GG") return "人人恋"
+  return ""
+})
+const loversLabel = computed(() => state.lovers.map((n) => labelOf(n)).join(" ❤ ") || "")
+function openCupidConnect() {
+  cupidSel.value = state.lovers.filter((n) => n)
+  cupidConnectOpen.value = true
+}
+function confirmCupidConnect() {
+  if (cupidSel.value.length !== 2) {
+    return message.error("请选择两位玩家作为情侣")
+  }
+  snapshot()
+  const err = actions.cupidConnect(cupidSel.value)
+  if (err) return message.error(err)
+  cupidConnectOpen.value = false
+  const c = refs.getChainType(state)
+  const txt = c === "WG" ? "人狼恋 → 第三方阵营成立！" : c === "WW" ? "狼狼恋" : c === "GG" ? "人人恋" : "已连人（身份确认后判定链型）"
+  message.success(`💘 ${state.lovers.join(" ❤ ")} 连为情侣（${txt}）`)
+  effect("cupid", undefined, `情侣：${state.lovers.join(" ❤ ")}`)
+  markDoneStep("cupid")
+  playVoice("cupid_close")
+}
+function skipCupid() {
+  confirmSkip("本轮不连人？", "丘比特本局不连情侣，确认后闭眼", () => {
+    markDoneStep("cupid")
+    playVoice("cupid_close")
+  })
+}
+/** 情侣解散判定（双方均已出局） */
+const loversGone = computed(() => state.lovers.length === 2 && state.lovers.every((n) => !state.players.find((p) => p.name === n)?.alive))
+const thirdActive = computed(() => refs.getChainType(state) === "WG" && !loversGone.value)
+/** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标） */
+const thirdMembersList = computed(() =>
+  thirdActive.value
+    ? state.players.filter((p) => p.role === "丘比特" || state.lovers.includes(p.name)).map((p) => p.name)
+    : [],
+)
+/** 情侣标签 tooltip 说明 */
+const loversTip = computed(() => {
+  if (thirdActive.value) return "❤️ 第三方阵营：丘比特 + 人狼情侣三人一体，需双方阵营连同情侣一起清空才能获胜"
+  if (refs.getChainType(state) === "GG" || refs.getChainType(state) === "WW")
+    return "情侣同生共死：一人出局另一人立即殉情（丘比特属好人阵营）"
+  if (loversGone.value) return "第三方已解散，回归好狼对抗"
+  return "情侣已连接，身份确认后判定链型"
+})
+
 /** idle 步骤：开局重置后进入第 1 晚 */
 function doBeginGame() {
   actions.startGame()
@@ -877,6 +952,7 @@ const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> 
   dawn: { emoji: "🌅", bg: "rgba(210,130,40,.88)", label: "天亮了" },
   explode: { emoji: "💥", bg: "rgba(190,50,20,.92)", label: "狼人自爆" },
   knight: { emoji: "⚔️", bg: "rgba(120,120,150,.92)", label: "骑士决斗" },
+  cupid: { emoji: "💘", bg: "rgba(190,60,110,.92)", label: "丘比特连人" },
   death: { emoji: "💀", bg: "rgba(70,70,90,.88)", label: "玩家出局" },
 }
 function effect(type: string, sfx?: SfxName, result?: string) {
@@ -890,11 +966,21 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 <template>
   <div class="panel">
     <a-card :bordered="false">
+      <!-- 板子配置：最顶部，可换行展示全部角色 -->
+      <a-tooltip :title="boardLabel" placement="bottomLeft">
+        <div class="board-config-line">🎲 {{ boardSummary }}</div>
+      </a-tooltip>
+
       <a-flex :justify="'space-between'" :wrap="'wrap'" :gap="12" style="margin-bottom: 12px">
         <a-space :wrap="true">
           <a-tag color="geekblue">阶段：{{ phaseText }}</a-tag>
           <a-tag color="purple">第 {{ state.round }} 晚</a-tag>
           <a-tag :color="aliveCount > 0 ? 'green' : 'error'">存活 {{ aliveCount }} / {{ state.players.length }}</a-tag>
+          <a-tooltip v-if="state.lovers.length" :title="loversTip">
+            <a-tag :color="thirdActive ? 'purple' : 'volcano'" style="cursor: help">
+              💘 {{ loversLabel }}<template v-if="chainText"> · {{ chainText }}</template>
+            </a-tag>
+          </a-tooltip>
           <a-tag v-if="state.jingHui" color="gold">👑 警长：{{ jingHuiLabel }}</a-tag>
           <a-tag v-if="aliveCount <= 2 && !state.finished" color="volcano">⚡ 最后一推！</a-tag>
           <a-tag v-if="state.hunterShotPending" color="error">🔴 猎人可开枪</a-tag>
@@ -911,6 +997,25 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">开始第 1 晚</h3>
           <p class="small" style="text-align: center">请先发角色卡，身份将在夜晚睁眼时由法官确认</p>
           <a-button type="primary" size="large" style="height: 48px; min-width: 220px" @click="doBeginGame">🌙 发牌完毕，进入夜晚</a-button>
+        </div>
+
+        <!-- 丘比特连人 -->
+        <div v-else-if="currentStep === 'cupid'" class="step-body">
+          <div class="step-emoji">💘</div>
+          <h3 class="step-title">丘比特连人</h3>
+          <template v-if="!hasCupid">
+            <p class="small" style="text-align: center">丘比特睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认丘比特（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('丘比特', v))">💘 确认丘比特</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">
+              丘比特：{{ cupidObj ? refs.playerLabel(cupidObj) : "-" }}
+              <template v-if="state.lovers.length">｜已连：{{ loversLabel }}<template v-if="chainText">（{{ chainText }}）</template></template>
+            </p>
+            <a-button v-if="state.lovers.length < 2" type="primary" size="large" @click="openCupidConnect">💘 选择两位情侣</a-button>
+            <a-button v-else type="primary" size="large" @click="openCupidConnect">💘 修改情侣</a-button>
+            <a-button v-if="!state.lovers.length" type="text" style="margin-top: 12px" @click="skipCupid">本轮不连人</a-button>
+          </template>
         </div>
 
         <!-- 守卫 -->
@@ -1205,22 +1310,17 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-collapse-panel>
       </a-collapse>
 
-      <!-- 存活状态 -->
-      <a-card type="inner" title="全部玩家存活状态" size="small" style="margin-top: 12px">
-        <div class="alive-list">
-          <a-tag
-            v-for="p in state.players"
-            :key="p.name"
-            :color="p.alive ? 'green' : 'default'"
-            :style="{ opacity: p.alive ? 1 : 0.5 }"
-            class="alive-tag"
-            :class="{ 'sheriff-tag': p.name === state.jingHui }"
-          >
-            <img v-if="p.role && refs.roleAvatar(p.role)" class="alive-avatar" :src="refs.roleAvatar(p.role)" :alt="p.role" />
-            <span v-if="p.name === state.jingHui" style="color:#ffd666">👑</span>{{ refs.playerLabel(p) }}{{ p.mark.idiotFlipped ? "🙊" : "" }} {{ p.alive ? "✅" : "❌" }}
-          </a-tag>
-        </div>
-      </a-card>
+      <!-- 左右两列悬浮座位牌 -->
+      <SeatBoard
+        v-if="state.players.length"
+        :players="state.players"
+        floating
+        show-lover
+        :lovers="state.lovers"
+        :third-members="thirdMembersList"
+        :judge="state.judge"
+        :jing-hui="state.jingHui"
+      />
 
       <!-- 语音配置 + 日志 -->
       <a-collapse style="margin-top: 12px">
@@ -1294,8 +1394,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       </div>
 
       <!-- 弹窗：确认狼人（首夜睁眼认人） -->
-      <a-modal v-model:open="wolfConfirmOpen" title="🐺 确认狼人（睁眼认人）" :footer="null" width="420px">
-        <p class="small">勾选本板子的狼人玩家（{{ wolfSel.length }}/{{ wolfNeed }}），选满 {{ wolfNeed }} 个后确认</p>
+      <a-modal v-model:open="wolfConfirmOpen" title="🐺 确认狼人（睁眼认人）" :footer="null" width="420px">        <p class="small">勾选本板子的狼人玩家（{{ wolfSel.length }}/{{ wolfNeed }}），选满 {{ wolfNeed }} 个后确认</p>
         <a-checkbox-group v-model:value="wolfSel" style="width: 100%">
           <div v-for="p in aliveList.filter((x) => !x.role || x.role === '狼人')" :key="p.name" class="wolf-pick-item">
             <a-checkbox :value="p.name" :disabled="!wolfSel.includes(p.name) && wolfSel.length >= wolfNeed">
@@ -1304,6 +1403,19 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           </div>
         </a-checkbox-group>
         <a-button type="primary" danger block style="margin-top: 12px" @click="confirmWolfSel">确认狼人</a-button>
+      </a-modal>
+
+      <!-- 弹窗：丘比特连人（首夜） -->
+      <a-modal v-model:open="cupidConnectOpen" title="💘 丘比特连人（首夜）" :footer="null" width="420px">
+        <p class="small">勾选两位玩家作为情侣（{{ cupidSel.length }}/2，选满 2 人后确认）</p>
+        <a-checkbox-group v-model:value="cupidSel" style="width: 100%">
+          <div v-for="p in aliveList.filter((x) => x.name !== cupidObj?.name)" :key="p.name" class="wolf-pick-item">
+            <a-checkbox :value="p.name" :disabled="!cupidSel.includes(p.name) && cupidSel.length >= 2">
+              {{ refs.playerLabel(p) }}
+            </a-checkbox>
+          </div>
+        </a-checkbox-group>
+        <a-button type="primary" block style="margin-top: 12px" :disabled="cupidSel.length !== 2" @click="confirmCupidConnect">确认连人</a-button>
       </a-modal>
 
       <!-- 弹窗：警徽设置（移交 + 警徽流） -->
@@ -1389,6 +1501,20 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 </template>
 
 <style scoped>
+/* 板子配置行：可换行完整展示，不与其它标签冲突 */
+.board-config-line {
+  font-size: 12px;
+  color: #7ec3ff;
+  background: rgba(0, 122, 255, 0.1);
+  border: 1px solid rgba(0, 122, 255, 0.25);
+  border-radius: 8px;
+  padding: 5px 10px;
+  margin: 0 0 10px;
+  line-height: 1.6;
+  white-space: normal;
+  word-break: break-word;
+  cursor: help;
+}
 .step-card {
   background: #171b28;
   border: 1px solid #2b3145;
@@ -1764,35 +1890,5 @@ function effect(type: string, sfx?: SfxName, result?: string) {
     right: 10px;
     bottom: 14px;
   }
-}
-.alive-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.alive-avatar {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: 6px;
-  object-fit: cover;
-  margin-right: 2px;
-  vertical-align: -5px;
-}
-@media (max-width: 720px) {
-  /* 移动端竖屏：按座位号分左右两列，小号左、大号右 */
-  .alive-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: 6px;
-    row-gap: 6px;
-  }
-  .alive-tag {
-    margin: 0;
-  }
-}
-.alive-tag.sheriff-tag {
-  border: 1px solid #ffd666;
-  box-shadow: 0 0 6px rgba(255, 214, 102, 0.35);
 }
 </style>

@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { getWerewolfGroupMembers } from "@/api/feishu"
+import SeatBoard from "@/components/SeatBoard.vue"
 import type { Game } from "@/types"
 
 const { message } = AntApp.useApp()
@@ -12,18 +13,37 @@ const { state, playerCount, maxNeed, actions, refs, activeTab, judgeScore } = pr
 const loading = ref(false)
 const loadStatus = ref("")
 const memberCache = ref<string[]>([])
+/** 手输成员（不在群里的名字），同时出现在法官下拉与玩家池 */
+const customMembers = ref<string[]>([])
 
 const judgePick = ref("")
 const customJudge = ref("")
+const customPlayer = ref("")
 
 const isAdded = (name: string) => state.players.some((p) => p.name === name)
 const isJudge = (name: string) => state.judge === name
 
+/** 全部可选成员：群成员 + 手输成员（去重、法官已除外逻辑在下拉 disabled 处理） */
+const allMembers = computed(() => {
+  const set = new Set<string>([...memberCache.value, ...customMembers.value])
+  return [...set]
+})
+
 /** 名字下拉：不在群（手输名字）放第一项；当前法官选项置灰不可重复选 */
 const nameOptions = computed(() => [
   { value: "__OTHER__", label: "🙋 不在群（手输名字）" },
-  ...memberCache.value.map((n) => ({ value: n, label: n, disabled: n === state.judge })),
+  ...allMembers.value.map((n) => ({ value: n, label: n, disabled: n === state.judge })),
 ])
+
+/** 手输玩家：加入成员池（同时用于法官下拉与玩家选择） */
+function addCustomPlayer() {
+  const name = customPlayer.value.trim()
+  if (!name) return message.error("请输入玩家名字")
+  if (customMembers.value.includes(name)) return message.warning(`${name} 已在成员列表中`)
+  customMembers.value.push(name)
+  customPlayer.value = ""
+  message.success(`已添加手输成员：${name}（可在上方点选为玩家，或选为法官）`)
+}
 
 function onJudgeSelect(v: string) {
   if (v && v !== "__OTHER__") {
@@ -120,11 +140,6 @@ async function loadMembers() {
 }
 onMounted(loadMembers)
 
-function addAllPool() {
-  const before = playerCount.value
-  const added = actions.importPlayers(memberCache.value.filter((n) => !isAdded(n) && !isJudge(n)))
-  message.success(`已添加全部 ${added} 人（原有 ${before} 人）`)
-}
 function confirmPlayers() {
   if (state.players.length === 0) return message.error("还没有玩家参与")
   const need = refs.getBoardRoles(state).length
@@ -134,14 +149,6 @@ function confirmPlayers() {
   actions.confirmPlayers()
   message.success(`已确认 ${state.players.length} 名玩家参与，进入「对局操作」发牌开局`)
   activeTab.value = "game"
-}
-
-const dragIdx = ref(-1)
-function onDrop(to: number) {
-  const from = dragIdx.value
-  dragIdx.value = -1
-  if (from < 0 || from === to) return
-  actions.movePlayer(from, to)
 }
 
 // ===== 成员多选：tap 点选 / 长按拖动连选 / 拖动滚动 =====
@@ -303,8 +310,6 @@ function onPoolPointerEnd(e: PointerEvent) {
         <a-tag v-else color="success" style="margin-left: 8px">✓ 人数一致</a-tag>
       </template>
       <div class="row" style="margin-top: 0">
-        <a-button size="small" @click="addAllPool">全选加入</a-button>
-        <a-button size="small" :loading="loading" @click="loadMembers">重新拉取群成员</a-button>
         <a-button danger size="small" @click="resetGame">整局重置</a-button>
         <span v-if="loadStatus" class="small">{{ loadStatus }}</span>
       </div>
@@ -333,24 +338,15 @@ function onPoolPointerEnd(e: PointerEvent) {
       <p class="small" style="margin: 6px 0">
         轻点 = 加入/移出；长按拖动 = 批量连选；滑动 = 滚动
       </p>
-      <a-divider style="margin: 12px 0">已参与玩家（可拖动排序，顺序即座位号）</a-divider>
-      <div
-        v-for="(p, idx) in state.players"
-        :key="p.name"
-        class="signed-row"
-        :class="{ dragging: dragIdx === idx }"
-        draggable="true"
-        @dragstart="dragIdx = idx"
-        @dragend="dragIdx = -1"
-        @dragover.prevent
-        @drop="onDrop(idx)"
-      >
-        <span class="seat-no">{{ p.no || idx + 1 }}</span>
-        <span class="signed-name">{{ p.name }}</span>
-        <span class="flex-spacer"></span>
-        <a-button size="small" :disabled="idx === 0" @click="actions.movePlayer(idx, idx - 1)">↑</a-button>
-        <a-button size="small" :disabled="idx === state.players.length - 1" @click="actions.movePlayer(idx, idx + 1)">↓</a-button>
-      </div>
+      <a-divider style="margin: 12px 0">已参与玩家（拖动排序）</a-divider>
+      <SeatBoard
+        v-if="state.players.length"
+        :players="state.players"
+        floating
+        draggable
+        :judge="state.judge"
+        @reorder="(names: string[]) => actions.reorderPlayers(names)"
+      />
       <a-empty v-if="!state.players.length" :image-simple="true" description="暂无玩家" />
       <div class="row" style="margin-top: 12px">
         <a-button type="primary" size="large" @click="confirmPlayers">

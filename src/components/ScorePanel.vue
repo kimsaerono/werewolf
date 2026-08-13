@@ -49,14 +49,12 @@ function rowKey(r: { name: string }) {
         :scroll="{ x: 'max-content' }"
         :row-key="rowKey"
       />
-      <div class="row" style="margin-top: 12px">
-        <a-button danger @click="actions.resetRoundScore()">重置本局所有玩家临时分</a-button>
-      </div>
     </a-card>
 
     <a-card title="计分规则摘要" :bordered="false">
       <div class="small" style="line-height: 2">
-        <div>狼人胜利每人+3；神职胜利每人+3；平民胜利每人+2</div>
+        <div>好人胜利（狼全灭）：神职每人+3 且平民每人+2；第三方胜利（丘比特+情侣）每人+3</div>
+        <div>丘比特属好人阵营时，好人胜利+3；殉情出局不开枪（猎人/狼王吞枪）</div>
         <div>预言家拿警徽+0.5；首夜验狼+0.5；每晚不验人-0.5</div>
         <div>女巫毒狼+1(上限1)，毒好人-1；解药救对好人+0.5</div>
         <div>猎人带狼+1，带好人-1；守卫守中+0.5(上限1)；同守同救-0.5</div>

@@ -35,31 +35,28 @@ function onTabChange(key: string) {
 <template>
   <a-config-provider :theme="{ algorithm: theme.darkAlgorithm }">
     <a-app>
-      <div class="page">
-        <header class="page-header">
-          <h1>🔮 狼人杀全自动计分法官</h1>
-          <p class="subtitle">法官发牌后夜晚睁眼确认身份 ｜ 自动判胜负 · 自动算技能分</p>
-        </header>
+      <div class="app-shell" :class="`phase-${state.phase}`">
+      <div class="sticky-tabs">
+        <a-tabs
+          v-model:activeKey="activeTab"
+          :tab-bar-style="{ marginBottom: 12 }"
+          @change="onTabChange"
+        >
+          <a-tab-pane
+            v-for="t in tabs"
+            :key="t.id"
+            :tab="t.label"
+            :disabled="['game', 'score', 'record'].includes(t.id) && !gameReady"
+          />
+        </a-tabs>
+      </div>
 
-        <div class="sticky-tabs">
-          <a-tabs
-            v-model:activeKey="activeTab"
-            :tab-bar-style="{ marginBottom: 12 }"
-            @change="onTabChange"
-          >
-            <a-tab-pane
-              v-for="t in tabs"
-              :key="t.id"
-              :tab="t.label"
-              :disabled="['game', 'score', 'record'].includes(t.id) && !gameReady"
-            />
-          </a-tabs>
-        </div>
-
+      <div class="page" :class="{ 'page-full': activeTab === 'score' || activeTab === 'record' }">
         <BoardSignupPanel v-show="activeTab === 'board'" :game="game" />
         <GamePanel v-show="activeTab === 'game'" :game="game" />
         <ScorePanel v-show="activeTab === 'score'" :game="game" />
         <RecordPanel v-show="activeTab === 'record'" :game="game" />
+      </div>
       </div>
 
       <!-- 胜负弹窗 -->
@@ -87,24 +84,39 @@ body {
   margin: 0;
   background: #0f1115;
 }
+/* ===== 夜晚 / 白天背景切换 ===== */
+.app-shell {
+  min-height: 100vh;
+  transition: background 0.5s ease;
+}
+.app-shell.phase-night {
+  background: linear-gradient(180deg, #0a0d16 0%, #101a2e 100%);
+}
+.app-shell.phase-day {
+  background: linear-gradient(180deg, #12151d 0%, #1c2436 100%);
+}
+.app-shell.phase-idle {
+  background: #0f1115;
+}
+/* 悬浮座位牌列宽（桌面 76px / 移动端 62px），内容区让位 */
+:root {
+  --seat-col-w: 76px;
+}
+@media (max-width: 720px) {
+  :root {
+    --seat-col-w: 62px;
+  }
+}
 .page {
   max-width: 1180px;
   margin: 0 auto;
+  padding: 16px 40px;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+/* 分数明细 / 复盘导出：无左右留白，内容全宽 */
+.page.page-full {
   padding: 16px;
-}
-.page-header {
-  text-align: center;
-  margin-bottom: 8px;
-}
-.page-header h1 {
-  font-size: 24px;
-  color: #ff6464;
-  margin: 8px 0 4px;
-}
-.subtitle {
-  color: #888;
-  font-size: 13px;
-  margin: 0 0 8px;
 }
 .win-notice {
   text-align: center;
@@ -137,8 +149,28 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #0f1115;
+  background: rgba(15, 17, 21, 0.85);
+  backdrop-filter: blur(8px);
   padding: 6px 0 0;
+  width: 100%;
+}
+.sticky-tabs :deep(.ant-tabs) {
+  width: 100%;
+}
+.sticky-tabs :deep(.ant-tabs-nav) {
+  width: 100%;
+}
+.sticky-tabs :deep(.ant-tabs-tab) {
+  flex: 1;
+  justify-content: center;
+  text-align: center;
+}
+.sticky-tabs :deep(.ant-tabs-nav-wrap) {
+  display: flex;
+}
+.sticky-tabs :deep(.ant-tabs-nav-list) {
+  display: flex;
+  width: 100%;
 }
 .panel {
   margin-bottom: 14px;
@@ -152,6 +184,33 @@ body {
 }
 .ant-card + .ant-card {
   margin-top: 12px;
+}
+/* 文案尽量不换行、不省略：缩小字号适配 */
+.ant-card-head-title {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  min-width: 0;
+  font-size: 13px;
+}
+.ant-card-head {
+  flex-wrap: wrap;
+}
+.ant-card-head-title .ant-tag,
+.ant-card-head-title .small,
+.ant-card-head-title span {
+  font-size: 12px;
+}
+.ant-divider-inner-text {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: 100%;
+  font-size: 12px;
+}
+/* 按钮组可收缩换行，避免横向溢出 */
+.ant-btn {
+  max-width: 100%;
 }
 .start-game-bar {
   position: sticky;
@@ -293,37 +352,6 @@ body {
   color: #999;
   font-size: 12px;
 }
-.signed-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid #2b3145;
-  background: #1d2233;
-  margin: 6px 0;
-  cursor: grab;
-}
-.signed-row.dragging {
-  opacity: 0.5;
-  border-style: dashed;
-}
-.seat-no {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #3742fa;
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-}
-.signed-name {
-  font-weight: 600;
-}
 .flex-spacer {
   flex: 1;
 }
@@ -349,13 +377,11 @@ body {
 }
 @media (max-width: 720px) {
   .page {
+    padding: 10px 40px;
+    overflow-x: hidden;
+  }
+  .page.page-full {
     padding: 10px;
-  }
-  .page-header h1 {
-    font-size: 18px;
-  }
-  .ant-tabs .ant-tabs-tab {
-    padding: 8px 10px;
   }
   .row {
     gap: 8px;
