@@ -106,7 +106,7 @@ const speechRunning = ref(false)
 const speechLeft = ref(0)
 const randNo = ref<number | null>(null)
 let lastBeep = 99
-const SPEECH_SECONDS = computed(() => (state.jingHui ? 45 : 35))
+const SPEECH_SECONDS = computed(() => (state.jingHui ? 35 : 30))
 const speechOrderHint = computed(() => {
   if (state.jingHui) return `警长 ${jingHuiLabel.value} 左右侧发言`
   return "无警长：死左 / 死右发言（可抽随机数）"
