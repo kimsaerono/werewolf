@@ -35,6 +35,9 @@ const nameOptions = computed(() => [
   ...allMembers.value.map((n) => ({ value: n, label: n, disabled: n === state.judge })),
 ])
 
+/** 成员池：法官与玩家互斥，法官不出现在参与玩家选择池中 */
+const poolMembers = computed(() => allMembers.value.filter((n) => n !== state.judge))
+
 /** 手输玩家：加入成员池（同时用于法官下拉与玩家选择） */
 function addCustomPlayer() {
   const name = customPlayer.value.trim()
@@ -323,7 +326,7 @@ function onPoolPointerEnd(e: PointerEvent) {
         @pointercancel="onPoolPointerEnd"
       >
         <a-row :gutter="[8, 4]">
-          <a-col v-for="n in allMembers" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
+          <a-col v-for="n in poolMembers" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
             <div
               class="member-item"
               :class="{ added: isAdded(n), judge: isJudge(n) }"

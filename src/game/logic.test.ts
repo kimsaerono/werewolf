@@ -553,6 +553,17 @@ describe("角色配额", () => {
     expect(st.globalLog.some((l) => l.includes("确认"))).toBe(true)
   })
 
+  it("法官与玩家互斥：设法官移除玩家、法官不可再被添加为玩家", () => {
+    const st = defaultState()
+    addPlayer(st, "张三")
+    addPlayer(st, "李四")
+    setJudge(st, "张三")
+    expect(st.players.map((p) => p.name)).toEqual(["李四"]) // 法官被移出参与玩家
+    const err = addPlayer(st, "张三")
+    expect(err).toContain("法官")
+    expect(st.players.some((p) => p.name === "张三")).toBe(false)
+  })
+
   it("reorderPlayers 按新顺序整序并重编座位号", () => {
     const st = defaultState()
     ;["A", "B", "C", "D"].forEach((n) => addPlayer(st, n))

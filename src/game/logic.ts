@@ -601,6 +601,7 @@ export function applyBoard(state: GameState, board: string): void {
 export function addPlayer(state: GameState, nick: string, no?: number): string | null {
   const name = nick.trim()
   if (!name) return "请输入玩家昵称"
+  if (state.judge === name) return "该成员已被选为法官，不能作为玩家参与（法官与玩家互斥）"
   if (state.players.length >= maxNeed(state)) return `当前板子最多${maxNeed(state)}人，无法新增玩家`
   if (state.players.find((p) => p.name === name)) return "该玩家已签到"
   let n: number
