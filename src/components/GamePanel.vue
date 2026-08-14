@@ -1250,16 +1250,15 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">本轮不竞选</a-button>
         </div>
 
-        <!-- 竞选警长后公布首夜情况（死讯 + 验人结果） -->
+        <!-- 竞选警长后公布首夜情况（仅死讯，验人结果由预言家发言时自报） -->
         <div v-else-if="currentStep === 'prophetReport'" class="step-body">
           <div class="step-emoji">📢</div>
           <h3 class="step-title">公布首夜情况</h3>
-          <p class="small" style="text-align: center">竞选警长结束，法官公布首夜死讯与验人结果</p>
+          <p class="small" style="text-align: center">竞选警长结束，法官公布首夜死讯（验人结果由预言家自己发言）</p>
           <div v-if="lastDawnDeaths.length" class="prophet-result-main">
             ☠️ 昨夜死亡：{{ lastDawnDeaths.map((n) => labelOf(n)).join("、") }}
           </div>
           <div v-else class="prophet-result-main">☠️ 昨夜平安夜</div>
-          <a-tag v-if="state.prophetReport" color="geekblue" size="large" style="font-size: 16px; padding: 6px 14px">{{ state.prophetReport }}</a-tag>
           <a-button type="primary" size="large" @click="markDoneStep('prophetReport')">已公布，进入发言</a-button>
         </div>
 
