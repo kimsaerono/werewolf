@@ -50,6 +50,13 @@ async function syncOne(h: GameRecord) {
   if (err) message.error(err)
 }
 
+/** 测试飞书同步（不改动表格数据） */
+async function onTestSync() {
+  const err = await actions.testSync()
+  if (err) message.error(`测试同步失败：${err}`)
+  else message.success("飞书同步连接正常（未改动表格）")
+}
+
 /** 清空所有历史数据（二次确认） */
 function onClearAll() {
   modal.confirm({
@@ -70,7 +77,10 @@ function onClearAll() {
   <div class="panel">
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
       <template #extra>
-        <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
+        <a-space :wrap="true">
+          <a-button size="small" @click="onTestSync">🔧 测试同步（不改表格）</a-button>
+          <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
+        </a-space>
       </template>
 
       <a-empty v-if="!historyByDay.length" description="暂无已结束的对局" :image-simple="true" />

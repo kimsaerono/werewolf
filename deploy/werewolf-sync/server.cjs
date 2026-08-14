@@ -353,6 +353,12 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true })
       return
     }
+    if (path === "/api/sync-test" && req.method === "POST") {
+      // 测试同步：只校验口令，不改动任何表格数据、不调飞书
+      if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
+      sendJson(res, 200, { ok: true, test: true })
+      return
+    }
     if (path === "/api/sync" && req.method === "POST") {
       if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
       const body = JSON.parse((await readBody(req)) || "{}")

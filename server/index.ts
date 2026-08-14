@@ -50,6 +50,9 @@ function runLark(args: string[]): Promise<LarkResult> {
 
 app.get("/api/health", (c) => c.json({ ok: true }))
 
+// 测试同步：不改数据，仅确认服务可达
+app.post("/api/sync-test", (c) => c.json({ ok: true, test: true }))
+
 app.get("/api/chats", async (c) => {
   const query = c.req.query("query") || ""
   if (!query.trim()) return c.json({ error: "query 不能为空" }, 400)

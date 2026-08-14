@@ -109,6 +109,21 @@ export async function syncGameToFeishu(record: GameRecord, gameId?: string): Pro
   }
 }
 
+/** 测试飞书同步连接（只校验口令与可达性，不改动任何表格数据）；成功返回 null */
+export async function testSyncConnection(): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const endpoint = SYNC_URL ? `${SYNC_URL}/api/sync-test` : "/api/sync-test"
+  try {
+    const res = await fetch(endpoint, { method: "POST", headers: syncHeaders(), body: "{}" })
+    if (res.status === 401) return "鉴权失败：同步口令不正确（检查 VITE_SYNC_PASSWORD）"
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (data.ok) return null
+    return data.error || `同步测试失败(${res.status})`
+  } catch (e) {
+    return `无法连接同步服务：${(e as Error).message}`
+  }
+}
+
 /** 拉取积分排名（预留） */
 export async function fetchRanking(): Promise<unknown[]> {
   if (!SYNC_ENABLED) return []

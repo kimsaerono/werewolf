@@ -3,7 +3,7 @@ import * as g from "@/game/logic"
 import type { GameState, Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
-import { syncGameToFeishu } from "@/api/feishuSync"
+import { syncGameToFeishu, testSyncConnection } from "@/api/feishuSync"
 
 const STORAGE_KEY = "werewolf_judge_v8"
 const HISTORY_KEY = "werewolf_history"
@@ -577,6 +577,16 @@ export function useGame() {
       history.value = []
       saveHistory()
       persist()
+    },
+    /** 测试飞书同步连接（不改动表格数据） */
+    async testSync(): Promise<string | null> {
+      syncStatus.value = "testing"
+      const err = await testSyncConnection()
+      syncStatus.value = err ? `⚠️ 测试同步失败：${err}` : "✅ 飞书同步连接正常（未改动表格）"
+      setTimeout(() => {
+        syncStatus.value = ""
+      }, 6000)
+      return err
     },
   }
 
