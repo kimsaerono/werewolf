@@ -131,7 +131,7 @@ async function appendRecordRows(token, rows) {
 }
 
 // ===== 更新积分排名 =====
-// 排名表列结构（真实表头）：A排名 B(空/真实姓名) C玩家昵称 D总场次 E胜场 F负场 G胜率 H总积分 I MVP J SVP K最佳身份
+// 排名表列结构：A排名 B玩家昵称 C总场次 D胜场 E负场 F胜率 G总积分 H MVP次数 I SVP次数 J最佳身份 K称号
 async function updateRanking(token, rows) {
   const readUrl =
     `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
@@ -139,10 +139,10 @@ async function updateRanking(token, rows) {
   if (readRes.code && readRes.code !== 0) throw new Error("读排名失败: " + readRes.code)
   const values = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
 
-  // 昵称(列C, index2) → 行号（表头占1，故行号=index+2）
+  // 昵称(列B, index1) → 行号（表头占1，故行号=index+2）
   const nameToRow = new Map()
   for (let i = 0; i < values.length; i++) {
-    const nick = String(values[i] && values[i][2] ? values[i][2] : "").trim()
+    const nick = String(values[i] && values[i][1] ? values[i][1] : "").trim()
     if (nick) nameToRow.set(nick, i + 2)
   }
 
@@ -163,17 +163,17 @@ async function updateRanking(token, rows) {
     const row = nameToRow.get(name)
     if (row) {
       const prev = values[row - 2] || []
-      const g = Number(prev[3] || 0) + a.games
-      const w = Number(prev[4] || 0) + a.wins
-      const l = Number(prev[5] || 0) + (a.games - a.wins)
-      const s = Number(prev[7] || 0) + a.score
+      const g = Number(prev[2] || 0) + a.games
+      const w = Number(prev[3] || 0) + a.wins
+      const l = Number(prev[4] || 0) + (a.games - a.wins)
+      const s = Number(prev[6] || 0) + a.score
       const rate = g ? ((w / g) * 100).toFixed(2) + "%" : "0.00%"
-      // D总场次 E胜 F负 G胜率 H总积分
+      // C总场次 D胜 E负 F胜率 G总积分
       updates.push({ row, vals: [g, w, l, rate, s] })
     } else {
       const rate = a.games ? ((a.wins / a.games) * 100).toFixed(2) + "%" : "0.00%"
-      // A排名 C昵称 D场次 E胜 F负 G胜率 H积分
-      appends.push([nextRank, null, name, a.games, a.wins, a.games - a.wins, rate, a.score, 0, 0, "-"])
+      // A排名 B昵称 C场次 D胜 E负 F胜率 G积分 H MVP I SVP J最佳身份 K称号
+      appends.push([nextRank, name, a.games, a.wins, a.games - a.wins, rate, a.score, 0, 0, "-", "-"])
       nextRank++
     }
   }
@@ -184,7 +184,7 @@ async function updateRanking(token, rows) {
     const res = await fetchJson(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ valueRanges: updates.map((u) => ({ range: `${ENV.RANK_SHEET_ID}!D${u.row}:H${u.row}`, values: [u.vals] })) }),
+      body: JSON.stringify({ valueRanges: updates.map((u) => ({ range: `${ENV.RANK_SHEET_ID}!C${u.row}:G${u.row}`, values: [u.vals] })) }),
     })
     if (res.code && res.code !== 0) throw new Error("更新排名失败: " + res.code + " " + res.msg)
   }
