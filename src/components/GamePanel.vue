@@ -1787,7 +1787,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  pointer-events: auto; /* 弹层期间拦截点击，防止穿透误触下层按钮 */
 }
 .fx-inner {
   display: flex;
