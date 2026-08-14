@@ -488,8 +488,8 @@ watch(
       setTimeout(() => {
         if (currentStep.value === key && Date.now() >= suppressStepVoiceUntil)
           speak(refs.resolveVoice(state, vid))
-        // 狼人睁眼：板子含狼王/白狼王 → 补一句举手示意
-        if (key === "wolf") {
+        // 狼人睁眼：仅首夜板子含狼王/白狼王 → 补一句举手示意（身份确认一次即可）
+        if (key === "wolf" && state.round <= 1) {
           const roles = refs.getBoardRoles(state)
           if (roles.includes("狼王") || roles.includes("白狼王")) {
             setTimeout(() => {
