@@ -124,6 +124,38 @@ export async function testSyncConnection(): Promise<string | null> {
   }
 }
 
+/** 测试同步：模拟一个新玩家同步（排名表积分列末尾追加一行测试玩家、复盘表追加一条记录），便于直观验证效果 */
+export async function simulateSyncNewPlayer(): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const d = new Date()
+  const tag = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}${String(d.getSeconds()).padStart(2, "0")}`
+  const payload: SyncPayload = {
+    gameId: `测试同步${tag}`,
+    date: d.toLocaleString(),
+    board: "-",
+    winCamp: "good",
+    judge: null,
+    players: [{ no: 1, name: `测试玩家${tag}`, role: "平民", camp: "平民", win: true, base: 1, skill: 0, vote: 0 }],
+  }
+  try {
+    const res = await fetch(syncEndpoint(), {
+      method: "POST",
+      headers: syncHeaders(),
+      body: JSON.stringify(payload),
+    })
+    if (res.status === 401) return "鉴权失败：同步口令不正确（检查 VITE_SYNC_PASSWORD）"
+    if (!res.ok) {
+      const t = await res.text()
+      return `同步失败(${res.status})：${t.slice(0, 120)}`
+    }
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (!data.ok) return data.error || "同步失败"
+    return null
+  } catch (e) {
+    return `同步请求异常：${(e as Error).message}（请确认同步服务可达）`
+  }
+}
+
 /** 拉取积分排名（预留） */
 export async function fetchRanking(): Promise<unknown[]> {
   if (!SYNC_ENABLED) return []
