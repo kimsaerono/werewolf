@@ -57,6 +57,15 @@ export const boardLabels: Record<string, string> = {
   "13w": "13人白狼王｜白狼王+3狼+预言家+女巫+猎人+白痴+5平民",
 }
 
+/** 板子简称：去掉人数/描述后缀，如 9→预女猎、12→预女猎白、13w→白狼王；无角色简称兜底显示 N人X */
+export function boardShortName(board: string): string {
+  const label = boardLabels[board]
+  if (!label) return board
+  let s = label.split("｜")[0]
+  s = s.replace(/^\d+人/, "").replace(/^(标准|竞技|娱乐)/, "")
+  return s || label.split("｜")[0]
+}
+
 export interface Mark {
   prophetFirstDayWolf: boolean
   prophetNoCheckCount: number

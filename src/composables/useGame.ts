@@ -77,7 +77,7 @@ const winNoticeOpen = computed({
 /** 飞书同步状态："" 空闲 / "syncing" 同步中 / 成功文案 / 失败文案 */
 const syncStatus = ref("")
 /** 正在同步中的对局（自动/手动互斥，防止同一局被并发发两次导致重复累计） */
-const syncingRefs = new Set<GameRecord>()
+const syncingRefs = ref<Set<GameRecord>>(new Set())
 
 const sessionNo = computed(() => history.value.length + 1)
 const sessionTitle = computed(() => {
@@ -91,6 +91,11 @@ function dayKey(time: string): string {
   if (isNaN(d.getTime())) return ""
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
+/** 日期文案：YYYY年M月D日 */
+function dayLabelOf(key: string): string {
+  const [y, m, d] = key.split("/")
+  return `${y}年${Number(m) || ""}月${Number(d) || ""}日`
+}
 const todayKey = computed(() => dayKey(new Date().toLocaleString()))
 /** 今天的对局（分数明细只展示当天，过期不展示） */
 const todayGames = computed(() => history.value.filter((h) => dayKey(h.time) === todayKey.value))
@@ -98,27 +103,62 @@ const todayGames = computed(() => history.value.filter((h) => dayKey(h.time) ===
 function dayGameLabel(idx: number): string {
   return `第${idx + 1}局`
 }
+/** 按天分组（天倒序，天内按局序）：历史对局展示用 */
+const historyByDay = computed(() => {
+  const map = new Map<string, GameRecord[]>()
+  for (const h of history.value) {
+    const k = dayKey(h.time) || "未知日期"
+    const arr = map.get(k) || []
+    arr.push(h)
+    map.set(k, arr)
+  }
+  return [...map.entries()]
+    .sort((a, b) => (a[0] === "未知日期" ? 1 : b[0] === "未知日期" ? -1 : b[0].localeCompare(a[0])))
+    .map(([key, games]) => ({ key, label: key === "未知日期" ? "未知日期" : dayLabelOf(key), games }))
+})
+/** 单局在当天内的 gameId（第X局 · 该局日期）：自动/手动/历史同步统一使用，保证幂等一致 */
+function gameIdFor(rec: GameRecord): string {
+  const k = dayKey(rec.time) || ""
+  const group = k ? history.value.filter((h) => dayKey(h.time) === k) : []
+  const idx = group.indexOf(rec)
+  const dayLabel = k ? dayLabelOf(k) : dayLabelOf(todayKey.value)
+  return `${dayGameLabel(idx >= 0 ? idx : group.length)} · ${dayLabel}`
+}
+/** 是否正在同步中（UI 显示 loading 用） */
+function isSyncing(rec: GameRecord): boolean {
+  return syncingRefs.value.has(rec)
+}
+/** 单局完整复盘文本（复制本局详情 / 导出当天 用） */
+function recordTxtOf(h: GameRecord): string {
+  const logTxt = h.log
+    .map((l, i) => `${i + 1}. ${g.decorateLog({ players: h.players } as never, g.cleanLogLine(l))}`)
+    .join("\n")
+  return (
+    `====${gameIdFor(h)}====\n时间：${h.time}\n板子：${h.board}（${g.boardShortName(h.board)}）\n胜负：${h.winner}（${h.reason}）\n法官：${h.judge || "-"}（累计 ${h.judgeScore}）\n` +
+    h.players
+      .map((p) => `玩家 ${p.no}.${p.name} 身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}`)
+      .join("\n") +
+    `\n\n----对局日志----\n${logTxt}\n\n`
+  )
+}
 
 /** 自动同步一局到飞书：按天编号写入对应场次 + 累计排名，成功标记已同步（不阻塞本地） */
 async function autoSyncRecord(rec: GameRecord): Promise<void> {
-  if (rec.synced || syncingRefs.has(rec)) return
-  syncingRefs.add(rec)
-  const idx = todayGames.value.indexOf(rec)
-  const d = new Date()
-  const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
-  const gameId = `${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)} · ${dayLabel}`
+  if (rec.synced || syncingRefs.value.has(rec)) return
+  syncingRefs.value.add(rec)
+  const gameId = gameIdFor(rec)
   syncStatus.value = "syncing"
   try {
     const err = await syncGameToFeishu(rec, gameId)
     if (err) {
-      syncStatus.value = `⚠️ ${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)}同步失败：${err}`
+      syncStatus.value = `⚠️ ${gameId} 同步失败：${err}`
     } else {
       rec.synced = true
       saveHistory()
       syncStatus.value = `✅ ${gameId} 已同步到飞书`
     }
   } finally {
-    syncingRefs.delete(rec)
+    syncingRefs.value.delete(rec)
   }
   setTimeout(() => {
     syncStatus.value = ""
@@ -483,20 +523,17 @@ export function useGame() {
     },
     /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试（与自动同步互斥） */
     async syncDayGames(): Promise<{ ok: number; failed: number; err: string | null }> {
-      const list = todayGames.value.filter((h) => !h.synced && !syncingRefs.has(h))
+      const list = todayGames.value.filter((h) => !h.synced && !syncingRefs.value.has(h))
       if (!list.length) return { ok: 0, failed: 0, err: "今天没有待同步的对局" }
-      const d = new Date()
-      const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
       syncStatus.value = "syncing"
       let ok = 0
       let err: string | null = null
       for (const rec of list) {
         // 循环内逐个再判断：防止与并发中的自动同步撞车
-        if (rec.synced || syncingRefs.has(rec)) continue
-        syncingRefs.add(rec)
-        const gameId = `${dayGameLabel(todayGames.value.indexOf(rec))} · ${dayLabel}`
-        const e = await syncGameToFeishu(rec, gameId)
-        syncingRefs.delete(rec)
+        if (rec.synced || syncingRefs.value.has(rec)) continue
+        syncingRefs.value.add(rec)
+        const e = await syncGameToFeishu(rec, gameIdFor(rec))
+        syncingRefs.value.delete(rec)
         if (e) {
           err = e
           break
@@ -511,6 +548,36 @@ export function useGame() {
       }, 6000)
       return { ok, failed: list.length - ok, err }
     },
+    /** 单场同步（历史对局用）：校验未同步+互斥，成功标记已同步，可重试 */
+    async syncRecord(rec: GameRecord): Promise<string | null> {
+      if (rec.synced || syncingRefs.value.has(rec)) return "该局已同步或正在同步"
+      syncingRefs.value.add(rec)
+      syncStatus.value = "syncing"
+      const gameId = gameIdFor(rec)
+      try {
+        const err = await syncGameToFeishu(rec, gameId)
+        if (err) {
+          syncStatus.value = `⚠️ ${gameId} 同步失败：${err}`
+          return err
+        }
+        rec.synced = true
+        saveHistory()
+        syncStatus.value = `✅ ${gameId} 已同步到飞书`
+        return null
+      } finally {
+        syncingRefs.value.delete(rec)
+      }
+    },
+    /** 清空所有历史数据：保留板子/法官/胜负模式，清玩家/角色/积分/日志/历史/法官累计分（全新周期） */
+    clearAllData() {
+      const s = g.resetWholeGame(state)
+      s.boardRoles = state.boardRoles
+      s.judgeScores = {}
+      Object.assign(state, s)
+      history.value = []
+      saveHistory()
+      persist()
+    },
   }
 
   return {
@@ -523,7 +590,10 @@ export function useGame() {
     sessionNo,
     sessionTitle,
     todayGames,
+    historyByDay,
     syncStatus,
+    isSyncing,
+    recordTxtOf,
     playerCount,
     maxNeed,
     aliveList,
@@ -536,6 +606,7 @@ export function useGame() {
     refs: {
       boardConfig: g.boardConfig,
       boardLabels: g.boardLabels,
+      boardShortName: g.boardShortName,
       ALL_ROLE_OPT: g.ALL_ROLE_OPT,
       ROLE_EMOJI: g.ROLE_EMOJI,
       NO_CHECK: g.NO_CHECK,
