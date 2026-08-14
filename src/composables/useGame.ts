@@ -99,6 +99,7 @@ function dayGameLabel(idx: number): string {
 
 /** 自动同步一局到飞书：按天编号写入对应场次 + 累计排名，成功标记已同步（不阻塞本地） */
 async function autoSyncRecord(rec: GameRecord): Promise<void> {
+  if (rec.synced) return
   const idx = todayGames.value.indexOf(rec)
   const d = new Date()
   const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
