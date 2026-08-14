@@ -97,6 +97,26 @@ function dayGameLabel(idx: number): string {
   return `第${idx + 1}局`
 }
 
+/** 自动同步一局到飞书：按天编号写入对应场次 + 累计排名，成功标记已同步（不阻塞本地） */
+async function autoSyncRecord(rec: GameRecord): Promise<void> {
+  const idx = todayGames.value.indexOf(rec)
+  const d = new Date()
+  const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+  const gameId = `${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)} · ${dayLabel}`
+  syncStatus.value = "syncing"
+  const err = await syncGameToFeishu(rec, gameId)
+  if (err) {
+    syncStatus.value = `⚠️ ${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)}同步失败：${err}`
+  } else {
+    rec.synced = true
+    saveHistory()
+    syncStatus.value = `✅ ${gameId} 已同步到飞书`
+  }
+  setTimeout(() => {
+    syncStatus.value = ""
+  }, 6000)
+}
+
 function persist(): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
@@ -167,7 +187,8 @@ function refresh(): void {
       synced: false,
     })
     saveHistory()
-    // 飞书同步由「分数明细 → 累积」页签手动触发（同步今日对局）
+    // 判出胜负即自动同步到飞书对应场次并累计（失败可到「分数明细 → 累积」重试）
+    autoSyncRecord(history.value[history.value.length - 1])
     // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利；第三方 → 第三方胜利（原因由 reason 说明）
     const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
