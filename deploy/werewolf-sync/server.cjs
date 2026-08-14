@@ -241,6 +241,16 @@ async function reSortRanking(token) {
     body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!A2:K200`, values: out }] }),
   })
   if (res.code && res.code !== 0) throw new Error("重排排名失败: " + res.code + " " + res.msg)
+  // 统一数据区边框，避免新行（API 写入）与既有行格式不一致
+  const styleRes = await fetchJson(
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+    {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [{ ranges: [`${ENV.RANK_SHEET_ID}!A2:K200`], style: { border: { borderAll: { color: "#2b3145", style: "SOLID" } } } }] }),
+    },
+  )
+  if (styleRes.code && styleRes.code !== 0) throw new Error("排名表边框失败: " + styleRes.code + " " + styleRes.msg)
 }
 
 function sendJson(res, code, obj) {
