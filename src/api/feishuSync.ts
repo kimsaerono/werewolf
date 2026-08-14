@@ -62,6 +62,12 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
       if (base === 0 && detail.length === 0) {
         if (win) base = wolf ? 3 : god ? 3 : p.role === "平民" ? 2 : 3
       }
+      // 兜底：本轮分非 0 且明细未完整拆出时，以本轮分(scoreRound)为准，保证正/负分都正确累计/扣减
+      const total = Math.round((base + skill) * 10) / 10
+      const round = Math.round((p.scoreRound || 0) * 10) / 10
+      if (round !== 0 && total !== round) {
+        skill = Math.round((skill + (round - total)) * 10) / 10
+      }
       return {
         no: p.no,
         name: p.name,

@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test"
 import { buildSyncPayload } from "./feishuSync"
 import type { GameRecord } from "@/composables/useGame"
 
-function rec(winner: string, players: { name: string; role: string; detail: string[] }[], lovers: string[] = []): GameRecord {
+function rec(winner: string, players: { name: string; role: string; detail: string[]; scoreRound?: number }[], lovers: string[] = []): GameRecord {
   return {
     title: "第1局",
     time: "2026-08-14",
@@ -16,8 +16,8 @@ function rec(winner: string, players: { name: string; role: string; detail: stri
       name: p.name,
       role: p.role,
       alive: true,
-      scoreRound: 0,
-      scoreTotal: 0,
+      scoreRound: p.scoreRound ?? 0,
+      scoreTotal: p.scoreRound ?? 0,
       star: "-",
       scoreDetail: p.detail,
     })),
@@ -74,5 +74,13 @@ describe("buildSyncPayload 胜负/拆分解", () => {
     expect(p.base).toBe(3)
     expect(p.skill).toBe(0.5)
     expect(p.vote).toBe(0)
+  })
+
+  it("负分兜底：明细缺失时按 scoreRound 扣减（负分同步能正确减分）", () => {
+    const r = rec("狼人胜利", [
+      { name: "女巫A", role: "女巫", detail: [], scoreRound: -0.5 },
+    ])
+    const p = buildSyncPayload(r).players[0]
+    expect(Math.round((p.base + p.skill + p.vote) * 10) / 10).toBe(-0.5)
   })
 })
