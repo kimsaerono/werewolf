@@ -44,6 +44,8 @@ function confirmPicker() {
 
 // ===== 各步选择状态 =====
 const checkResult = ref("")
+/** 预言家全屏查验：null=选择中；{label,isWolf}=已查验待告知 */
+const prophetReveal = ref<{ label: string; isWolf: boolean | null } | null>(null)
 const jingHuiOwner = ref("")
 const flow1Sel = ref("")
 const flow2Sel = ref("")
@@ -729,14 +731,17 @@ function doProphetCheck(v: string) {
     const verdict = r.isWolf ? "狼人🐺" : "好人👼"
     checkResult.value = `查验结果：${lbl} 是【${verdict}】`
     effect("prophet", "magic", `${lbl} → ${verdict}`)
+    prophetReveal.value = { label: lbl, isWolf: r.isWolf }
   } else {
     message.info("本晚不验人，已记录")
     checkResult.value = "本晚不验人"
+    prophetReveal.value = { label: "本晚不验人", isWolf: null }
   }
 }
 function doProphetClose() {
   markDoneStep("prophet")
   checkResult.value = ""
+  prophetReveal.value = null
   playVoice("prophet_close")
 }
 function doGuard(v: string) {
@@ -764,6 +769,24 @@ function confirmWitch() {
   message.success("已使用解药救人")
   effect("witch", "witch", t ? `解药救：${refs.playerLabel(t)}` : "解药救：被刀者")
   witchModal.value = null
+  if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
+}
+/** 本晚被刀者展示 */
+const nightKillObj = computed(() => state.players.find((p) => p.name === state.nightWolfKill) || null)
+const nightKillLabel = computed(() =>
+  nightKillObj.value ? refs.playerLabel(nightKillObj.value) : state.nightWolfKill || "尚未记录",
+)
+/** 女巫解药（全屏遮罩用，直接使用） */
+function doWitchSave() {
+  if (!state.nightWolfKill) return message.warning("本晚还没有被刀者，无法使用解药")
+  if (state.witchSaveUsed) return message.warning("解药已用完")
+  if (state.nightUsedDrug !== null) return message.warning("本晚已用过一瓶药")
+  snapshot()
+  const err = actions.witchSave()
+  if (err) return message.error(err)
+  const t = state.players.find((x) => x.name === state.nightWolfKill)
+  message.success("已使用解药救人")
+  effect("witch", "witch", t ? `解药救：${refs.playerLabel(t)}` : "解药救：被刀者")
   if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
 }
 function doWitchPoison(v: string) {
@@ -1408,6 +1431,55 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </a-card>
 
+      <!-- 预言家全屏查验遮罩：点击玩家即揭示身份 -->
+      <div v-if="currentStep === 'prophet' && hasProphet" class="fullscreen-overlay">
+        <template v-if="!prophetReveal">
+          <div class="fs-title">🔮 预言家验人 —— 请选择要查验的玩家</div>
+          <div class="fs-grid">
+            <div v-for="p in aliveList" :key="p.name" class="fs-card" @click="doProphetCheck(p.name)">
+              <div class="fs-no">{{ p.no }}</div>
+              <div class="fs-name">{{ p.name }}</div>
+              <div class="fs-role" :style="{ color: roleColor(p.role) }">{{ refs.ROLE_EMOJI[p.role] || "" }}{{ p.role }}</div>
+            </div>
+          </div>
+          <a-button size="large" @click="doProphetCheck(refs.NO_CHECK)">🙅 不验</a-button>
+        </template>
+        <template v-else>
+          <div class="fs-result" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
+            <div class="fs-result-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
+            <div class="fs-result-text">
+              {{ prophetReveal.label }}{{ prophetReveal.isWolf === null ? "" : ` 是【${prophetReveal.isWolf ? "狼人" : "好人"}】` }}
+            </div>
+          </div>
+          <a-button type="primary" danger size="large" @click="doProphetClose">已告知预言家，闭眼</a-button>
+        </template>
+      </div>
+
+      <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者 -->
+      <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
+        <div class="fs-title">🧪 女巫操作</div>
+        <div class="fs-death">
+          <div class="fs-death-label">本晚被刀</div>
+          <div class="fs-death-name">{{ nightKillLabel }}</div>
+        </div>
+        <div class="fs-actions">
+          <a-button
+            v-if="!state.witchSaveUsed && state.nightWolfKill && state.nightUsedDrug === null"
+            type="primary"
+            size="large"
+            @click="doWitchSave"
+          >💚 用解药救 {{ nightKillLabel }}</a-button>
+          <a-button
+            v-if="!state.witchPoisonUsed && state.nightUsedDrug === null"
+            type="danger"
+            size="large"
+            @click="openPicker('选择毒杀目标', aliveOptions, (v) => doWitchPoison(v))"
+          >🧪 使用毒药（选目标）</a-button>
+          <a-button size="large" @click="doWitchDone">🙅 不用药，闭眼</a-button>
+        </div>
+        <div v-if="state.nightUsedDrug" class="fs-note">本晚已使用：{{ state.nightUsedDrug === "save" ? "解药" : "毒药" }}</div>
+      </div>
+
       <!-- 遗言计时（白天出局玩家） -->
       <a-card v-if="lastWordsShow && state.phase === 'day'" class="last-words-card" :bordered="false">
         <div class="last-words-title">💬 遗言（{{ labelOf(lastWordsName) }}）</div>
@@ -2032,5 +2104,112 @@ function effect(type: string, sfx?: SfxName, result?: string) {
     right: 10px;
     bottom: 14px;
   }
+}
+
+/* ===== 预言家/女巫 全屏操作遮罩 ===== */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(8, 11, 20, 0.97);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px;
+  overflow-y: auto;
+}
+.fs-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+}
+.fs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  width: min(720px, 100%);
+}
+.fs-card {
+  background: #1d2233;
+  border: 1px solid #2b3145;
+  border-radius: 12px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.fs-card:hover {
+  border-color: #2ed573;
+  background: #232a3d;
+}
+.fs-no {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+}
+.fs-name {
+  font-size: 15px;
+  color: #eee;
+  margin-top: 2px;
+}
+.fs-role {
+  font-size: 13px;
+  margin-top: 2px;
+}
+.fs-result {
+  text-align: center;
+  padding: 34px 48px;
+  border-radius: 16px;
+  background: #1d2233;
+  border: 3px solid #2b3145;
+}
+.fs-result.wolf {
+  border-color: #ff4d4f;
+}
+.fs-result.good {
+  border-color: #2ed573;
+}
+.fs-result.none {
+  border-color: #888;
+}
+.fs-result-emoji {
+  font-size: 84px;
+  line-height: 1;
+}
+.fs-result-text {
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+  margin-top: 12px;
+}
+.fs-death {
+  text-align: center;
+  padding: 24px 40px;
+  border-radius: 14px;
+  background: #1d2233;
+  border: 2px solid #ff4d4f;
+}
+.fs-death-label {
+  font-size: 15px;
+  color: #aaa;
+}
+.fs-death-name {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ff6b6b;
+  margin-top: 6px;
+}
+.fs-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(360px, 100%);
+}
+.fs-note {
+  font-size: 15px;
+  color: #ffd666;
 }
 </style>
