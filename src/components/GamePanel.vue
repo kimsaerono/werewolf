@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
-import { speak, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
+import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -533,7 +533,7 @@ watch(currentStep, (key) => {
 })
 
 function playVoice(id: string) {
-  if (state.voiceEnabled) speak(refs.resolveVoice(state, id))
+  if (state.voiceEnabled) speakVoice(id, refs.resolveVoice(state, id))
 }
 function playStepVoice() {
   const vid = STEP_VOICE[currentStep.value]

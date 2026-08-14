@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "server": "bun run server/index.ts",
     "sync-members": "bun run scripts/sync-members.ts",
+    "gen-voices": "bun run scripts/gen-voices.ts",
     "test": "bun test"
   },
   "dependencies": {

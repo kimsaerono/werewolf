@@ -66,22 +66,39 @@ function pickZhVoice(): SpeechSynthesisVoice | null {
 }
 
 // ===== 播报队列：当前没播完就排队，播完再播下一条，避免头尾被吞 =====
-let queue: SpeechSynthesisUtterance[] = []
+type QueueItem = SpeechSynthesisUtterance | HTMLAudioElement
+let queue: QueueItem[] = []
 let playing = false
+let audioEls: HTMLAudioElement[] = []
 
 function pump(): void {
   if (playing || !queue.length) return
   const u = queue.shift()!
   playing = true
-  u.onend = () => {
-    playing = false
-    pump()
+  if (u instanceof SpeechSynthesisUtterance) {
+    u.onend = () => {
+      playing = false
+      pump()
+    }
+    u.onerror = () => {
+      playing = false
+      pump()
+    }
+    window.speechSynthesis.speak(u)
+  } else {
+    u.onended = () => {
+      playing = false
+      pump()
+    }
+    u.onerror = () => {
+      playing = false
+      pump()
+    }
+    u.play().catch(() => {
+      playing = false
+      pump()
+    })
   }
-  u.onerror = () => {
-    playing = false
-    pump()
-  }
-  window.speechSynthesis.speak(u)
 }
 
 function enqueue(text: string, style?: VoiceStyleKey): void {
@@ -98,6 +115,14 @@ function enqueue(text: string, style?: VoiceStyleKey): void {
   pump()
 }
 
+function enqueueAudio(url: string): void {
+  const a = new Audio(url)
+  a.preload = "auto"
+  audioEls.push(a)
+  queue.push(a)
+  pump()
+}
+
 /** 播报一段文字（中文语音）；若正在播报则排队，播完再播，保证完整不吞字 */
 export function speak(text: string, style?: VoiceStyleKey): void {
   enqueue(text, style)
@@ -108,9 +133,28 @@ export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
   for (const t of texts) enqueue(t, style)
 }
 
-/** 清空队列并停止当前播报 */
+/** 预生成音频资源（用 EmotiVoice 生成后填入 public/audio/<id>.mp3 并在此登记） */
+const AUDIO_BASE = import.meta.env.BASE_URL || "/"
+export const SPEAK_AUDIO: Record<string, string> = {}
+
+/** 播放固定语音ID：有预生成音频则播音频，否则回退系统TTS */
+export function speakVoice(id: string, text: string, style?: VoiceStyleKey): void {
+  const url = SPEAK_AUDIO[id]
+  if (url) enqueueAudio(url)
+  else enqueue(text, style)
+}
+
+/** 清空队列并停止当前播报（含音频） */
 export function stopSpeak(): void {
   queue = []
   playing = false
   if ("speechSynthesis" in window) window.speechSynthesis.cancel()
+  audioEls.forEach((a) => {
+    try {
+      a.pause()
+    } catch {
+      /* ignore */
+    }
+  })
+  audioEls = []
 }
