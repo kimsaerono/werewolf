@@ -76,6 +76,8 @@ const winNoticeOpen = computed({
 })
 /** 飞书同步状态："" 空闲 / "syncing" 同步中 / 成功文案 / 失败文案 */
 const syncStatus = ref("")
+/** 正在同步中的对局（自动/手动互斥，防止同一局被并发发两次导致重复累计） */
+const syncingRefs = new Set<GameRecord>()
 
 const sessionNo = computed(() => history.value.length + 1)
 const sessionTitle = computed(() => {
@@ -99,19 +101,24 @@ function dayGameLabel(idx: number): string {
 
 /** 自动同步一局到飞书：按天编号写入对应场次 + 累计排名，成功标记已同步（不阻塞本地） */
 async function autoSyncRecord(rec: GameRecord): Promise<void> {
-  if (rec.synced) return
+  if (rec.synced || syncingRefs.has(rec)) return
+  syncingRefs.add(rec)
   const idx = todayGames.value.indexOf(rec)
   const d = new Date()
   const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
   const gameId = `${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)} · ${dayLabel}`
   syncStatus.value = "syncing"
-  const err = await syncGameToFeishu(rec, gameId)
-  if (err) {
-    syncStatus.value = `⚠️ ${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)}同步失败：${err}`
-  } else {
-    rec.synced = true
-    saveHistory()
-    syncStatus.value = `✅ ${gameId} 已同步到飞书`
+  try {
+    const err = await syncGameToFeishu(rec, gameId)
+    if (err) {
+      syncStatus.value = `⚠️ ${dayGameLabel(idx >= 0 ? idx : todayGames.value.length)}同步失败：${err}`
+    } else {
+      rec.synced = true
+      saveHistory()
+      syncStatus.value = `✅ ${gameId} 已同步到飞书`
+    }
+  } finally {
+    syncingRefs.delete(rec)
   }
   setTimeout(() => {
     syncStatus.value = ""
@@ -474,9 +481,9 @@ export function useGame() {
       }, 6000)
       return err
     },
-    /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试 */
+    /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试（与自动同步互斥） */
     async syncDayGames(): Promise<{ ok: number; failed: number; err: string | null }> {
-      const list = todayGames.value.filter((h) => !h.synced)
+      const list = todayGames.value.filter((h) => !h.synced && !syncingRefs.has(h))
       if (!list.length) return { ok: 0, failed: 0, err: "今天没有待同步的对局" }
       const d = new Date()
       const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
@@ -484,8 +491,12 @@ export function useGame() {
       let ok = 0
       let err: string | null = null
       for (const rec of list) {
+        // 循环内逐个再判断：防止与并发中的自动同步撞车
+        if (rec.synced || syncingRefs.has(rec)) continue
+        syncingRefs.add(rec)
         const gameId = `${dayGameLabel(todayGames.value.indexOf(rec))} · ${dayLabel}`
         const e = await syncGameToFeishu(rec, gameId)
+        syncingRefs.delete(rec)
         if (e) {
           err = e
           break

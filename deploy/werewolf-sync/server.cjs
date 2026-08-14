@@ -99,6 +99,17 @@ function checkAuth(req) {
 }
 
 // ===== 追加行到复盘表 =====
+/** 复盘表是否已存在该 gameId（幂等去重：已存在则视为已同步完成） */
+async function recordHasGameId(token, gameId) {
+  if (!gameId) return false
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:A300`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读复盘失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  return vals.some((v) => v && String(v[0] || "").trim() === String(gameId).trim())
+}
+
 async function appendRecordRows(token, rows) {
   // 读复盘表找第一个空行
   const readUrl =
@@ -347,14 +358,20 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse((await readBody(req)) || "{}")
       if (!body.players || !body.players.length) return sendJson(res, 400, { ok: false, error: "players 不能为空" })
       const token = await getTenantToken()
+      // 幂等：该 gameId 已在复盘表 = 本局已同步完成，直接成功返回，避免重复累计
+      if (await recordHasGameId(token, body.gameId)) {
+        sendJson(res, 200, { ok: true })
+        return
+      }
       const recordRows = body.players.map((p) => [
         body.gameId, body.date, body.board, `${p.no}号`, p.name, p.role, p.camp,
         p.win ? "胜" : "负", p.base, p.skill, p.vote,
       ])
-      await appendRecordRows(token, recordRows)
+      // 先做排名/法官/重排，复盘表写入放最后作为「提交点」：gameId 落盘 ⇒ 整局已累计完成
       await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
       await addJudgeScore(token, body.judge)
       await reSortRanking(token)
+      await appendRecordRows(token, recordRows)
       sendJson(res, 200, { ok: true })
       return
     }
