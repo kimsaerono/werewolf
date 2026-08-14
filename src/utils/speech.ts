@@ -115,9 +115,14 @@ function enqueue(text: string, style?: VoiceStyleKey): void {
   pump()
 }
 
-function enqueueAudio(url: string): void {
+function enqueueAudio(url: string, fallbackText?: string, style?: VoiceStyleKey): void {
   const a = new Audio(url)
   a.preload = "auto"
+  a.onerror = () => {
+    playing = false
+    if (fallbackText) enqueue(fallbackText, style)
+    pump()
+  }
   audioEls.push(a)
   queue.push(a)
   pump()
@@ -133,14 +138,25 @@ export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
   for (const t of texts) enqueue(t, style)
 }
 
-/** 预生成音频资源（用 EmotiVoice 生成后填入 public/audio/<id>.mp3 并在此登记） */
+/** 预生成音频资源（edge-tts/EmotiVoice 生成到 public/audio/<id>.mp3） */
 const AUDIO_BASE = import.meta.env.BASE_URL || "/"
-export const SPEAK_AUDIO: Record<string, string> = {}
+/** 固定播报 ID → 音频文件；生成后即自动启用，缺文件时回退系统TTS */
+const FIXED_VOICE_IDS = [
+  "night_start", "cupid", "cupid_close", "wolf", "wolf_close", "wolf_king_gesture",
+  "prophet", "prophet_close", "guard", "guard_close", "witch", "witch_close",
+  "knight", "knight_close", "hunter_open", "hunter_close", "idiot_open", "idiot_close",
+  "dawn", "dawn_peace", "vote", "explode", "wwk_boom", "hunter", "hunter_poisoned",
+  "idiot_flip", "knight_duel_wolf", "knight_duel_good", "jinghui", "wolfkingShot",
+  "prophetReport", "speech",
+]
+export const SPEAK_AUDIO: Record<string, string> = Object.fromEntries(
+  FIXED_VOICE_IDS.map((id) => [id, `${AUDIO_BASE}audio/${id}.mp3`]),
+)
 
-/** 播放固定语音ID：有预生成音频则播音频，否则回退系统TTS */
+/** 播放固定语音ID：有预生成音频则播音频（失败回退TTS），否则系统TTS */
 export function speakVoice(id: string, text: string, style?: VoiceStyleKey): void {
   const url = SPEAK_AUDIO[id]
-  if (url) enqueueAudio(url)
+  if (url) enqueueAudio(url, text, style)
   else enqueue(text, style)
 }
 
