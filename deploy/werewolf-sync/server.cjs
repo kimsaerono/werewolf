@@ -216,6 +216,33 @@ async function updateRanking(token, rows) {
   }
 }
 
+// ===== 按总积分降序重排排名表（每次同步后调用，保证改分即排序） =====
+async function reSortRanking(token) {
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  const rows = vals
+    .map((v) => v.slice(0, 11))
+    .filter((v) => v.some((x) => x !== null && x !== undefined && String(x).trim() !== ""))
+  // 按总积分(列G,index6)降序，同分按昵称排
+  rows.sort((a, b) => Number(b[6] || 0) - Number(a[6] || 0) || String(a[1] || "").localeCompare(String(b[1] || ""), "zh"))
+  rows.forEach((r, i) => {
+    r[0] = i + 1
+  })
+  const out = rows.slice()
+  while (out.length < 199) out.push(["", "", "", "", "", "", "", "", "", "", ""])
+  const url =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  const res = await fetchJson(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!A2:K200`, values: out }] }),
+  })
+  if (res.code && res.code !== 0) throw new Error("重排排名失败: " + res.code + " " + res.msg)
+}
+
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj)
   res.writeHead(code, {
@@ -266,6 +293,7 @@ const server = http.createServer(async (req, res) => {
       ])
       await appendRecordRows(token, recordRows)
       await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
+      await reSortRanking(token)
       sendJson(res, 200, { ok: true })
       return
     }
