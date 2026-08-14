@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { playSfx, type SfxName } from "@/utils/sfx"
@@ -555,11 +555,34 @@ function doWolfClose() {
 }
 
 // ===== 首夜睁眼认人：法官确认角色身份（二次确认，防选错） =====
+/** 角色配色：身份确认弹窗内玩家名字/身份按角色着色 */
+const ROLE_COLOR: Record<string, string> = {
+  狼人: "#ff4d4f",
+  白狼王: "#ff4d4f",
+  狼王: "#ff4d4f",
+  预言家: "#40a9ff",
+  女巫: "#73d13d",
+  猎人: "#ffa940",
+  守卫: "#36cfc9",
+  骑士: "#b37feb",
+  白痴: "#ffd666",
+  丘比特: "#ff85c0",
+  平民: "#bfbfbf",
+}
+function roleColor(role: string): string {
+  return ROLE_COLOR[role] || "#fff"
+}
 function confirmRoleWithCheck(role: string, v: string) {
   const p = state.players.find((x) => x.name === v)
+  const label = p ? refs.playerLabel(p) : v
+  const color = roleColor(role)
   modal.confirm({
     title: `确认${role}身份？`,
-    content: `将 ${p ? refs.playerLabel(p) : v} 确认为${refs.ROLE_EMOJI[role] || ""}${role}？`,
+    width: 460,
+    content: h("div", { style: "text-align:center;padding:6px 0" }, [
+      h("div", { style: `font-size:26px;font-weight:700;color:${color};line-height:1.4` }, label),
+      h("div", { style: "font-size:16px;color:#aaa;margin-top:8px" }, `将确认其为：${refs.ROLE_EMOJI[role] || ""}${role}`),
+    ]),
     okText: "✅ 确认",
     cancelText: "🔄 重新选择",
     onOk() {
@@ -582,15 +605,17 @@ function confirmWolfSel() {
   if (wolfSel.value.length !== wolfNeed.value) {
     return message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${wolfSel.value.length} 个`)
   }
-  const list = wolfSel.value
-    .map((n) => {
-      const p = state.players.find((x) => x.name === n)
-      return p ? refs.playerLabel(p) : n
-    })
-    .join("\n")
+  const list = wolfSel.value.map((n) => {
+    const p = state.players.find((x) => x.name === n)
+    return h("div", { style: "font-size:22px;font-weight:700;color:#ff4d4f;line-height:1.5" }, p ? refs.playerLabel(p) : n)
+  })
   modal.confirm({
     title: "确认狼人？",
-    content: `将以下玩家确认为🐺狼人：\n${list}`,
+    width: 460,
+    content: h("div", { style: "text-align:center;padding:6px 0" }, [
+      h("div", { style: "font-size:15px;color:#aaa;margin-bottom:8px" }, "将以下玩家确认为 🐺狼人："),
+      ...list,
+    ]),
     okText: "✅ 确认",
     cancelText: "🔄 重新选择",
     onOk() {
@@ -638,7 +663,11 @@ function confirmCupidConnect() {
   const labels = cupidSel.value.map((n) => labelOf(n)).join(" ❤ ")
   modal.confirm({
     title: "确认连人？",
-    content: `将 ${labels} 连为情侣${chainText ? `（${chainText}）` : ""}？`,
+    width: 460,
+    content: h("div", { style: "text-align:center;padding:6px 0" }, [
+      h("div", { style: "font-size:22px;font-weight:700;color:#ff85c0;line-height:1.5" }, labels),
+      h("div", { style: "font-size:15px;color:#aaa;margin-top:8px" }, chainText ? `链型：${chainText}` : "确认连为情侣？"),
+    ]),
     okText: "✅ 确认",
     cancelText: "🔄 重新选择",
     onOk() {
@@ -1565,7 +1594,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       </a-modal>
 
       <!-- 弹窗：通用单选玩家（置于最后，层级高于其他弹窗） -->
-      <a-modal :open="!!picker" :title="picker?.title" :footer="null" width="380px" :z-index="2000" :mask-closable="false" @cancel="picker = null">
+      <a-modal :open="!!picker" :title="picker?.title" :footer="null" width="480px" :z-index="2000" :mask-closable="false" @cancel="picker = null">
         <div class="pick-list">
           <div
             v-for="opt in picker?.options"
@@ -1687,18 +1716,19 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   gap: 12px;
 }
 .pick-list {
-  max-height: 320px;
+  max-height: 380px;
   overflow-y: auto;
 }
 .pick-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
+  gap: 10px;
+  padding: 12px 12px;
   border-radius: 8px;
   border: 1px solid transparent;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 600;
   transition: background 0.15s, border-color 0.15s;
 }
 .pick-item:hover {
@@ -1708,16 +1738,17 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   background: #2ed57314;
   border-color: #2ed57355;
   color: #2ed573;
-  font-weight: 600;
+  font-weight: 700;
 }
 .pick-check {
-  width: 18px;
+  width: 22px;
   text-align: center;
-  font-size: 14px;
+  font-size: 18px;
   color: #888;
 }
 .wolf-pick-item {
-  padding: 7px 4px;
+  padding: 8px 4px;
+  font-size: 16px;
   border-bottom: 1px solid #22283a;
 }
 .pick-item.active .pick-check {
