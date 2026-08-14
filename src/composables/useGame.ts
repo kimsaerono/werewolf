@@ -29,6 +29,8 @@ export interface GameRecord {
     log: string[]
     /** 情侣名单（用于第三方胜负判定） */
     lovers: string[]
+    /** 是否已同步到飞书（防止重复累加） */
+    synced: boolean
   }
 
 function load(): GameState {
@@ -44,7 +46,9 @@ function load(): GameState {
 function loadHistory(): GameRecord[] {
   try {
     const s = localStorage.getItem(HISTORY_KEY)
-    if (s) return JSON.parse(s) as GameRecord[]
+    if (s) {
+      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false }))
+    }
   } catch {
     /* ignore */
   }
@@ -78,6 +82,20 @@ const sessionTitle = computed(() => {
   const d = new Date()
   return `第${sessionNo.value}局 · ${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 })
+
+/** 记录日期键：YYYY/M/D（按天维度） */
+function dayKey(time: string): string {
+  const d = new Date(time)
+  if (isNaN(d.getTime())) return ""
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+const todayKey = computed(() => dayKey(new Date().toLocaleString()))
+/** 今天的对局（分数明细只展示当天，过期不展示） */
+const todayGames = computed(() => history.value.filter((h) => dayKey(h.time) === todayKey.value))
+/** 当天对局编号文案：第1局/第2局/第3局 */
+function dayGameLabel(idx: number): string {
+  return `第${idx + 1}局`
+}
 
 function persist(): void {
   try {
@@ -146,9 +164,10 @@ function refresh(): void {
       })),
       log: [...state.globalLog],
       lovers: [...state.lovers],
+      synced: false,
     })
     saveHistory()
-    // 同步飞书改由结算弹窗「结算且同步到飞书表格」按钮触发（见 App.vue）
+    // 飞书同步由「分数明细 → 累积」页签手动触发（同步今日对局）
     // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利；第三方 → 第三方胜利（原因由 reason 说明）
     const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
@@ -433,6 +452,32 @@ export function useGame() {
       }, 6000)
       return err
     },
+    /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试 */
+    async syncDayGames(): Promise<{ ok: number; failed: number; err: string | null }> {
+      const list = todayGames.value.filter((h) => !h.synced)
+      if (!list.length) return { ok: 0, failed: 0, err: "今天没有待同步的对局" }
+      const d = new Date()
+      const dayLabel = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+      syncStatus.value = "syncing"
+      let ok = 0
+      let err: string | null = null
+      for (const rec of list) {
+        const gameId = `${dayGameLabel(todayGames.value.indexOf(rec))} · ${dayLabel}`
+        const e = await syncGameToFeishu(rec, gameId)
+        if (e) {
+          err = e
+          break
+        }
+        ok++
+        rec.synced = true
+        saveHistory()
+      }
+      syncStatus.value = err ? `⚠️ 同步失败：${err}（已同步 ${ok} 局，剩余可重试）` : `✅ 已同步今日 ${ok} 局到飞书`
+      setTimeout(() => {
+        syncStatus.value = ""
+      }, 6000)
+      return { ok, failed: list.length - ok, err }
+    },
   }
 
   return {
@@ -444,6 +489,7 @@ export function useGame() {
     history,
     sessionNo,
     sessionTitle,
+    todayGames,
     syncStatus,
     playerCount,
     maxNeed,

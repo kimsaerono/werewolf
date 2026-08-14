@@ -23,6 +23,7 @@ function rec(winner: string, players: { name: string; role: string; detail: stri
     })),
     log: [],
     lovers,
+    synced: false,
   }
 }
 

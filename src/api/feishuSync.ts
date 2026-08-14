@@ -86,10 +86,11 @@ function syncHeaders(): Record<string, string> {
   return headers
 }
 
-/** 把本局复盘 + 积分同步到飞书（返回错误信息，成功返回 null） */
-export async function syncGameToFeishu(record: GameRecord): Promise<string | null> {
+/** 把本局复盘 + 积分同步到飞书（返回错误信息，成功返回 null）；gameId 可覆盖为按天编号 */
+export async function syncGameToFeishu(record: GameRecord, gameId?: string): Promise<string | null> {
   if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
   const payload = buildSyncPayload(record)
+  if (gameId) payload.gameId = gameId
   try {
     const res = await fetch(syncEndpoint(), {
       method: "POST",
