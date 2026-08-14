@@ -9,11 +9,28 @@ import RecordPanel from "@/components/RecordPanel.vue"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs } = game
+const syncing = ref(false)
+
+/** 结算弹窗确认：同步本局到飞书表格（按姓名累加积分），成功才关闭（失败保留以便重试） */
+async function onWinConfirm() {
+  syncing.value = true
+  try {
+    const err = await game.actions.syncLastGame()
+    if (!err) winNoticeOpen.value = false
+  } finally {
+    syncing.value = false
+  }
+}
+
+/** 结算弹窗：不同步到飞书，直接关闭（本地已保存） */
+function onWinSkip() {
+  winNoticeOpen.value = false
+}
 const tabs = [
   { id: "board", label: "🎲 板子与选人" },
   { id: "game", label: "🎮 对局操作" },
   { id: "score", label: "📊 分数明细" },
-  { id: "record", label: "📋 复盘导出" },
+  { id: "record", label: "🗂️ 历史对局" },
 ]
 
 const boardNeed = computed(() => refs.getBoardRoles(state).length)
@@ -66,9 +83,19 @@ function onTabChange(key: string) {
           <h2 class="win-title">{{ winNotice.text }}</h2>
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
-          <p class="small">已自动结算并保存本局积分与日志，可在「📊 分数明细」「📋 复盘导出」查看</p>
-          <a-button type="primary" size="large" block style="margin-top: 10px" @click="winNoticeOpen = false">
-            知道了
+          <p class="small">已自动结算并保存本局积分与日志，可在「📊 分数明细」「🗂️ 历史对局」查看。选择是否同步到飞书表格（按姓名累加积分）</p>
+          <a-button
+            type="primary"
+            size="large"
+            block
+            style="margin-top: 10px"
+            :loading="syncing"
+            @click="onWinConfirm"
+          >
+            结算且同步到飞书表格
+          </a-button>
+          <a-button size="large" block style="margin-top: 8px" :disabled="syncing" @click="onWinSkip">
+            不同步到飞书
           </a-button>
         </div>
       </a-modal>

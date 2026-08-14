@@ -16,6 +16,7 @@ import {
   guardDo,
   finishVote,
   wolfBaoZha,
+  wolfKingBaoZha,
   resetWholeGame,
   setRole,
   roleQuota,
@@ -147,6 +148,16 @@ describe("夜晚结算", () => {
     resolveNightDeath(st2)
     expect(st2.hunterShotPending).toBe(false)
     expect(g(st2, "P5").mark.hunterIsPoisoned).toBe(true)
+  })
+
+  it("女巫毒猎人：下毒时立即标记吞枪（猎人睁眼在女巫之后）", () => {
+    const st = setup()
+    nextNight(st)
+    wolfKill(st, "P0")
+    const err = witchPoison(st, "P5") // 猎人
+    expect(err).toBeNull()
+    expect(g(st, "P5").mark.hunterIsPoisoned).toBe(true)
+    expect(g(st, "P5").alive).toBe(true) // 存活但已被标记哑火，睁眼即告知
   })
 
   it("守卫连守限制", () => {
@@ -383,6 +394,18 @@ describe("放逐/自爆", () => {
     const err = finishVote(st, "P8", false)
     expect(err).toContain("跳过投票")
   })
+
+  it("白狼王带猎人：跳过投票但同时保留猎人开枪", () => {
+    const st = setup()
+    const wwk = st.players[0]
+    wwk.role = "白狼王"
+    const hunter = byRole(st, "猎人")!
+    const err = wolfKingBaoZha(st, wwk.name, hunter.name)
+    expect(err).toBeNull()
+    expect(st.skipVote).toBe(true)
+    expect(st.hunterShotPending).toBe(true)
+    expect(g(st, hunter.name).alive).toBe(false)
+  })
 })
 
 describe("结算", () => {
@@ -559,14 +582,20 @@ describe("丘比特 / 情侣", () => {
     return st
   }
 
-  it("丘比特连人：成功/重复/数量错误/连自己", () => {
+  it("丘比特连人：成功/重复/数量错误/自连(允许)", () => {
     const st = setupQ()
     expect(cupidConnect(st, ["P0", "P8"])).toBeNull()
     expect(st.lovers).toEqual(["P0", "P8"])
     expect(getChainType(st)).toBe("WG")
     expect(cupidConnect(st, ["P1", "P2"])).toContain("不能重复连接")
     expect(cupidConnect(st, ["P3"])).toContain("两位")
-    expect(cupidConnect(st, ["P7", "P9"])).toContain("连自己")
+    // 自连：丘比特可连自己（丘比特+狼 → 人狼恋第三方；丘比特+好人 → 人人恋）
+    const st2 = setupQ()
+    expect(cupidConnect(st2, ["P7", "P1"])).toBeNull()
+    expect(getChainType(st2)).toBe("WG")
+    const st3 = setupQ()
+    expect(cupidConnect(st3, ["P7", "P8"])).toBeNull()
+    expect(getChainType(st3)).toBe("GG")
   })
 
   it("链型判定：GG/WW/WG/未确认", () => {

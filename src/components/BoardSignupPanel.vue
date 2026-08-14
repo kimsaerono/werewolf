@@ -323,7 +323,7 @@ function onPoolPointerEnd(e: PointerEvent) {
         @pointercancel="onPoolPointerEnd"
       >
         <a-row :gutter="[8, 4]">
-          <a-col v-for="n in memberCache" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
+          <a-col v-for="n in allMembers" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
             <div
               class="member-item"
               :class="{ added: isAdded(n), judge: isJudge(n) }"

@@ -99,6 +99,7 @@ export const DEFAULT_VOICES: Record<string, string> = {
   cupid: "丘比特请睁眼！指认你选定的两位情侣，让大家感受爱情，看完赶紧闭眼。",
   cupid_close: "丘比特请闭眼。",
   wolf: "狼崽子睁眼！认认你的同伙，商量今晚刀哪个大冤种，密谋完赶紧闭眼装好人。",
+  wolf_king_gesture: "狼王、白狼王请举手示意，法官确认！",
   wolf_close: "狼人请闭眼。",
   prophet: "算命大仙请睁眼！扒开一位玩家的底牌，看完把嘴捂严实，闭眼！",
   prophet_close: "预言家请闭眼。",
@@ -551,13 +552,12 @@ export function getChainType(state: GameState): "GG" | "WW" | "WG" | "" {
   return "WG"
 }
 
-/** 丘比特首夜连人：连接两名玩家为情侣（顺序无关，不能连自己） */
+/** 丘比特首夜连人：连接两名玩家为情侣（顺序无关；可连自己，自己也是链中一环） */
 export function cupidConnect(state: GameState, names: string[]): string | null {
   const cupid = state.players.find((p) => p.role === "丘比特")
   if (!cupid) return "本局没有丘比特"
   const list = [...new Set(names.filter(Boolean))]
   if (list.length !== 2) return "请选择两位玩家作为情侣"
-  if (list.includes(cupid.name)) return "丘比特不能连自己"
   for (const n of list) {
     if (!state.players.some((p) => p.name === n)) return `未找到玩家 ${n}`
   }
@@ -853,6 +853,9 @@ export function witchPoison(state: GameState, sel: string): string | null {
   state.nightSteps.witch = true
   if (tar && isWolfRole(tar.role)) witch.mark.witchPoWolf = true
   else if (tar) witch.mark.witchPoGood = true
+  // 毒到猎/狼王：立即标记吞枪（猎人睁眼在女巫之后，需在睁眼时即告知枪已哑火）
+  if (tar?.role === "猎人") tar.mark.hunterIsPoisoned = true
+  if (tar?.role === "狼王") tar.mark.wolfKingIsPoisoned = true
   pushNightLog(state, `🧪女巫撒毒${sel}`)
   pushGlobalLog(state, `🧪女巫毒药毒杀：${sel}`)
   pushFlow(state, "女巫毒药", sel)
@@ -905,6 +908,11 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   target.alive = false
   if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
   else wk.mark.wolfKingShotGood = true
+  // 狼枪带走猎人：猎人依然可开枪（非被毒）
+  if (target.role === "猎人" && !target.mark.hunterIsPoisoned) {
+    state.hunterShotPending = true
+    pushGlobalLog(state, `🔫猎人${tarName}被狼王带走，可开枪`)
+  }
   state.wolfKingShotPending = false
   state.wolfKingShotDone = true
   applyLoverDeaths(state)

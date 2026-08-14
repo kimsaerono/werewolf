@@ -3,7 +3,7 @@ import * as g from "@/game/logic"
 import type { GameState, Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
-import { syncGameToFeishu, SYNC_ENABLED } from "@/api/feishuSync"
+import { syncGameToFeishu } from "@/api/feishuSync"
 
 const STORAGE_KEY = "werewolf_judge_v8"
 const HISTORY_KEY = "werewolf_history"
@@ -16,18 +16,20 @@ export interface GameRecord {
   reason: string
   judge: string
   judgeScore: number
-  players: {
-    no: number
-    name: string
-    role: string
-    alive: boolean
-    scoreRound: number
-    scoreTotal: number
-    star: string
-    scoreDetail: string[]
-  }[]
-  log: string[]
-}
+    players: {
+      no: number
+      name: string
+      role: string
+      alive: boolean
+      scoreRound: number
+      scoreTotal: number
+      star: string
+      scoreDetail: string[]
+    }[]
+    log: string[]
+    /** 情侣名单（用于第三方胜负判定） */
+    lovers: string[]
+  }
 
 function load(): GameState {
   try {
@@ -143,19 +145,10 @@ function refresh(): void {
         scoreDetail: [...p.scoreDetail],
       })),
       log: [...state.globalLog],
+      lovers: [...state.lovers],
     })
     saveHistory()
-    // 结算后自动同步到飞书（异步，失败不阻塞本地）
-    if (SYNC_ENABLED) {
-      syncStatus.value = "syncing"
-      const rec = history.value[history.value.length - 1]
-      syncGameToFeishu(rec).then((err) => {
-        syncStatus.value = err ? `⚠️ 同步失败：${err}` : `✅ 已同步第${sessionNo.value}局到飞书`
-        setTimeout(() => {
-          syncStatus.value = ""
-        }, 6000)
-      })
-    }
+    // 同步飞书改由结算弹窗「结算且同步到飞书表格」按钮触发（见 App.vue）
     // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利；第三方 → 第三方胜利（原因由 reason 说明）
     const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }

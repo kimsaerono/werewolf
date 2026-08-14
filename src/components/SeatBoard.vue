@@ -34,13 +34,30 @@ const emit = defineEmits<{ reorder: [names: string[]] }>()
 
 /** 悬浮列优先填充所需行数：ceil(玩家数 / 2) */
 const seatRows = computed(() => Math.max(1, Math.ceil(props.players.length / 2)))
+/** 左右两列各自持有的玩家（DOM 顺序 = 左列上到下，再右列上到下） */
+const leftPlayers = computed(() => props.players.slice(0, seatRows.value))
+const rightPlayers = computed(() => props.players.slice(seatRows.value))
 
-// ===== 拖动排序：单一 Sortable 容器 + CSS 分列（跨列稳定） =====
+// ===== 拖动排序：左右两列各自一个 Sortable + 共享 group（跨列互换、元素随手） =====
 const listEl = ref<HTMLElement | null>(null)
-let sortable: Sortable | null = null
+const leftEl = ref<HTMLElement | null>(null)
+const rightEl = ref<HTMLElement | null>(null)
+let sortables: Sortable[] = []
 
-function makeSortable(): Sortable {
-  return new Sortable(listEl.value as HTMLElement, {
+/** 读整板 DOM 最终顺序（左列先、右列后）→ 派生全局新顺序 */
+function collectOrder(): string[] {
+  const names: string[] = []
+  listEl.value
+    ?.querySelectorAll<HTMLElement>(".seat-card[data-name]")
+    .forEach((card) => {
+      const name = card.dataset.name
+      if (name) names.push(name)
+    })
+  return names
+}
+
+function makeSortable(el: HTMLElement): Sortable {
+  return new Sortable(el, {
     animation: 150,
     forceFallback: true,
     fallbackOnBody: true,
@@ -50,6 +67,7 @@ function makeSortable(): Sortable {
     ghostClass: "sortable-ghost",
     chosenClass: "sortable-chosen",
     dragClass: "sortable-drag",
+    group: { name: "seats", pull: true, put: true },
     onChoose: (evt) => {
       // 触屏长按确认后：震动反馈 + 放大提示
       const pt = (evt as unknown as { pointerType?: string }).pointerType
@@ -62,44 +80,37 @@ function makeSortable(): Sortable {
     },
     onEnd: (evt) => {
       if (evt.item) evt.item.classList.remove("dragging-lift")
-      // 读容器 DOM 最终顺序 → 派生全局新顺序 → 交给父组件整序
-      const names: string[] = []
-      listEl.value
-        ?.querySelectorAll<HTMLElement>(".seat-card[data-name]")
-        .forEach((card) => {
-          const name = card.dataset.name
-          if (name) names.push(name)
-        })
+      const names = collectOrder()
       if (names.length === props.players.length) emit("reorder", names)
     },
   })
 }
 
-function destroySortable() {
-  sortable?.destroy()
-  sortable = null
+function destroySortables() {
+  sortables.forEach((s) => s.destroy())
+  sortables = []
+}
+
+function mountSortables() {
+  destroySortables()
+  if (!props.draggable) return
+  if (props.floating) {
+    if (leftEl.value) sortables.push(makeSortable(leftEl.value))
+    if (rightEl.value) sortables.push(makeSortable(rightEl.value))
+  } else if (listEl.value) {
+    sortables.push(makeSortable(listEl.value))
+  }
 }
 
 watch(
   () => props.draggable,
-  (on) => {
-    if (on) {
-      destroySortable()
-      if (listEl.value) sortable = makeSortable()
-    } else {
-      destroySortable()
-    }
-  },
+  () => mountSortables(),
   { immediate: true },
 )
 
 // draggable 为 true 时等待 DOM 就绪后再挂载 Sortable
-onMounted(() => {
-  if (props.draggable && listEl.value) sortable = makeSortable()
-})
-onBeforeUnmount(() => {
-  destroySortable()
-})
+onMounted(mountSortables)
+onBeforeUnmount(destroySortables)
 
 function badgeText(p: Player): string {
   if (p.role === "丘比特") return "👑❤️"
@@ -124,33 +135,68 @@ function vibrate(ms: number) {
 
 <template>
   <div class="seat-board" :class="{ floating }">
-    <div ref="listEl" class="seat-list" :style="{ '--seat-rows': seatRows }">
-      <div
-        v-for="(p, idx) in players"
-        :key="p.name"
-        class="seat-card"
-        :data-name="p.name"
-        :class="{ dead: !p.alive }"
-        :style="floating ? { gridColumn: idx < seatRows ? 1 : 3, gridRow: idx < seatRows ? idx + 1 : idx - seatRows + 1 } : undefined"
-      >
-        <span v-if="floating && draggable" class="seat-grip">⠿</span>
-        <template v-if="floating">
-          <span class="seat-name float">{{ p.name }}</span>
-          <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" />
-          <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
-          <span class="seat-no float">{{ p.no || idx + 1 }}</span>
-          <span
-            v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
-            class="seat-lover"
-            :class="badgeClass(p)"
-          >{{ badgeText(p) }}</span>
-          <span v-if="p.name === jingHui" class="seat-sheriff">👑</span>
-          <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
-        </template>
-        <template v-else>
+    <div ref="listEl" class="seat-list">
+      <template v-if="floating">
+        <div ref="leftEl" class="seat-col">
+          <div
+            v-for="(p, idx) in leftPlayers"
+            :key="p.name"
+            class="seat-card"
+            :data-name="p.name"
+            :class="{ dead: !p.alive }"
+          >
+            <span v-if="draggable" class="seat-grip">⠿</span>
+            <span class="seat-name float">{{ p.name }}</span>
+            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
+            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="!p.alive" class="seat-dead-x">✕</span>
+            <span class="seat-no float">{{ p.no || idx + 1 }}</span>
+            <span
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
+              class="seat-lover"
+              :class="badgeClass(p)"
+            >{{ badgeText(p) }}</span>
+            <span v-if="p.name === jingHui" class="seat-sheriff">👑</span>
+            <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+          </div>
+        </div>
+        <div class="seat-col-spacer"></div>
+        <div ref="rightEl" class="seat-col">
+          <div
+            v-for="(p, idx) in rightPlayers"
+            :key="p.name"
+            class="seat-card"
+            :data-name="p.name"
+            :class="{ dead: !p.alive }"
+          >
+            <span v-if="draggable" class="seat-grip">⠿</span>
+            <span class="seat-name float">{{ p.name }}</span>
+            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
+            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="!p.alive" class="seat-dead-x">✕</span>
+            <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
+            <span
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
+              class="seat-lover"
+              :class="badgeClass(p)"
+            >{{ badgeText(p) }}</span>
+            <span v-if="p.name === jingHui" class="seat-sheriff">👑</span>
+            <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+          </div>
+        </div>
+      </template>
+      <template v-else>
+        <div
+          v-for="(p, idx) in players"
+          :key="p.name"
+          class="seat-card"
+          :data-name="p.name"
+          :class="{ dead: !p.alive }"
+        >
           <span v-if="draggable" class="seat-grip">⠿</span>
-          <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar" :src="roleAvatar(p.role)" :alt="p.role" />
+          <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
           <span v-else class="seat-avatar seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+          <span v-if="!p.alive" class="seat-dead-x">✕</span>
           <div class="seat-info">
             <div class="seat-name">
               <span v-if="p.name === judge" style="color: #ffd666">⚖️</span>
@@ -172,8 +218,8 @@ function vibrate(ms: number) {
             :class="badgeClass(p)"
           >{{ badgeText(p) }}</span>
           <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
-        </template>
-      </div>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -181,6 +227,33 @@ function vibrate(ms: number) {
 <style scoped>
 .seat-board {
   width: 100%;
+}
+/* 禁止长按头像触发图片原生拖拽/复制/共享（移动端菜单） */
+.seat-avatar {
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+/* 出局头像上的红叉 */
+.seat-dead-x {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  color: #ff4d4f;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+.seat-board.floating .seat-card.dead .seat-dead-x {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.seat-card.dead .seat-dead-x {
+  left: 30px;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 .seat-list {
   display: flex;
@@ -202,14 +275,21 @@ function vibrate(ms: number) {
   right: 0;
   max-height: calc(100vh - 120px);
   overflow-y: auto;
-  pointer-events: auto;
+  pointer-events: none; /* 容器不拦截点击，只在卡片上开放 */
   display: grid;
   grid-template-columns: var(--seat-col-w, 76px) 1fr var(--seat-col-w, 76px);
-  grid-template-rows: repeat(var(--seat-rows), auto);
+  align-items: start;
   gap: 8px;
   padding: 0 4px;
 }
+.seat-board.floating .seat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
 .seat-board.floating .seat-card {
+  pointer-events: auto; /* 卡片区域可交互（拖动/滚动） */
   flex-direction: column;
   align-items: center;
   justify-content: center;

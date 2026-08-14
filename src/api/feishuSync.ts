@@ -6,8 +6,9 @@
 import { isWolfRole, GOD_LIST } from "@/game/logic"
 import type { GameRecord } from "@/composables/useGame"
 
-// dev 时用相对 /api（vite 代理到本地 3457）；生产可配绝对 localhost 地址
+// dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
 const SYNC_URL = (import.meta.env.VITE_SYNC_URL as string | undefined) || ""
+const SYNC_PASSWORD = (import.meta.env.VITE_SYNC_PASSWORD as string | undefined) || ""
 const SYNC_ENABLED = import.meta.env.DEV || !!SYNC_URL
 
 export { SYNC_ENABLED }
@@ -44,7 +45,9 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
       const wolf = isWolfRole(p.role)
       const god = GOD_LIST.includes(p.role)
       const camp = wolf ? "狼人" : god ? "神职" : p.role === "平民" ? "平民" : "第三方"
-      const win = wolf ? winWolf : winThird ? p.role === "丘比特" || camp === "第三方" : !winWolf
+      // 第三方胜：丘比特 + 情侣（含人狼恋中的狼恋人/好人恋人）都算胜；否则按阵营胜负
+      const thirdWin = winThird && (p.role === "丘比特" || (record.lovers || []).includes(p.name))
+      const win = thirdWin ? true : winThird ? false : wolf ? winWolf : !winWolf
       const detail = p.scoreDetail || []
       let base = 0
       let skill = 0
@@ -70,9 +73,14 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
   }
 }
 
+/** 部署端：/api/sync + x-access-password 口令；本地桥接(dev)：/api/sync-feishu（无口令） */
 function syncEndpoint(): string {
-  // 生产配置了绝对地址（localhost）则用它，否则 dev 用相对 /api
-  return SYNC_URL ? `${SYNC_URL}/api/sync-feishu` : "/api/sync-feishu"
+  return SYNC_URL ? `${SYNC_URL}/api/sync` : "/api/sync-feishu"
+}
+function syncHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (SYNC_URL && SYNC_PASSWORD) headers["x-access-password"] = SYNC_PASSWORD
+  return headers
 }
 
 /** 把本局复盘 + 积分同步到飞书（返回错误信息，成功返回 null） */
@@ -82,7 +90,7 @@ export async function syncGameToFeishu(record: GameRecord): Promise<string | nul
   try {
     const res = await fetch(syncEndpoint(), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: syncHeaders(),
       body: JSON.stringify(payload),
     })
     if (!res.ok) {
