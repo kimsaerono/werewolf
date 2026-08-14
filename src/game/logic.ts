@@ -134,6 +134,9 @@ export const DEFAULT_VOICES: Record<string, string> = {
   knight_duel_good: "骑士看走眼翻车，自己白给，继续盘！",
   wwk_boom: "白狼王掀桌自爆！顺手薅走一个，直接入夜。",
   jinghui: "现在竞选警长。",
+  wolfkingShot: "狼王出局，可以开枪带走一人。",
+  prophetReport: "竞选警长结束，请公布首夜情况。",
+  speech: "开始发言。",
 }
 
 export interface FlowStep {

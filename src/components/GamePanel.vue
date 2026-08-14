@@ -371,8 +371,9 @@ const STEP_VOICE: Record<string, string> = {
   cupid: "cupid",
   hunterOpen: "hunter_open",
   idiotOpen: "idiot_open",
-  dawn: "dawn",
-  hunter: "hunter",
+  wolfkingShot: "wolfkingShot",
+  prophetReport: "prophetReport",
+  speech: "speech",
   jinghui: "jinghui",
   vote: "vote",
 }
@@ -418,6 +419,9 @@ const VOICE_LABEL: Record<string, string> = {
   knight_duel_wolf: "骑士决斗戳狼",
   knight_duel_good: "骑士决斗戳错",
   jinghui: "警徽竞选",
+  wolfkingShot: "狼王开枪",
+  prophetReport: "公布首夜情况",
+  speech: "发言开始",
 }
 
 const uiDone = computed(() => state.uiDone)
@@ -512,6 +516,13 @@ watch(
     }
   },
 )
+// 猎人可开枪：集中触发唯一播报（天亮/放逐/自爆带人/狼枪 都会置真 pending）
+watch(
+  () => state.hunterShotPending,
+  (v) => {
+    if (v) promptHunterShot()
+  },
+)
 // 步骤切换时清空弹窗选择（v28）
 watch(currentStep, (key) => {
   pickerValue.value = ""
@@ -543,12 +554,25 @@ function doWolfClose() {
   playVoice("wolf_close")
 }
 
-// ===== 首夜睁眼认人：法官确认角色身份 =====
-function doConfirmRole(role: string, v: string) {
-  snapshot()
-  const err = actions.confirmRole(v, role)
-  if (err) return message.error(err)
-  message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
+// ===== 首夜睁眼认人：法官确认角色身份（二次确认，防选错） =====
+function confirmRoleWithCheck(role: string, v: string) {
+  const p = state.players.find((x) => x.name === v)
+  modal.confirm({
+    title: `确认${role}身份？`,
+    content: `将 ${p ? refs.playerLabel(p) : v} 确认为${refs.ROLE_EMOJI[role] || ""}${role}？`,
+    okText: "✅ 确认",
+    cancelText: "🔄 重新选择",
+    onOk() {
+      snapshot()
+      const err = actions.confirmRole(v, role)
+      if (err) return message.error(err)
+      message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
+    },
+    onCancel() {
+      // 重新选择：重新打开该角色选择弹窗
+      openPicker(`确认${role}（睁眼认人）`, unassignedAliveOptions.value, (v2) => confirmRoleWithCheck(role, v2))
+    },
+  })
 }
 function openWolfConfirm() {
   wolfSel.value = state.players.filter((p) => p.role === "狼人").map((p) => p.name)
@@ -558,11 +582,26 @@ function confirmWolfSel() {
   if (wolfSel.value.length !== wolfNeed.value) {
     return message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${wolfSel.value.length} 个`)
   }
-  snapshot()
-  const err = actions.confirmWolves(wolfSel.value)
-  if (err) return message.error(err)
-  wolfConfirmOpen.value = false
-  message.success("狼人身份已确认")
+  const list = wolfSel.value
+    .map((n) => {
+      const p = state.players.find((x) => x.name === n)
+      return p ? refs.playerLabel(p) : n
+    })
+    .join("\n")
+  modal.confirm({
+    title: "确认狼人？",
+    content: `将以下玩家确认为🐺狼人：\n${list}`,
+    okText: "✅ 确认",
+    cancelText: "🔄 重新选择",
+    onOk() {
+      snapshot()
+      const err = actions.confirmWolves(wolfSel.value)
+      if (err) return message.error(err)
+      wolfConfirmOpen.value = false
+      message.success("狼人身份已确认")
+    },
+    // onCancel：保持勾选弹窗打开，可重新勾选
+  })
 }
 
 // ===== 丘比特连人 =====
@@ -583,16 +622,39 @@ function confirmCupidConnect() {
   if (cupidSel.value.length !== 2) {
     return message.error("请选择两位玩家作为情侣")
   }
-  snapshot()
-  const err = actions.cupidConnect(cupidSel.value)
-  if (err) return message.error(err)
-  cupidConnectOpen.value = false
-  const c = refs.getChainType(state)
-  const txt = c === "WG" ? "人狼恋 → 第三方阵营成立！" : c === "WW" ? "狼狼恋" : c === "GG" ? "人人恋" : "已连人（身份确认后判定链型）"
-  message.success(`💘 ${state.lovers.join(" ❤ ")} 连为情侣（${txt}）`)
-  effect("cupid", undefined, `情侣：${state.lovers.join(" ❤ ")}`)
-  markDoneStep("cupid")
-  playVoice("cupid_close")
+  const [a, b] = cupidSel.value
+  const pa = state.players.find((x) => x.name === a)
+  const pb = state.players.find((x) => x.name === b)
+  const aw = pa && refs.isWolfRole(pa.role)
+  const bw = pb && refs.isWolfRole(pb.role)
+  let chainText = ""
+  if (aw !== undefined && bw !== undefined) {
+    if (aw && bw) chainText = "狼狼恋"
+    else if (!aw && !bw) chainText = "人人恋"
+    else chainText = "人狼恋·第三方"
+  } else {
+    chainText = "待身份确认后判定链型"
+  }
+  const labels = cupidSel.value.map((n) => labelOf(n)).join(" ❤ ")
+  modal.confirm({
+    title: "确认连人？",
+    content: `将 ${labels} 连为情侣${chainText ? `（${chainText}）` : ""}？`,
+    okText: "✅ 确认",
+    cancelText: "🔄 重新选择",
+    onOk() {
+      snapshot()
+      const err = actions.cupidConnect(cupidSel.value)
+      if (err) return message.error(err)
+      cupidConnectOpen.value = false
+      const c = refs.getChainType(state)
+      const txt = c === "WG" ? "人狼恋 → 第三方阵营成立！" : c === "WW" ? "狼狼恋" : c === "GG" ? "人人恋" : "已连人（身份确认后判定链型）"
+      message.success(`💘 ${state.lovers.join(" ❤ ")} 连为情侣（${txt}）`)
+      effect("cupid", undefined, `情侣：${state.lovers.join(" ❤ ")}`)
+      markDoneStep("cupid")
+      playVoice("cupid_close")
+    },
+    // onCancel：保持连人弹窗打开，可重新选择
+  })
 }
 function skipCupid() {
   confirmSkip("本轮不连人？", "丘比特本局不连情侣，确认后闭眼", () => {
@@ -816,12 +878,15 @@ function checkSheriffDeath() {
     sheriffDeathModal.value = true
   }
 }
-/** 猎人可开枪时语音提示法官让猎人选择开枪目标 */
+/** 猎人可开枪时语音提示法官（唯一播报源，防重复）：pending 置真后延迟播一次 */
+let hunterPromptTimer: ReturnType<typeof setTimeout> | null = null
 function promptHunterShot() {
+  if (hunterPromptTimer) clearTimeout(hunterPromptTimer)
   if (state.hunterShotPending && !state.finished) {
-    setTimeout(() => {
+    hunterPromptTimer = setTimeout(() => {
       if (state.hunterShotPending && !state.finished) playVoice("hunter")
-    }, 4000)
+      hunterPromptTimer = null
+    }, 2500)
   }
 }
 function onSheriffAuto() {
@@ -864,7 +929,6 @@ function doFinishVote(v: string) {
         if (err) message.error(err)
         else {
           markDone("vote")
-          if (state.hunterShotPending) playVoice("hunter")
           checkSheriffDeath()
           lastWordsName.value = outP.name
           lastWordsShow.value = true
@@ -876,7 +940,6 @@ function doFinishVote(v: string) {
   const err = actions.finishVote(v, false)
   if (err) return message.error(err)
   markDone("vote")
-  if (state.hunterShotPending) playVoice("hunter")
   checkSheriffDeath()
   // 放逐玩家有遗言，弹计时
   lastWordsName.value = v
@@ -967,7 +1030,6 @@ function doDawn() {
     }, 700)
   }
   checkSheriffDeath()
-  promptHunterShot()
 }
 function doFlow() {
   const enteringNight = state.phase !== "night"
@@ -1049,7 +1111,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">丘比特连人</h3>
           <template v-if="!hasCupid">
             <p class="small" style="text-align: center">丘比特睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认丘比特（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('丘比特', v))">💘 确认丘比特</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认丘比特（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('丘比特', v))">💘 确认丘比特</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">
@@ -1068,7 +1130,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">守卫守人</h3>
           <template v-if="!hasGuard">
             <p class="small" style="text-align: center">守卫睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('守卫', v))">🛡️ 确认守卫</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('守卫', v))">🛡️ 确认守卫</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">
@@ -1087,7 +1149,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <template v-if="!wolfAllConfirmed">
             <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
             <a-button v-if="(wolfCampStatus['狼人']?.have || 0) < (wolfCampStatus['狼人']?.need || 0)" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
-            <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAliveOptions, (v) => doConfirmRole(cr, v))">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
+            <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAliveOptions, (v) => confirmRoleWithCheck(cr, v))">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）</p>
@@ -1107,7 +1169,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">预言家验人</h3>
           <template v-if="!hasProphet">
             <p class="small" style="text-align: center">预言家睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('预言家', v))">🔮 确认预言家</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('预言家', v))">🔮 确认预言家</a-button>
           </template>
           <template v-else>
             <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...aliveOptions], (v) => doProphetCheck(v))">🔮 确认查验</a-button>
@@ -1124,7 +1186,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">女巫操作</h3>
           <template v-if="!hasWitch">
             <p class="small" style="text-align: center">女巫睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('女巫', v))">🧙 确认女巫</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('女巫', v))">🧙 确认女巫</a-button>
           </template>
           <template v-else>
           <p class="small" style="text-align: center; margin-bottom: 4px">
@@ -1167,7 +1229,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">猎人睁眼</h3>
           <template v-if="!hasHunter">
             <p class="small" style="text-align: center">猎人睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('猎人', v))">🔫 确认猎人</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('猎人', v))">🔫 确认猎人</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认你的枪状态，白天/夜里按规则触发开枪</p>
@@ -1188,7 +1250,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">白痴睁眼</h3>
           <template v-if="!hasIdiot">
             <p class="small" style="text-align: center">白痴睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认白痴（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('白痴', v))">🙊 确认白痴</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认白痴（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('白痴', v))">🙊 确认白痴</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认身份，继续闭眼摸鱼</p>
@@ -1202,7 +1264,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">骑士睁眼</h3>
           <template v-if="!hasKnight">
             <p class="small" style="text-align: center">骑士睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认骑士（睁眼认人）', unassignedAliveOptions, (v) => doConfirmRole('骑士', v))">⚔️ 确认骑士</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认骑士（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('骑士', v))">⚔️ 确认骑士</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认身份后闭眼，白天可用「骑士决斗」</p>
