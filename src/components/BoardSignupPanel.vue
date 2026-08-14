@@ -330,7 +330,7 @@ function onPoolPointerEnd(e: PointerEvent) {
               :data-member-name="n"
             >
               <span class="member-check">{{ isAdded(n) ? "✓" : isJudge(n) ? "⚖️" : "" }}</span>
-              {{ n }}<span v-if="isJudge(n)" class="small">（法官）</span>
+              <span class="member-name" :class="{ judge: isJudge(n) }">{{ n }}</span>
             </div>
           </a-col>
         </a-row>

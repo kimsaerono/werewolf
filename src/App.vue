@@ -340,10 +340,14 @@ body {
   color: #0f1115;
 }
 .member-item.judge {
-  opacity: 0.4;
   cursor: not-allowed;
   border-color: #ffa50255;
   pointer-events: none;
+  opacity: 1;
+}
+.member-item.judge .member-name {
+  color: #ffd666;
+  font-weight: 700;
 }
 .role-assign-card {
   background: #1d2233;
