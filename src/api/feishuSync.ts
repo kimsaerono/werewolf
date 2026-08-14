@@ -30,6 +30,8 @@ export interface SyncPayload {
   board: string
   winCamp: string
   players: SyncPlayerRow[]
+  /** 法官：只计积分、不计场次与胜率 */
+  judge: { name: string; score: number } | null
 }
 
 /** 计算单个玩家的阵营与胜负、拆基础分/技能分（投票分已移除恒为 0） */
@@ -41,6 +43,7 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
     date: record.time,
     board: record.board,
     winCamp: winWolf ? "wolf" : winThird ? "third" : "good",
+    judge: record.judge ? { name: record.judge, score: 0.5 } : null,
     players: record.players.map((p) => {
       const wolf = isWolfRole(p.role)
       const god = GOD_LIST.includes(p.role)

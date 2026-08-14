@@ -216,6 +216,56 @@ async function updateRanking(token, rows) {
   }
 }
 
+// ===== 法官计分：只加积分、不加场次、不计算胜率 =====
+async function addJudgeScore(token, judge) {
+  if (!judge || !judge.name) return
+  const score = Number(judge.score || 0)
+  if (!score) return
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  const url =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  let row = null
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i] && String(vals[i][1] || "").trim() === String(judge.name).trim()) {
+      row = i + 2
+      break
+    }
+  }
+  if (row) {
+    const prev = vals[row - 2] || []
+    const s = Math.round((Number(prev[6] || 0) + score) * 10) / 10
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!G${row}:G${row}`, values: [[s]] }] }),
+    })
+    if (res.code && res.code !== 0) throw new Error("法官计分失败: " + res.code + " " + res.msg)
+  } else {
+    // 新法官：0场 0胜 0负 胜率0 只记积分
+    let firstEmpty = vals.length + 2
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i]
+      const hasData = v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")
+      if (!hasData) {
+        firstEmpty = i + 2
+        break
+      }
+    }
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!A${firstEmpty}:K${firstEmpty}`, values: [[firstEmpty - 1, judge.name, 0, 0, 0, "0", score, 0, 0, "-", "-"]] }],
+      }),
+    })
+    if (res.code && res.code !== 0) throw new Error("法官新增失败: " + res.code + " " + res.msg)
+  }
+}
+
 // ===== 按总积分降序重排排名表（每次同步后调用，保证改分即排序） =====
 async function reSortRanking(token) {
   const readUrl =
@@ -303,6 +353,7 @@ const server = http.createServer(async (req, res) => {
       ])
       await appendRecordRows(token, recordRows)
       await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
+      await addJudgeScore(token, body.judge)
       await reSortRanking(token)
       sendJson(res, 200, { ok: true })
       return
