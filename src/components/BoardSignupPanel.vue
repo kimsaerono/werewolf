@@ -268,7 +268,7 @@ function onPoolPointerEnd(e: PointerEvent) {
       </template>
       <div v-if="!state.playersConfirmed" class="mode-select-row">
         <span class="field-label">对局模式</span>
-        <a-radio-group :value="state.simMode" @change="(e: any) => { state.simMode = e.target.value }">
+        <a-radio-group :value="state.simMode" @change="(e: any) => actions.setSimMode(e.target.value)">
           <a-radio :value="false">🎯 真实对局</a-radio>
           <a-radio :value="true">🧪 模拟对局</a-radio>
         </a-radio-group>

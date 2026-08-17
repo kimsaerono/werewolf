@@ -262,6 +262,10 @@ export function useGame() {
       state.winMode = m
       persist()
     },
+    setSimMode(v: boolean) {
+      state.simMode = v
+      persist()
+    },
     setBoardRoles(roles: string[]): string | null {
       const err = g.setBoardRoles(state, roles)
       persist()
@@ -511,6 +515,7 @@ export function useGame() {
     },
     /** 手动同步最近一局到飞书（返回错误信息或 null） */
     async syncLastGame(): Promise<string | null> {
+      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
       const rec = history.value[history.value.length - 1]
       if (!rec) return "暂无已结算的对局"
       syncStatus.value = "syncing"
@@ -523,6 +528,7 @@ export function useGame() {
     },
     /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试（与自动同步互斥） */
     async syncDayGames(): Promise<{ ok: number; failed: number; err: string | null }> {
+      if (state.simMode) return { ok: 0, failed: 0, err: "当前为模拟模式，不会同步到飞书" }
       const list = todayGames.value.filter((h) => !h.synced && !syncingRefs.value.has(h))
       if (!list.length) return { ok: 0, failed: 0, err: "今天没有待同步的对局" }
       syncStatus.value = "syncing"
@@ -550,6 +556,7 @@ export function useGame() {
     },
     /** 单场同步（历史对局用）：校验未同步+互斥，成功标记已同步，可重试 */
     async syncRecord(rec: GameRecord): Promise<string | null> {
+      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
       if (rec.synced || syncingRefs.value.has(rec)) return "该局已同步或正在同步"
       syncingRefs.value.add(rec)
       syncStatus.value = "syncing"
@@ -580,6 +587,7 @@ export function useGame() {
     },
     /** 测试同步：模拟新玩家（排名表/复盘表各加一行测试数据） */
     async testSync(): Promise<string | null> {
+      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
       syncStatus.value = "testing"
       const err = await simulateSyncNewPlayer()
       syncStatus.value = err ? `⚠️ 测试同步失败：${err}` : "✅ 已模拟新玩家同步（排名表积分列末尾新增一行）"
