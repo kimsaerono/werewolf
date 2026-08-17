@@ -303,6 +303,10 @@ function vibrate(ms: number) {
 .seat-board.floating .seat-card:active {
   cursor: grabbing;
 }
+.seat-board.floating .seat-card.dead {
+  background: #161a26;
+  border-color: #2b3145;
+}
 
 /* ===== 卡片通用（存活白底，可拖动） ===== */
 .seat-card {
@@ -322,13 +326,14 @@ function vibrate(ms: number) {
 }
 .seat-card.dead {
   opacity: 0.6;
-  background: #e4e6ec;
+  background: #161a26; /* 出局：原深色底 */
+  border-color: #2b3145;
 }
 .seat-card.dead .seat-name {
-  color: #8a8f9c;
+  color: #aaa;
 }
 .seat-card.dead .seat-role {
-  color: #9aa0ad;
+  color: #888;
 }
 .sortable-ghost {
   opacity: 0.4;
