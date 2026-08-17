@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { theme, message } from "ant-design-vue"
+import { theme, App as AntApp } from "ant-design-vue"
 import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
 import GamePanel from "@/components/GamePanel.vue"
@@ -10,7 +10,8 @@ import RoleHelp from "@/components/RoleHelp.vue"
 import ModeSelectPage from "@/components/ModeSelectPage.vue"
 
 const game = useGame()
-const { state, activeTab, winNotice, winNoticeOpen, refs } = game
+const { state, activeTab, winNotice, winNoticeOpen, refs, actions } = game
+const { modal, message: msg } = AntApp.useApp()
 
 /** 本局 MVP/SVP 自动建议（非必需，仅供参考） */
 const honorSuggestion = computed(() => {
@@ -26,6 +27,20 @@ const honorSuggestion = computed(() => {
 function onWinConfirm() {
   winNoticeOpen.value = false
 }
+/** 整局重置：清空玩家/角色/分数/日志/复盘（保留板子/法官/胜负模式） */
+function onResetGame() {
+  modal.confirm({
+    title: "🗑️ 整局重置？",
+    content: "将清空：本局玩家、角色、积分、日志、复盘记录（保留板子/法官/胜负模式）。此操作不可撤销！",
+    okText: "确认重置",
+    okButtonProps: { danger: true },
+    cancelText: "取消",
+    onOk() {
+      actions.resetWholeGame()
+      msg.success("已整局重置")
+    },
+  })
+}
 const tabs = [
   { id: "board", label: "🎲 板子与选人" },
   { id: "game", label: "🎮 对局操作" },
@@ -40,7 +55,7 @@ const prevTab = ref("board")
 
 function onTabChange(key: string) {
   if (key === "game" && !gameReady.value) {
-    message.warning("请先在「板子与选人」确认参与玩家")
+    msg.warning("请先在「板子与选人」确认参与玩家")
     activeTab.value = prevTab.value
     return
   }
@@ -83,6 +98,11 @@ function onTabChange(key: string) {
       <!-- 左下悬浮：角色玩法 + 计分速查（所有 tab 可见） -->
       <RoleHelp :roles="refs.getBoardRoles(state)" />
 
+      <!-- 左下悬浮：整局重置 -->
+      <a-tooltip title="整局重置" placement="right">
+        <a-button class="reset-fab" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
+      </a-tooltip>
+
       <!-- 胜负弹窗 -->
       <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
         <div v-if="winNotice" class="win-notice">
@@ -111,10 +131,9 @@ body {
   margin: 0;
   background: #0f1115;
 }
-/* 卡片/面板半透明，投屏时可透出背景水印，且不影响可读性 */
+/* 卡片半透明（不带 backdrop-filter，避免成为 fixed 定位的包含块，破坏悬浮座位牌左右固定布局） */
 .ant-card {
   background: rgba(23, 27, 40, 0.55);
-  backdrop-filter: blur(4px);
 }
 .ant-card-bordered {
   border-color: #2b3145aa;
@@ -252,6 +271,16 @@ body {
 }
 .ant-card + .ant-card {
   margin-top: 12px;
+}
+/* 整局重置悬浮按钮：左下，位于角色玩法悬浮钮上方 */
+.reset-fab {
+  position: fixed;
+  left: 16px;
+  bottom: 84px;
+  z-index: 500;
+  width: 48px;
+  height: 48px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 /* 文案尽量不换行、不省略：缩小字号适配 */
 .ant-card-head-title {

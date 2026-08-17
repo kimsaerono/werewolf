@@ -124,10 +124,6 @@ function resetBoardRoles() {
   message.info("已重置为默认板子配置")
 }
 
-function resetGame() {
-  if (confirm("全部重置：玩家、角色、分数、日志、复盘全部清空？")) actions.resetWholeGame()
-}
-
 async function loadMembers() {
   loading.value = true
   loadStatus.value = ""
@@ -324,7 +320,6 @@ function onPoolPointerEnd(e: PointerEvent) {
         <a-tag v-else color="success" style="margin-left: 8px">✓ 人数一致</a-tag>
       </template>
       <div class="row" style="margin-top: 0">
-        <a-button danger size="small" @click="resetGame">整局重置</a-button>
         <span v-if="loadStatus" class="small">{{ loadStatus }}</span>
       </div>
       <div
