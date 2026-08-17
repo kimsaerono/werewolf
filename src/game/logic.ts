@@ -126,7 +126,7 @@ export const DEFAULT_VOICES: Record<string, string> = {
   idiot_close: "白痴请闭眼。",
   dawn: "天亮了，请睁眼！",
   dawn_peace: "天亮了，昨晚是平安夜！",
-  death: "号玩家出局，bye-bye，下局见！",
+  death: "{nos}号玩家出局，bye-bye，下局见！",
   vote: "现在是投票环节，请投出你怀疑的人。",
   explode: "狼人自爆：直接摆烂摊牌，不演了！白天结束全体闭眼入夜。",
   hunter: "枪哥，猎枪已上膛，逮个倒霉蛋过来陪葬！",
@@ -385,7 +385,6 @@ export function resolveVoice(state: GameState, id: string): string {
   const t = state.voices[id] || ""
   return t.replace(/\{killed\}/g, "某玩家")
 }
-
 export function maxNeed(state: GameState): number {
   return getBoardRoles(state).length
 }

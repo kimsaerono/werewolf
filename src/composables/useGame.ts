@@ -242,7 +242,7 @@ function refresh(): void {
     }
     const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : state.winCamp === "draw" ? "平局" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
-    speak(`${winText}！${r.reason}`)
+    if (state.voiceEnabled) speak(`${winText}！${r.reason}`)
   }
   persist()
 }

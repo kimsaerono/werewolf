@@ -802,7 +802,6 @@ function confirmWitch() {
   message.success("已使用解药救人")
   effect("witch", "witch", t ? `解药救：${refs.playerLabel(t)}` : "解药救：被刀者")
   witchModal.value = null
-  if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
 }
 /** 本晚被刀者展示 */
 const nightKillObj = computed(() => state.players.find((p) => p.name === state.nightWolfKill) || null)
@@ -820,7 +819,6 @@ function doWitchSave() {
   const t = state.players.find((x) => x.name === state.nightWolfKill)
   message.success("已使用解药救人")
   effect("witch", "witch", t ? `解药救：${refs.playerLabel(t)}` : "解药救：被刀者")
-  if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
 }
 function doWitchPoison(v: string) {
   snapshot()
@@ -829,7 +827,6 @@ function doWitchPoison(v: string) {
   const t = state.players.find((x) => x.name === v)
   message.success(`已对 ${v} 用毒`)
   effect("witch", "witch", t ? `毒药：${refs.playerLabel(t)}` : `毒药：${v}`)
-  if (state.voiceEnabled) speak(refs.resolveVoice(state, "witch_close"))
 }
 function doWitchDone() {
   // 解药毒药都用完时直接闭眼，不再二次确认
@@ -1106,11 +1103,14 @@ function doDawn() {
       const p = state.players.find((x) => x.name === n)
       return `${p?.no || "?"}`
     })
+    const deathVoice = refs.resolveVoice(state, "death")
+    const baseTxt = deathVoice.includes("{nos}") ? deathVoice.replace(/\{nos\}/g, nos.join("、")) : ""
     const txt =
-      nos.length === 1
+      baseTxt ||
+      (nos.length === 1
         ? `${nos[0]}号玩家出局，bye-bye，下局见！`
-        : `昨夜${nos.length === 2 ? "双死" : `${nos.length}死`}，${nos.join("、")}号玩家出局，bye-bye，下局见！`
-    speakQueue([txt])
+        : `昨夜${nos.length === 2 ? "双死" : `${nos.length}死`}，${nos.join("、")}号玩家出局，bye-bye，下局见！`)
+    if (state.voiceEnabled) speakQueue([txt])
   }
   checkSheriffDeath()
 }
