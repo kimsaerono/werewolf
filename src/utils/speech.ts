@@ -86,18 +86,21 @@ function pump(): void {
     }
     window.speechSynthesis.speak(u)
   } else {
+    const el = u as HTMLAudioElement & { __fb?: { text: string; style?: VoiceStyleKey }; __fbDone?: boolean }
+    const fallback = () => {
+      if (el.__fb && !el.__fbDone) {
+        el.__fbDone = true
+        enqueue(el.__fb.text, el.__fb.style)
+      }
+      playing = false
+      pump()
+    }
     u.onended = () => {
       playing = false
       pump()
     }
-    u.onerror = () => {
-      playing = false
-      pump()
-    }
-    u.play().catch(() => {
-      playing = false
-      pump()
-    })
+    u.onerror = fallback
+    u.play().catch(fallback)
   }
 }
 
@@ -118,11 +121,8 @@ function enqueue(text: string, style?: VoiceStyleKey): void {
 function enqueueAudio(url: string, fallbackText?: string, style?: VoiceStyleKey): void {
   const a = new Audio(url)
   a.preload = "auto"
-  a.onerror = () => {
-    playing = false
-    if (fallbackText) enqueue(fallbackText, style)
-    pump()
-  }
+  const el = a as HTMLAudioElement & { __fb?: { text: string; style?: VoiceStyleKey }; __fbDone?: boolean }
+  if (fallbackText) el.__fb = { text: fallbackText, style }
   audioEls.push(a)
   queue.push(a)
   pump()

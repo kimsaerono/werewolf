@@ -88,7 +88,6 @@ function onClearAll() {
         <div class="day-header">
           <span class="day-title">📅 {{ day.label }}（{{ day.games.length }}局）</span>
           <a-button size="small" @click="exportDayTxt(day)">📄 导出当天TXT</a-button>
-          <span v-if="syncStatus" class="small sync-status">{{ syncStatus }}</span>
         </div>
         <a-collapse accordion>
           <a-collapse-panel v-for="(h, i) in day.games" :key="`${di}-${i}`">

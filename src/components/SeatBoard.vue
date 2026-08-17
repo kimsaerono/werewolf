@@ -296,15 +296,15 @@ function vibrate(ms: number) {
   padding: 6px 4px;
   gap: 2px;
   border-radius: 10px;
-  background: rgba(23, 27, 40, 0.88);
-  backdrop-filter: blur(6px);
+  background: #ffffff;
+  border-color: #d5d9e4;
   cursor: grab;
 }
 .seat-board.floating .seat-card:active {
   cursor: grabbing;
 }
 
-/* ===== 卡片通用 ===== */
+/* ===== 卡片通用（存活白底，可拖动） ===== */
 .seat-card {
   position: relative;
   display: flex;
@@ -312,16 +312,23 @@ function vibrate(ms: number) {
   gap: 10px;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid #2b3145;
-  background: #1d2233;
+  border: 1px solid #d5d9e4;
+  background: #ffffff;
+  color: #1d2233;
   cursor: grab;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
 .seat-card.dead {
-  opacity: 0.5;
-  background: #161a26;
+  opacity: 0.6;
+  background: #e4e6ec;
+}
+.seat-card.dead .seat-name {
+  color: #8a8f9c;
+}
+.seat-card.dead .seat-role {
+  color: #9aa0ad;
 }
 .sortable-ghost {
   opacity: 0.4;
@@ -359,7 +366,7 @@ function vibrate(ms: number) {
   right: 6px;
   font-size: 10px;
   font-weight: 600;
-  color: #eee;
+  color: #1d2233;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -406,14 +413,14 @@ function vibrate(ms: number) {
 .seat-name {
   font-weight: 600;
   font-size: 14px;
-  color: #eee;
+  color: #1d2233;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .seat-role {
   font-size: 12px;
-  color: #999;
+  color: #666;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -439,10 +446,13 @@ function vibrate(ms: number) {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #3742fa;
+  background: #2ed573; /* 存活：绿底 */
   color: #fff;
   font-weight: 700;
   font-size: 12px;
+}
+.seat-card.dead .seat-no {
+  background: #ff4d4f; /* 出局：红底 */
 }
 .seat-lover {
   position: absolute;

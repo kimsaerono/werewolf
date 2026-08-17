@@ -53,6 +53,8 @@ const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const idiotFlip = ref(false)
 const lastDawnDeaths = ref<string[]>([])
+/** 殉情全局提示 */
+const loverDeathMsg = ref("")
 
 const jinghuiModal = ref(false)
 const voiceDrawer = ref(false)
@@ -525,6 +527,25 @@ watch(
     if (v) promptHunterShot()
   },
 )
+// 殉情：新日志出现"殉情" → 全局提示 + 播报
+watch(
+  () => state.globalLog.length,
+  (len, old) => {
+    if (len <= old) return
+    const added = state.globalLog.slice(old)
+    const names = added
+      .map((l) => {
+        const m = l.match(/💔(.+?)因情侣殉情出局/)
+        return m ? m[1] : ""
+      })
+      .filter(Boolean)
+    if (names.length) {
+      const txt = `${names.join("、")} 因情侣殉情出局`
+      loverDeathMsg.value = txt
+      if (state.voiceEnabled) speak(`💔${txt}`)
+    }
+  },
+)
 // 步骤切换时清空弹窗选择（v28）
 watch(currentStep, (key) => {
   pickerValue.value = ""
@@ -580,10 +601,10 @@ function confirmRoleWithCheck(role: string, v: string) {
   const color = roleColor(role)
   modal.confirm({
     title: `确认${role}身份？`,
-    width: 460,
-    content: h("div", { style: "text-align:center;padding:6px 0" }, [
-      h("div", { style: `font-size:26px;font-weight:700;color:${color};line-height:1.4` }, label),
-      h("div", { style: "font-size:16px;color:#aaa;margin-top:8px" }, `将确认其为：${refs.ROLE_EMOJI[role] || ""}${role}`),
+    width: "min(620px, 94vw)",
+    content: h("div", { style: "text-align:center;padding:10px 0" }, [
+      h("div", { style: `font-size:44px;font-weight:800;color:${color};line-height:1.3;letter-spacing:1px` }, label),
+      h("div", { style: `font-size:20px;color:${color};margin-top:12px;font-weight:600` }, `将确认其为：${refs.ROLE_EMOJI[role] || ""}${role}`),
     ]),
     okText: "✅ 确认",
     cancelText: "🔄 重新选择",
@@ -609,13 +630,13 @@ function confirmWolfSel() {
   }
   const list = wolfSel.value.map((n) => {
     const p = state.players.find((x) => x.name === n)
-    return h("div", { style: "font-size:22px;font-weight:700;color:#ff4d4f;line-height:1.5" }, p ? refs.playerLabel(p) : n)
+    return h("div", { style: "font-size:34px;font-weight:800;color:#ff4d4f;line-height:1.5" }, p ? refs.playerLabel(p) : n)
   })
   modal.confirm({
     title: "确认狼人？",
-    width: 460,
-    content: h("div", { style: "text-align:center;padding:6px 0" }, [
-      h("div", { style: "font-size:15px;color:#aaa;margin-bottom:8px" }, "将以下玩家确认为 🐺狼人："),
+    width: "min(620px, 94vw)",
+    content: h("div", { style: "text-align:center;padding:10px 0" }, [
+      h("div", { style: "font-size:18px;color:#aaa;margin-bottom:10px" }, "将以下玩家确认为 🐺狼人："),
       ...list,
     ]),
     okText: "✅ 确认",
@@ -665,10 +686,10 @@ function confirmCupidConnect() {
   const labels = cupidSel.value.map((n) => labelOf(n)).join(" ❤ ")
   modal.confirm({
     title: "确认连人？",
-    width: 460,
-    content: h("div", { style: "text-align:center;padding:6px 0" }, [
-      h("div", { style: "font-size:22px;font-weight:700;color:#ff85c0;line-height:1.5" }, labels),
-      h("div", { style: "font-size:15px;color:#aaa;margin-top:8px" }, chainText ? `链型：${chainText}` : "确认连为情侣？"),
+    width: "min(620px, 94vw)",
+    content: h("div", { style: "text-align:center;padding:10px 0" }, [
+      h("div", { style: "font-size:34px;font-weight:800;color:#ff85c0;line-height:1.5" }, labels),
+      h("div", { style: "font-size:18px;color:#aaa;margin-top:10px" }, chainText ? `链型：${chainText}` : "确认连为情侣？"),
     ]),
     okText: "✅ 确认",
     cancelText: "🔄 重新选择",
@@ -1478,6 +1499,28 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <a-button size="large" @click="doWitchDone">🙅 不用药，闭眼</a-button>
         </div>
         <div v-if="state.nightUsedDrug" class="fs-note">本晚已使用：{{ state.nightUsedDrug === "save" ? "解药" : "毒药" }}</div>
+      </div>
+
+      <!-- 猎人可开枪全屏遮罩：法官提示处理枪 -->
+      <div v-if="state.hunterShotPending && !state.finished" class="fullscreen-overlay">
+        <div class="fs-title">🔫 猎人可开枪</div>
+        <div class="fs-death" style="border-color: #ffa940">
+          <div class="fs-death-label">本局猎人</div>
+          <div class="fs-death-name" style="color: #ffa940">{{ hunterObj ? refs.playerLabel(hunterObj) : "-" }}</div>
+        </div>
+        <div class="fs-actions">
+          <a-button type="primary" size="large" @click="openPicker('选择带走目标', aliveOptions, (v) => doHunterShoot(v))">🔫 确认开枪带走</a-button>
+          <a-button size="large" @click="doHunterGiveUp">放弃开枪</a-button>
+        </div>
+      </div>
+
+      <!-- 殉情全局提示 -->
+      <div v-if="loverDeathMsg" class="fullscreen-overlay" style="z-index: 1500">
+        <div class="fs-result" style="border-color: #ff85c0">
+          <div class="fs-result-emoji">💔</div>
+          <div class="fs-result-text" style="font-size: 26px">{{ loverDeathMsg }}</div>
+        </div>
+        <a-button type="primary" size="large" @click="loverDeathMsg = ''">知道了</a-button>
       </div>
 
       <!-- 遗言计时（白天出局玩家） -->

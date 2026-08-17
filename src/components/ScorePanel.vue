@@ -31,12 +31,6 @@ const columns = [
     key: "scoreRound",
     customRender: ({ record }: { record: { scoreRound: number } }) => record.scoreRound.toFixed(1),
   },
-  {
-    title: "总分数",
-    dataIndex: "scoreTotal",
-    key: "scoreTotal",
-    customRender: ({ record }: { record: { scoreTotal: number } }) => record.scoreTotal.toFixed(1),
-  },
 ]
 
 // ===== 累积（当天对局聚合） =====
@@ -44,7 +38,6 @@ interface AggRow {
   name: string
   games: number
   total: number
-  latest: number
   per: (number | null)[]
 }
 const todayAgg = computed<AggRow[]>(() => {
@@ -52,10 +45,9 @@ const todayAgg = computed<AggRow[]>(() => {
   const map = new Map<string, AggRow>()
   games.forEach((h, gi) => {
     h.players.forEach((p) => {
-      const row = map.get(p.name) || { name: p.name, games: 0, total: 0, latest: p.scoreTotal, per: games.map(() => null) }
+      const row = map.get(p.name) || { name: p.name, games: 0, total: 0, per: games.map(() => null) }
       row.games++
       row.total = Math.round((row.total + p.scoreRound) * 10) / 10
-      row.latest = p.scoreTotal
       row.per[gi] = p.scoreRound
       map.set(p.name, row)
     })
@@ -72,12 +64,6 @@ const aggColumns = computed(() => {
       dataIndex: "total",
       key: "total",
       customRender: ({ record }: { record: AggRow }) => record.total.toFixed(1),
-    },
-    {
-      title: "总分数",
-      dataIndex: "latest",
-      key: "latest",
-      customRender: ({ record }: { record: AggRow }) => record.latest.toFixed(1),
     },
   ]
   todayGames.value.forEach((_, i) => {
