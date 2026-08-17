@@ -1674,9 +1674,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-tooltip>
       </div>
 
-      <!-- 左下悬浮：角色玩法 + 计分速查 -->
-      <RoleHelp :roles="refs.getBoardRoles(state)" />
-
       <!-- 弹窗：确认狼人（首夜睁眼认人） -->
       <a-modal v-model:open="wolfConfirmOpen" title="🐺 确认狼人（睁眼认人）" :footer="null" width="420px" :mask-closable="false">        <p class="small">勾选本板子的狼人玩家（{{ wolfSel.length }}/{{ wolfNeed }}），选满 {{ wolfNeed }} 个后确认</p>
         <a-checkbox-group v-model:value="wolfSel" style="width: 100%">

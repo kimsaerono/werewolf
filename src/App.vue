@@ -6,6 +6,7 @@ import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
 import GamePanel from "@/components/GamePanel.vue"
 import ScorePanel from "@/components/ScorePanel.vue"
 import RecordPanel from "@/components/RecordPanel.vue"
+import RoleHelp from "@/components/RoleHelp.vue"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs } = game
@@ -73,6 +74,9 @@ function onTabChange(key: string) {
         <RecordPanel v-show="activeTab === 'record'" :game="game" />
       </div>
       </div>
+
+      <!-- 左下悬浮：角色玩法 + 计分速查（所有 tab 可见） -->
+      <RoleHelp :roles="refs.getBoardRoles(state)" />
 
       <!-- 胜负弹窗 -->
       <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
