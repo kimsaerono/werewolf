@@ -618,6 +618,7 @@ function confirmRoleWithCheck(role: string, v: string) {
       snapshot()
       const err = actions.confirmRole(v, role)
       if (err) return message.error(err)
+      if (state.voiceEnabled) speak(`已确认${role}${refs.ROLE_EMOJI[role] || ""}身份`)
       message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
     },
     onCancel() {
