@@ -235,6 +235,19 @@ describe("预言家/狼人/女巫标记", () => {
     const err = witchPoison(st, "P0")
     expect(err).toContain("不能同时使用解药和毒药")
   })
+
+  it("女巫自救：首夜可自救，之后夜晚不能自救", () => {
+    const st = setup()
+    nextNight(st) // round 1
+    wolfKill(st, "P4") // 刀女巫自己
+    expect(witchSave(st)).toBeNull() // 首夜自救成功
+    const st2 = setup()
+    nextNight(st2)
+    nextNight(st2) // round 2
+    wolfKill(st2, "P4")
+    const err = witchSave(st2)
+    expect(err).toContain("自救")
+  })
 })
 
 describe("算分引擎", () => {
@@ -395,7 +408,7 @@ describe("放逐/自爆", () => {
     expect(err).toContain("跳过投票")
   })
 
-  it("白狼王带猎人：跳过投票但同时保留猎人开枪", () => {
+  it("白狼王带猎人：跳过投票，猎人不开枪（被带走无枪）", () => {
     const st = setup()
     const wwk = st.players[0]
     wwk.role = "白狼王"
@@ -403,8 +416,28 @@ describe("放逐/自爆", () => {
     const err = wolfKingBaoZha(st, wwk.name, hunter.name)
     expect(err).toBeNull()
     expect(st.skipVote).toBe(true)
-    expect(st.hunterShotPending).toBe(true)
+    expect(st.hunterShotPending).toBe(false)
     expect(g(st, hunter.name).alive).toBe(false)
+  })
+
+  it("白狼王带走狼王：狼王不开枪", () => {
+    const st = setup()
+    const wwk = st.players[0]
+    wwk.role = "白狼王"
+    const wolfKing = st.players[1]
+    wolfKing.role = "狼王"
+    const err = wolfKingBaoZha(st, wwk.name, wolfKing.name)
+    expect(err).toBeNull()
+    expect(st.wolfKingShotPending).toBe(false)
+    expect(g(st, wolfKing.name).alive).toBe(false)
+  })
+
+  it("自爆吞警徽：警长自爆 → 警徽流失", () => {
+    const st = setup()
+    st.jingHui = "P0"
+    wolfBaoZha(st, "P0")
+    expect(st.jingHui).toBe("")
+    expect(st.skipVote).toBe(true)
   })
 })
 
@@ -798,15 +831,15 @@ describe("丘比特 / 情侣", () => {
     expect(g(st, "P7").scoreRound).toBe(3)
   })
 
-  it("狼狼恋：丘比特随狼（狼胜+3，好人胜不给丘比特+3）", () => {
+  it("狼狼恋：无第三方，丘比特属好人（好人胜+3，狼胜不给丘比特+3）", () => {
     const st = setupQ()
     cupidConnect(st, ["P0", "P1"]) // 狼狼恋
-    st.winCamp = "wolf"
+    st.winCamp = "god"
     recalcScore(st)
     expect(g(st, "P7").scoreRound).toBe(3)
     const st2 = setupQ()
     cupidConnect(st2, ["P0", "P1"])
-    st2.winCamp = "god"
+    st2.winCamp = "wolf"
     recalcScore(st2)
     expect(g(st2, "P7").scoreRound).toBe(0)
   })

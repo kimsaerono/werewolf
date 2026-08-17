@@ -452,7 +452,7 @@ const stepKeys = computed(() => {
     const wolfQuotaN = roles.filter((r) => refs.isWolfRole(r)).length
     const wolfDone = state.players.filter((p) => refs.isWolfRole(p.role)).length >= wolfQuotaN
     const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
-    // 行动顺序：丘比特(仅首夜) → 守卫 → 狼人 → 女巫 → 预言家 → 白痴(仅首夜) → 骑士(仅首夜) → 猎人状态确认(每夜) → 竞选警长(首夜) → 天亮
+    // 行动顺序：丘比特(仅首夜) → 情侣认亲(仅首夜) → 守卫 → 狼人 → 女巫 → 预言家 → 白痴(仅首夜) → 骑士(仅首夜) → 猎人状态确认(每夜) → 竞选警长(首夜) → 天亮
     if (state.round <= 1 && roles.includes("丘比特") && !uiDone.value.cupid) ks.push("cupid")
     if (state.round <= 1 && state.lovers.length === 2 && !uiDone.value.loversMeet) ks.push("loversMeet")
     if (roles.includes("守卫") && (!guardObj.value || guardObj.value.alive) && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
@@ -1650,10 +1650,10 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 
       <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 骑士决斗 + 回退一步 + 重播当前步 + 语音配置 -->
       <div class="floating-actions">
-        <a-tooltip v-if="hasWWK && state.phase === 'day' && !state.skipVote && !state.finished" title="白狼王自爆带人">
+        <a-tooltip v-if="hasWWK && state.phase === 'day' && !state.skipVote && !state.finished && currentStep !== 'vote' && !lastWordsShow" title="白狼王自爆带人">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择白狼王带走目标', wwkTarOptions, (v) => doWWKBoom(v))">👑💥</a-button>
         </a-tooltip>
-        <a-tooltip v-if="state.phase === 'day' && !state.skipVote && !state.finished" title="狼人自爆（跳过本日投票，直接入夜）">
+        <a-tooltip v-if="state.phase === 'day' && !state.skipVote && !state.finished && currentStep !== 'vote' && !lastWordsShow" title="狼人自爆（跳过本日投票，直接入夜）">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
         </a-tooltip>
         <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交 / 警徽流）">

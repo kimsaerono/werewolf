@@ -840,6 +840,7 @@ export function witchSave(state: GameState): string | null {
   if (state.nightUsedDrug !== null) return "本晚女巫已经使用过一瓶药，同一夜晚不能同时使用解药和毒药"
   const witch = state.players.find((p) => p.role === "女巫")
   if (!witch) return "本局没有女巫"
+  if (target === witch.name && state.round > 1) return "女巫只有首夜可以自救，之后夜晚不能自救"
   state.witchSaveUsed = true
   state.nightUsedDrug = "save"
   state.nightWitchSave = target
@@ -1071,6 +1072,12 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   p.alive = false
   state.skipVote = true
   applyLoverDeaths(state)
+  // 自爆直接吞警徽：自爆者是警长则警徽流失
+  if (state.jingHui === sel) {
+    state.jingHui = ""
+    pushGlobalLog(state, `📢警长${sel}自爆，警徽流失`)
+    pushFlow(state, "警徽流失", sel)
+  }
   pushGlobalLog(state, `💥狼人自爆：${sel}，本日跳过投票`)
   pushFlow(state, "狼人自爆", sel)
   return null
@@ -1092,13 +1099,11 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   t.alive = false
   state.skipVote = true
   applyLoverDeaths(state)
-  if (t.role === "猎人" && !t.mark.hunterIsPoisoned) {
-    state.hunterShotPending = true
-    pushGlobalLog(state, `🔫猎人${tar}被白狼王带走，可开枪`)
-  }
-  if (t.role === "狼王" && !t.mark.wolfKingIsPoisoned) {
-    state.wolfKingShotPending = true
-    pushGlobalLog(state, `🔫狼王${tar}被白狼王带走，可开枪`)
+  // 白狼王自爆带走：被带走的猎人/狼王不开枪；若白狼王是警长则警徽流失
+  if (state.jingHui === sel) {
+    state.jingHui = ""
+    pushGlobalLog(state, `📢警长${sel}自爆，警徽流失`)
+    pushFlow(state, "警徽流失", sel)
   }
   pushGlobalLog(state, `💥白狼王${sel}自爆，带走${tar}，本日跳过投票`)
   pushFlow(state, "白狼王自爆", tar)
@@ -1278,12 +1283,11 @@ export function recalcScore(state: GameState): void {
       s -= 0.5
       detail.push("背锅侠-0.5")
     }
-    // 狼人胜利：真狼 +（狼狼恋时丘比特随狼）
-    const chainType = getChainType(state)
-    if (win === "wolf" && (isWolfRole(p.role) || (chainType === "WW" && p.role === "丘比特"))) {
+    // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分）
+    if (win === "wolf" && isWolfRole(p.role)) {
       s += 3
       detail.push("狼人胜利+3")
-      if (isWolfRole(p.role) && p.alive) {
+      if (p.alive) {
         if (aliveWolfCount >= 4) {
           s += 1
           detail.push("4狼存活+1")
@@ -1306,8 +1310,8 @@ export function recalcScore(state: GameState): void {
       s += 3
       detail.push("第三方胜利+3")
     }
-    // 丘比特好人胜利 +3：仅人人恋(GG)/未成链时；狼狼恋随狼、人狼恋走第三方
-    if ((win === "god" || win === "civil") && p.role === "丘比特" && chainType !== "WW") {
+    // 丘比特：人人/狼狼恋(无第三方)属好人，好人胜+3；人狼恋走第三方
+    if ((win === "god" || win === "civil") && p.role === "丘比特") {
       s += 3
       detail.push("好人胜利·丘比特+3")
     }
