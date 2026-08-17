@@ -1530,6 +1530,19 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </div>
 
+      <!-- 情侣认亲全屏过场：法官叫醒情侣互相认识 -->
+      <div v-if="currentStep === 'loversMeet'" class="fullscreen-overlay">
+        <div class="fs-title">💑 情侣认亲</div>
+        <div class="fs-result" style="border-color: #ff85c0">
+          <div class="fs-result-emoji">💑</div>
+          <div class="fs-result-text">{{ loversLabel }}</div>
+        </div>
+        <p class="small" style="color: #aaa; text-align: center; max-width: 420px">
+          请叫醒这两位情侣睁眼，互相认识（只看编号，不知道彼此身份）
+        </p>
+        <a-button type="primary" size="large" @click="doLoversMeetClose">✅ 确认情侣已认识，闭眼</a-button>
+      </div>
+
       <!-- 殉情全局提示 -->
       <div v-if="loverDeathMsg" class="fullscreen-overlay" style="z-index: 1500">
         <div class="fs-result" style="border-color: #ff85c0">
