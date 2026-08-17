@@ -1208,7 +1208,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <p class="small" style="text-align: center">被选中的两位情侣睁眼，互相认识一下（只知道对方编号，不知道身份）</p>
           <div class="fs-result" style="border-color:#ff85c0">
             <div class="fs-result-emoji">💑</div>
-            <div class="fs-result-text" style="font-size:26px">{{ loversLabel }}</div>
+            <div class="fs-result-text">{{ loversLabel }}</div>
           </div>
           <a-button type="primary" size="large" @click="doLoversMeetClose">确认情侣闭眼</a-button>
         </div>
@@ -1534,7 +1534,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       <div v-if="loverDeathMsg" class="fullscreen-overlay" style="z-index: 1500">
         <div class="fs-result" style="border-color: #ff85c0">
           <div class="fs-result-emoji">💔</div>
-          <div class="fs-result-text" style="font-size: 26px">{{ loverDeathMsg }}</div>
+          <div class="fs-result-text">{{ loverDeathMsg }}</div>
         </div>
         <a-button type="primary" size="large" @click="loverDeathMsg = ''">知道了</a-button>
       </div>
@@ -1799,11 +1799,11 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   padding: 18px 12px;
 }
 .step-emoji {
-  font-size: 40px;
+  font-size: 34px;
 }
 .step-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 18px;
 }
 .key-name {
   color: #ff6464;
@@ -2180,7 +2180,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   overflow-y: auto;
 }
 .fs-title {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: #fff;
   text-align: center;
@@ -2205,22 +2205,22 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   background: #232a3d;
 }
 .fs-no {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #fff;
 }
 .fs-name {
-  font-size: 15px;
+  font-size: 14px;
   color: #eee;
   margin-top: 2px;
 }
 .fs-role {
-  font-size: 13px;
+  font-size: 12px;
   margin-top: 2px;
 }
 .fs-result {
   text-align: center;
-  padding: 34px 48px;
+  padding: 24px 32px;
   border-radius: 16px;
   background: #1d2233;
   border: 3px solid #2b3145;
@@ -2235,28 +2235,28 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   border-color: #888;
 }
 .fs-result-emoji {
-  font-size: 84px;
+  font-size: 60px;
   line-height: 1;
 }
 .fs-result-text {
-  font-size: 30px;
+  font-size: 24px;
   font-weight: 700;
   color: #fff;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .fs-death {
   text-align: center;
-  padding: 24px 40px;
+  padding: 18px 28px;
   border-radius: 14px;
   background: #1d2233;
   border: 2px solid #ff4d4f;
 }
 .fs-death-label {
-  font-size: 15px;
+  font-size: 14px;
   color: #aaa;
 }
 .fs-death-name {
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 700;
   color: #ff6b6b;
   margin-top: 6px;
@@ -2268,7 +2268,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   width: min(360px, 100%);
 }
 .fs-note {
-  font-size: 15px;
+  font-size: 14px;
   color: #ffd666;
 }
 </style>
