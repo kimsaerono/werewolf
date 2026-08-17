@@ -138,7 +138,7 @@ function rowKey(r: { name: string }) {
               <span class="small" style="color: #888">手动触发：逐局写入复盘表 + 按姓名累加排名；已同步的局不会重复累加</span>
             </div>
             <div v-else class="sync-row">
-              <a-tag color="orange">🧪 模拟模式：不同步飞书</a-tag>
+              <a-tag color="#2e7d32">🧪 模拟模式（不同步飞书）</a-tag>
             </div>
           </template>
         </a-tab-pane>

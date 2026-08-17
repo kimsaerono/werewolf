@@ -31,13 +31,13 @@ function enter() {
         v-for="o in opts"
         :key="o.key"
         class="mode-card"
-        :class="{ active: sel === o.key }"
+        :class="[`mode-card-${o.key}`, { active: sel === o.key }]"
         @click="sel = o.key"
       >
         <div class="mode-card-emoji">{{ o.emoji }}</div>
         <div class="mode-card-title">
           {{ o.title }}
-          <a-tag :color="o.key === 'real' ? 'green' : 'orange'" style="margin-left: 6px">{{ o.tag }}</a-tag>
+          <a-tag :color="o.key === 'real' ? '#1668dc' : '#2e7d32'" style="margin-left: 6px">{{ o.tag }}</a-tag>
         </div>
         <div class="mode-card-desc">{{ o.desc }}</div>
         <div class="mode-card-check">{{ sel === o.key ? "● 已选择" : "○" }}</div>
@@ -108,9 +108,13 @@ function enter() {
 .mode-card:hover {
   border-color: #3a4466;
 }
-.mode-card.active {
-  border-color: #2ed573;
-  background: #2ed57314;
+.mode-card-real.active {
+  border-color: #1668dc;
+  background: #1668dc14;
+}
+.mode-card-sim.active {
+  border-color: #2e7d32;
+  background: #2e7d3214;
 }
 .mode-card-emoji {
   font-size: 44px;
@@ -129,7 +133,7 @@ function enter() {
 }
 .mode-card-check {
   font-size: 13px;
-  color: #2ed573;
+  color: #66bb6a;
 }
 .mode-enter {
   height: 52px;

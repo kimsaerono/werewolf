@@ -53,7 +53,10 @@ function onTabChange(key: string) {
     <a-app>
       <ModeSelectPage v-if="!state.modeChosen" :game="game" />
       <template v-else>
-      <div class="app-shell" :class="`phase-${state.phase}`">
+      <div
+        class="app-shell"
+        :class="[`phase-${state.phase}`, state.simMode ? 'wm-sim' : 'wm-real']"
+      >
       <div class="sticky-tabs">
         <a-tabs
           v-model:activeKey="activeTab"
@@ -87,7 +90,7 @@ function onTabChange(key: string) {
           <h2 class="win-title">{{ winNotice.text }}</h2>
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
-          <p v-if="state.simMode" class="small" style="color:#ffa502;margin-top:6px">🧪 模拟模式：本局数据不会同步到飞书</p>
+          <p v-if="state.simMode" class="small" style="color:#66bb6a;margin-top:6px">🧪 模拟模式（不同步飞书）</p>
           <p class="small">已自动结算并保存本局积分与日志{{ state.simMode ? '' : '。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入' }}</p>
           <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">🏆 MVP/SVP 自动建议：{{ honorSuggestion }}</p>
           <a-button type="primary" size="large" block style="margin-top: 10px" @click="onWinConfirm">
@@ -112,6 +115,27 @@ body {
 .app-shell {
   min-height: 100vh;
   transition: background 0.5s ease;
+  position: relative;
+}
+/* 背景水印：跟随模式变色，固定铺满不滚动，不遮挡交互 */
+.app-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  opacity: 0.5;
+}
+.app-shell.wm-sim::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Ctext x='210' y='210' text-anchor='middle' transform='rotate(-28 210 210)' font-size='34' font-weight='700' fill='%232e7d32' fill-opacity='0.16'%3E%E6%A8%A1%E6%8B%9F%E6%A8%A1%E5%BC%8F%3C/text%3E%3C/svg%3E");
+}
+.app-shell.wm-real::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Ctext x='210' y='210' text-anchor='middle' transform='rotate(-28 210 210)' font-size='34' font-weight='700' fill='%231668dc' fill-opacity='0.14'%3E%E7%9C%9F%E5%AE%9E%E6%A8%A1%E5%BC%8F%3C/text%3E%3C/svg%3E");
+}
+.app-shell > * {
+  position: relative;
+  z-index: 1;
 }
 .app-shell.phase-night {
   background: linear-gradient(180deg, #0a0d16 0%, #101a2e 100%);

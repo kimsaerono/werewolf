@@ -149,6 +149,11 @@ function confirmPlayers() {
   if (state.players.length !== need) {
     return message.error(`板子最终 ${need} 人，当前已选 ${state.players.length} 人，一致后才能进入下一步`)
   }
+  confirmModal.value = true
+}
+const confirmModal = ref(false)
+function doConfirmPlayers() {
+  confirmModal.value = false
   actions.confirmPlayers()
   message.success(`已确认 ${state.players.length} 名玩家参与，进入「对局操作」发牌开局`)
   activeTab.value = "game"
@@ -268,11 +273,11 @@ function onPoolPointerEnd(e: PointerEvent) {
       </template>
       <div class="mode-select-row">
         <span class="field-label">对局模式</span>
-        <a-tag :color="state.simMode ? 'orange' : 'green'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
-        <span v-if="state.simMode" class="sim-hint">（数据不会同步到飞书）</span>
+        <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
+        <span v-if="state.simMode" class="sim-hint">（不同步飞书）</span>
         <a-button size="small" @click="actions.setModeChosen(false)">切换模式</a-button>
       </div>
-      <a-tag v-if="state.simMode && state.playersConfirmed" color="orange" style="margin-left: 8px">🧪 模拟模式</a-tag>
+      <a-tag v-if="state.simMode && state.playersConfirmed" color="#2e7d32" style="margin-left: 8px">🧪 模拟模式</a-tag>
       <div class="row" style="margin-top: 0">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
@@ -366,6 +371,33 @@ function onPoolPointerEnd(e: PointerEvent) {
       </div>
     </a-card>
 
+    <!-- 确认参与：最后核对法官 / 板子 / 模式，防止误操作 -->
+    <a-modal v-model:open="confirmModal" title="确认参与玩家？" :footer="null" width="min(480px, 94vw)" :mask-closable="false" centered>
+      <div class="confirm-grid">
+        <div class="confirm-item">
+          <span class="confirm-label">对局模式</span>
+          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
+          <span v-if="state.simMode" class="confirm-note">不会同步飞书</span>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">法官</span>
+          <b>{{ state.judge || "未设置（无法官加分）" }}</b>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">板子</span>
+          <b>{{ refs.boardLabels[state.board] || state.board }}</b>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">参与玩家</span>
+          <b>{{ state.players.length }} 人</b>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 16px">
+        <a-button size="large" block @click="confirmModal = false">返回修改</a-button>
+        <a-button type="primary" size="large" danger block @click="doConfirmPlayers">✅ 确认，进入对局</a-button>
+      </div>
+    </a-modal>
+
     <a-modal v-model:open="addRoleModal" title="＋ 加角色（选择剩余角色）" :footer="null" width="360px">
       <p class="small">已有角色用上方「+ / −」调整数量</p>
       <div v-if="remainingRoles.length" class="role-remaining">
@@ -398,9 +430,31 @@ function onPoolPointerEnd(e: PointerEvent) {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .sim-hint {
-  color: #ffa502;
+  color: #66bb6a;
+  font-size: 12px;
+}
+.confirm-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.confirm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.confirm-label {
+  width: 72px;
+  flex: none;
+  color: #999;
+  font-size: 13px;
+}
+.confirm-note {
+  color: #7bc47f;
   font-size: 12px;
 }
 </style>
