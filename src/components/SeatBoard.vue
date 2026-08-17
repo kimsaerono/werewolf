@@ -163,6 +163,31 @@ function vibrate(ms: number) {
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
           </div>
         </div>
+        <div class="seat-col-spacer"></div>
+        <div ref="rightEl" class="seat-col">
+          <div
+            v-for="(p, idx) in rightPlayers"
+            :key="p.name"
+            class="seat-card"
+            :data-name="p.name"
+            :class="{ dead: !p.alive }"
+          >
+            <span v-if="draggable" class="seat-grip">⠿</span>
+            <span class="seat-name float">{{ p.name }}</span>
+            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
+            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="!p.alive" class="seat-dead-x">✕</span>
+            <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
+            <span
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
+              class="seat-lover"
+              :class="badgeClass(p)"
+            >{{ badgeText(p) }}</span>
+            <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
+            <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+          </div>
+        </div>
       </template>
       <template v-else>
         <div
