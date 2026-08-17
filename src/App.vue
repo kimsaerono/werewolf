@@ -7,6 +7,7 @@ import GamePanel from "@/components/GamePanel.vue"
 import ScorePanel from "@/components/ScorePanel.vue"
 import RecordPanel from "@/components/RecordPanel.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
+import ModeSelectPage from "@/components/ModeSelectPage.vue"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs } = game
@@ -50,6 +51,8 @@ function onTabChange(key: string) {
 <template>
   <a-config-provider :theme="{ algorithm: theme.darkAlgorithm }">
     <a-app>
+      <ModeSelectPage v-if="!state.modeChosen" :game="game" />
+      <template v-else>
       <div class="app-shell" :class="`phase-${state.phase}`">
       <div class="sticky-tabs">
         <a-tabs
@@ -92,6 +95,7 @@ function onTabChange(key: string) {
           </a-button>
         </div>
       </a-modal>
+      </template>
     </a-app>
   </a-config-provider>
 </template>

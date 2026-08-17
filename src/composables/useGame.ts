@@ -266,6 +266,11 @@ export function useGame() {
       state.simMode = v
       persist()
     },
+    setModeChosen(v: boolean) {
+      state.modeChosen = v
+      if (v) activeTab.value = "board"
+      persist()
+    },
     setBoardRoles(roles: string[]): string | null {
       const err = g.setBoardRoles(state, roles)
       persist()

@@ -194,6 +194,8 @@ export interface GameState {
   lovers: string[]
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
+  /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
+  modeChosen: boolean
 }
 
 export function defaultMark(): Mark {
@@ -265,6 +267,7 @@ export function defaultState(): GameState {
     finished: false,
     lovers: [],
     simMode: false,
+    modeChosen: false,
   }
 }
 
@@ -295,6 +298,8 @@ export function normalizeState(s: GameState): GameState {
   if (!Array.isArray(st.flow)) st.flow = []
   if (!Array.isArray(st.jingHuiFlow)) st.jingHuiFlow = []
   if (!Array.isArray(st.lovers)) st.lovers = []
+  if (typeof st.simMode !== "boolean") st.simMode = false
+  if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   const legacy = (s as { judgeScore?: number }).judgeScore
   if (typeof legacy === "number" && st.judge) {
     st.judgeScores[st.judge] = (st.judgeScores[st.judge] || 0) + legacy
