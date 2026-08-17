@@ -111,6 +111,18 @@ body {
   margin: 0;
   background: #0f1115;
 }
+/* 卡片/面板半透明，投屏时可透出背景水印，且不影响可读性 */
+.ant-card {
+  background: rgba(23, 27, 40, 0.55);
+  backdrop-filter: blur(4px);
+}
+.ant-card-bordered {
+  border-color: #2b3145aa;
+}
+.ant-modal .ant-card,
+.ant-drawer .ant-card {
+  background: #171b28;
+}
 /* ===== 夜晚 / 白天背景切换 ===== */
 .app-shell {
   min-height: 100vh;
@@ -125,13 +137,12 @@ body {
   z-index: 0;
   pointer-events: none;
   background-repeat: repeat;
-  opacity: 0.5;
 }
 .app-shell.wm-sim::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Ctext x='210' y='210' text-anchor='middle' transform='rotate(-28 210 210)' font-size='34' font-weight='700' fill='%232e7d32' fill-opacity='0.16'%3E%E6%A8%A1%E6%8B%9F%E6%A8%A1%E5%BC%8F%3C/text%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='440'%3E%3Ctext x='80' y='90' text-anchor='middle' transform='rotate(-28 80 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='80' y='220' text-anchor='middle' transform='rotate(-28 80 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='80' y='350' text-anchor='middle' transform='rotate(-28 80 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='90' text-anchor='middle' transform='rotate(-28 240 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='220' text-anchor='middle' transform='rotate(-28 240 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='350' text-anchor='middle' transform='rotate(-28 240 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='90' text-anchor='middle' transform='rotate(-28 400 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='220' text-anchor='middle' transform='rotate(-28 400 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='350' text-anchor='middle' transform='rotate(-28 400 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3C/svg%3E");
 }
 .app-shell.wm-real::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='420'%3E%3Ctext x='210' y='210' text-anchor='middle' transform='rotate(-28 210 210)' font-size='34' font-weight='700' fill='%231668dc' fill-opacity='0.14'%3E%E7%9C%9F%E5%AE%9E%E6%A8%A1%E5%BC%8F%3C/text%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='440'%3E%3Ctext x='80' y='90' text-anchor='middle' transform='rotate(-28 80 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='220' text-anchor='middle' transform='rotate(-28 80 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='350' text-anchor='middle' transform='rotate(-28 80 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='90' text-anchor='middle' transform='rotate(-28 240 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='220' text-anchor='middle' transform='rotate(-28 240 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='350' text-anchor='middle' transform='rotate(-28 240 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='90' text-anchor='middle' transform='rotate(-28 400 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='220' text-anchor='middle' transform='rotate(-28 400 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='350' text-anchor='middle' transform='rotate(-28 400 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3C/svg%3E");
 }
 .app-shell > * {
   position: relative;
