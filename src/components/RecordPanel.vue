@@ -94,9 +94,10 @@ function onClearAll() {
             <template #header>
               <span class="game-line">
                 <span class="game-title">{{ `第${i + 1}局 · ${refs.boardShortName(h.board)} ｜ ${h.winner}` }}</span>
-                <span v-if="h.synced" class="game-sync synced">✅已同步</span>
-                <a-button v-else-if="!state.simMode" size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
-                <span v-else class="game-sync" style="color: #66bb6a">🧪 模拟</span>
+                <template v-if="!state.simMode">
+                  <span v-if="h.synced" class="game-sync synced">✅已同步</span>
+                  <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
+                </template>
               </span>
             </template>
             <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.board }}（{{ refs.boardShortName(h.board) }}）</p>

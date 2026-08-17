@@ -120,8 +120,8 @@ function rowKey(r: { name: string }) {
           </div>
           <template v-else>
             <div class="today-tags">
-              <a-tag v-for="(h, i) in todayGames" :key="i" :color="h.synced ? 'green' : 'orange'">
-                {{ `第${i + 1}局` }} · {{ timeHM(h.time) }} {{ h.synced ? "✅已同步" : "未同步" }}
+              <a-tag v-for="(h, i) in todayGames" :key="i" :color="state.simMode ? '#2e7d32' : (h.synced ? 'green' : 'orange')">
+                {{ `第${i + 1}局` }} · {{ timeHM(h.time) }}<template v-if="!state.simMode"> {{ h.synced ? "✅已同步" : "未同步" }}</template>
               </a-tag>
               <span v-if="syncStatus" class="small" style="color: #ffd666">{{ syncStatus }}</span>
             </div>
@@ -138,7 +138,7 @@ function rowKey(r: { name: string }) {
               <span class="small" style="color: #888">手动触发：逐局写入复盘表 + 按姓名累加排名；已同步的局不会重复累加</span>
             </div>
             <div v-else class="sync-row">
-              <a-tag color="#2e7d32">🧪 模拟模式（不同步飞书）</a-tag>
+              <a-tag color="#2e7d32">🧪 模拟模式</a-tag>
             </div>
           </template>
         </a-tab-pane>

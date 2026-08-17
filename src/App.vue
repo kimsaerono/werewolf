@@ -90,7 +90,7 @@ function onTabChange(key: string) {
           <h2 class="win-title">{{ winNotice.text }}</h2>
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
-          <p v-if="state.simMode" class="small" style="color:#66bb6a;margin-top:6px">🧪 模拟模式（不同步飞书）</p>
+          <p v-if="state.simMode" class="small" style="color:#66bb6a;margin-top:6px">🧪 模拟模式</p>
           <p class="small">已自动结算并保存本局积分与日志{{ state.simMode ? '' : '。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入' }}</p>
           <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">🏆 MVP/SVP 自动建议：{{ honorSuggestion }}</p>
           <a-button type="primary" size="large" block style="margin-top: 10px" @click="onWinConfirm">
@@ -140,11 +140,20 @@ body {
 .app-shell.phase-night {
   background: linear-gradient(180deg, #0a0d16 0%, #101a2e 100%);
 }
+.app-shell.wm-sim.phase-night {
+  background: linear-gradient(180deg, #071109 0%, #0c1f12 100%);
+}
 .app-shell.phase-day {
   background: linear-gradient(180deg, #12151d 0%, #1c2436 100%);
 }
+.app-shell.wm-sim.phase-day {
+  background: linear-gradient(180deg, #0e1610 0%, #163020 100%);
+}
 .app-shell.phase-idle {
   background: #0f1115;
+}
+.app-shell.wm-sim.phase-idle {
+  background: #0c1710;
 }
 /* 悬浮座位牌列宽（桌面 76px / 移动端 62px），内容区让位 */
 :root {

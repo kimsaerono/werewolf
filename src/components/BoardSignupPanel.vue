@@ -274,7 +274,6 @@ function onPoolPointerEnd(e: PointerEvent) {
       <div class="mode-select-row">
         <span class="field-label">对局模式</span>
         <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
-        <span v-if="state.simMode" class="sim-hint">（不同步飞书）</span>
         <a-button size="small" @click="actions.setModeChosen(false)">切换模式</a-button>
       </div>
       <a-tag v-if="state.simMode && state.playersConfirmed" color="#2e7d32" style="margin-left: 8px">🧪 模拟模式</a-tag>
@@ -377,7 +376,6 @@ function onPoolPointerEnd(e: PointerEvent) {
         <div class="confirm-item">
           <span class="confirm-label">对局模式</span>
           <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
-          <span v-if="state.simMode" class="confirm-note">不会同步飞书</span>
         </div>
         <div class="confirm-item">
           <span class="confirm-label">法官</span>
@@ -432,10 +430,6 @@ function onPoolPointerEnd(e: PointerEvent) {
   margin-bottom: 12px;
   flex-wrap: wrap;
 }
-.sim-hint {
-  color: #66bb6a;
-  font-size: 12px;
-}
 .confirm-grid {
   display: flex;
   flex-direction: column;
@@ -452,9 +446,5 @@ function onPoolPointerEnd(e: PointerEvent) {
   flex: none;
   color: #999;
   font-size: 13px;
-}
-.confirm-note {
-  color: #7bc47f;
-  font-size: 12px;
 }
 </style>

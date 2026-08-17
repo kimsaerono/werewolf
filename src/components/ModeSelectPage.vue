@@ -8,8 +8,8 @@ const { state, actions } = props.game
 const sel = ref<"real" | "sim">(state.simMode ? "sim" : "real")
 
 const opts = [
-  { key: "real", emoji: "🎯", title: "真实对局", desc: "数据将同步到飞书表格，计入积分与排名", tag: "同步飞书" },
-  { key: "sim", emoji: "🧪", title: "模拟对局", desc: "本局数据不会同步到飞书，仅本地记录", tag: "不同步" },
+  { key: "real", emoji: "🎯", title: "真实对局", desc: "数据计入积分与排名", tag: "同步飞书" },
+  { key: "sim", emoji: "🧪", title: "模拟对局", desc: "仅本地记录，不影响排名", tag: "不同步" },
 ] as const
 
 function enter() {
