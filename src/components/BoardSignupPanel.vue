@@ -264,7 +264,6 @@ function onPoolPointerEnd(e: PointerEvent) {
             style="max-width: 180px"
             @change="onJudgeCustom"
           />
-          <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}</a-tag>
         </span>
       </template>
       <div class="row" style="margin-top: 0">
