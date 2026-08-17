@@ -244,28 +244,30 @@ function onPoolPointerEnd(e: PointerEvent) {
 
 <template>
   <div class="panel setup-panel">
-    <a-card title="🎲 板子与法官" :bordered="false">
+    <a-card :bordered="false">
+      <template #title>
+        <span class="judge-title-row">
+          🎲 板子与法官
+          <a-select
+            v-model:value="judgePick"
+            style="min-width: 160px"
+            placeholder="选择法官（选中即确认）"
+            :options="nameOptions"
+            allow-clear
+            @change="onJudgeSelect"
+            @clear="onJudgeClear"
+          />
+          <a-input
+            v-if="judgePick === '__OTHER__'"
+            v-model:value="customJudge"
+            placeholder="输入法官名字，回车/失焦确认"
+            style="max-width: 180px"
+            @change="onJudgeCustom"
+          />
+          <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
+        </span>
+      </template>
       <div class="row" style="margin-top: 0">
-        <span class="field-label">法官</span>
-        <a-select
-          v-model:value="judgePick"
-          style="flex: 1; min-width: 160px"
-          placeholder="选择法官（选中即确认）"
-          :options="nameOptions"
-          allow-clear
-          @change="onJudgeSelect"
-          @clear="onJudgeClear"
-        />
-        <a-input
-          v-if="judgePick === '__OTHER__'"
-          v-model:value="customJudge"
-          placeholder="输入法官名字，回车/失焦确认"
-          style="max-width: 180px"
-          @change="onJudgeCustom"
-        />
-        <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
-      </div>
-      <div class="row">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
           <a-select-option v-for="(_, key) in refs.boardConfig" :key="key" :value="key">
@@ -374,6 +376,12 @@ function onPoolPointerEnd(e: PointerEvent) {
 </template>
 
 <style scoped>
+.judge-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .field-label {
   color: #888;
   font-size: 13px;
