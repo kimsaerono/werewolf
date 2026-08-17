@@ -103,6 +103,9 @@ function rowKey(r: { name: string }) {
   <div class="panel">
     <a-card :bordered="false">
       <a-tabs>
+        <template #tabBarExtraContent>
+          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'" style="margin-right: 8px">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
+        </template>
         <a-tab-pane key="cur" tab="本局玩家个人分数明细">
           <a-table
             :data-source="state.players"

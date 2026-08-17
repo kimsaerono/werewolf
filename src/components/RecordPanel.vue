@@ -78,6 +78,7 @@ function onClearAll() {
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
       <template #extra>
         <a-space :wrap="true">
+          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
           <a-button v-if="!state.simMode" size="small" @click="onTestSync">🧪 测试同步（模拟新玩家）</a-button>
           <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
         </a-space>

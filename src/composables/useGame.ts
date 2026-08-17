@@ -31,6 +31,8 @@ export interface GameRecord {
     lovers: string[]
     /** 是否已同步到飞书（防止重复累加） */
     synced: boolean
+    /** 是否模拟对局（真实/模拟各自独立历史与编号） */
+    sim: boolean
   }
 
 function load(): GameState {
@@ -47,7 +49,7 @@ function loadHistory(): GameRecord[] {
   try {
     const s = localStorage.getItem(HISTORY_KEY)
     if (s) {
-      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false }))
+      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false }))
     }
   } catch {
     /* ignore */
@@ -79,11 +81,14 @@ const syncStatus = ref("")
 /** 正在同步中的对局（自动/手动互斥，防止同一局被并发发两次导致重复累计） */
 const syncingRefs = ref<Set<GameRecord>>(new Set())
 
-const sessionNo = computed(() => history.value.length + 1)
+const sessionNo = computed(() => modeHistory.value.length + 1)
 const sessionTitle = computed(() => {
   const d = new Date()
   return `第${sessionNo.value}局 · ${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 })
+
+/** 当前模式的对局历史（真实/模拟各自独立） */
+const modeHistory = computed(() => history.value.filter((h) => h.sim === state.simMode))
 
 /** 记录日期键：YYYY/M/D（按天维度） */
 function dayKey(time: string): string {
@@ -97,16 +102,16 @@ function dayLabelOf(key: string): string {
   return `${y}年${Number(m) || ""}月${Number(d) || ""}日`
 }
 const todayKey = computed(() => dayKey(new Date().toLocaleString()))
-/** 今天的对局（分数明细只展示当天，过期不展示） */
-const todayGames = computed(() => history.value.filter((h) => dayKey(h.time) === todayKey.value))
+/** 今天的对局（分数明细只展示当天，过期不展示；仅当前模式） */
+const todayGames = computed(() => modeHistory.value.filter((h) => dayKey(h.time) === todayKey.value))
 /** 当天对局编号文案：第1局/第2局/第3局 */
 function dayGameLabel(idx: number): string {
   return `第${idx + 1}局`
 }
-/** 按天分组（天倒序，天内按局序）：历史对局展示用 */
+/** 按天分组（天倒序，天内按局序）：历史对局展示用（仅当前模式） */
 const historyByDay = computed(() => {
   const map = new Map<string, GameRecord[]>()
-  for (const h of history.value) {
+  for (const h of modeHistory.value) {
     const k = dayKey(h.time) || "未知日期"
     const arr = map.get(k) || []
     arr.push(h)
@@ -119,10 +124,11 @@ const historyByDay = computed(() => {
 /** 单局在当天内的 gameId（第X局 · 该局日期）：自动/手动/历史同步统一使用，保证幂等一致 */
 function gameIdFor(rec: GameRecord): string {
   const k = dayKey(rec.time) || ""
-  const group = k ? history.value.filter((h) => dayKey(h.time) === k) : []
+  const group = k ? history.value.filter((h) => dayKey(h.time) === k && h.sim === rec.sim) : []
   const idx = group.indexOf(rec)
   const dayLabel = k ? dayLabelOf(k) : dayLabelOf(todayKey.value)
-  return `${dayGameLabel(idx >= 0 ? idx : group.length)} · ${dayLabel}`
+  const modeTag = rec.sim ? "模拟" : "真实"
+  return `${modeTag}·${dayGameLabel(idx >= 0 ? idx : group.length)} · ${dayLabel}`
 }
 /** 是否正在同步中（UI 显示 loading 用） */
 function isSyncing(rec: GameRecord): boolean {
@@ -234,6 +240,7 @@ function refresh(): void {
       log: [...state.globalLog],
       lovers: [...state.lovers],
       synced: false,
+      sim: state.simMode,
     })
     saveHistory()
     // 平局或模拟模式：不计积分、不同步飞书
@@ -521,7 +528,7 @@ export function useGame() {
     /** 手动同步最近一局到飞书（返回错误信息或 null） */
     async syncLastGame(): Promise<string | null> {
       if (state.simMode) return "当前为模拟模式，不会同步到飞书"
-      const rec = history.value[history.value.length - 1]
+      const rec = modeHistory.value[modeHistory.value.length - 1]
       if (!rec) return "暂无已结算的对局"
       syncStatus.value = "syncing"
       const err = await syncGameToFeishu(rec)
