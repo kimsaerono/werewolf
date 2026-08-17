@@ -101,12 +101,16 @@ const GAME_RULES: { title: string; items: string[] }[] = [
 ]
 
 /** 丘比特/情侣 完整规则（按链型） */
-const CUPID_RULES = [
-  { key: "人人恋", desc: "情侣都是好人：丘比特属好人，狼全灭好人胜" },
-  { key: "狼狼恋", desc: "情侣都是狼：无第三方，丘比特属好人；好人胜=狼全灭，狼胜=屠边" },
-  { key: "人狼恋", desc: "一好一狼：丘比特+两情侣=第三方，屠城胜；丘比特活着第三方就在，好/狼都要先清掉丘比特才能赢" },
-]
-const CUPID_NOTE = "丘比特首夜必须连两人（可连自己），随后情侣认亲互相认识（只知编号不知身份）。殉情：情侣一方出局另一方立刻同死；殉情出局的猎人/狼王不能开枪。"
+const CUPID_RULES: { title: string; items: string[] } = {
+  title: "💘 丘比特 · 情侣规则",
+  items: [
+    "首夜必连两人成情侣（可连自己），随后情侣互认（只知编号不知身份）",
+    "人人恋：情侣都是好人，丘比特属好人，狼全灭好人胜",
+    "狼狼恋：无第三方，丘比特属好人；好人胜=狼全灭，狼胜=屠边",
+    "人狼恋：丘比特+两情侣=第三方，屠城胜；丘比特活着第三方就在",
+    "殉情：情侣一方出局另一方立刻同死；殉情出局的猎人/狼王不能开枪",
+  ],
+}
 
 /** 只列本板子存在的角色，按固定顺序展示 */
 const shownRoles = computed(() => {
@@ -129,14 +133,10 @@ const shownRoles = computed(() => {
           <div class="rh-rules-title">{{ g.title }}</div>
           <div v-for="(item, i) in g.items" :key="i" class="rh-rules-item">{{ item }}</div>
         </div>
-      </div>
-      <div class="rh-cupid">
-        <div class="rh-cupid-title">💘 丘比特 · 情侣规则（按链型）</div>
-        <div v-for="c in CUPID_RULES" :key="c.key" class="rh-cupid-item">
-          <span class="rh-cupid-key">{{ c.key }}</span>
-          <span class="rh-cupid-desc">{{ c.desc }}</span>
+        <div class="rh-rules-group">
+          <div class="rh-rules-title">{{ CUPID_RULES.title }}</div>
+          <div v-for="(item, i) in CUPID_RULES.items" :key="i" class="rh-rules-item">{{ item }}</div>
         </div>
-        <div class="rh-cupid-note">{{ CUPID_NOTE }}</div>
       </div>
       <div class="rh-list">
         <div v-for="r in shownRoles" :key="r" class="rh-item">
