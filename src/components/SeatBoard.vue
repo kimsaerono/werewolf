@@ -237,23 +237,19 @@ function vibrate(ms: number) {
 /* 出局头像上的红叉 */
 .seat-dead-x {
   position: absolute;
+  inset: 0; /* 整卡覆盖 */
   z-index: 3;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #ff4d4f;
-  font-size: 26px;
+  font-size: 48px;
   font-weight: 900;
   line-height: 1;
-  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9), 0 0 2px rgba(0, 0, 0, 0.9);
-}
-.seat-board.floating .seat-card.dead .seat-dead-x {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-.seat-card.dead .seat-dead-x {
-  left: 30px;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  background: rgba(18, 22, 34, 0.55);
+  border-radius: inherit;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
 }
 .seat-list {
   display: flex;
