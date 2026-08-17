@@ -627,6 +627,7 @@ export function useGame() {
       resolveVoice: g.resolveVoice,
       playerLabel: g.playerLabel,
       campBreakdown: g.campBreakdown,
+      suggestHonor: g.suggestHonor,
       isWolfRole: g.isWolfRole,
       getChainType: g.getChainType,
       roleAvatar,

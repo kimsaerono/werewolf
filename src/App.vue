@@ -10,6 +10,16 @@ import RecordPanel from "@/components/RecordPanel.vue"
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs } = game
 
+/** 本局 MVP/SVP 自动建议（非必需，仅供参考） */
+const honorSuggestion = computed(() => {
+  if (!state.winCamp) return ""
+  const r = refs.suggestHonor(state)
+  const parts = []
+  if (r.mvp) parts.push(`MVP：${r.mvp}`)
+  if (r.svp) parts.push(`SVP：${r.svp}`)
+  return parts.length ? parts.join("，") : "本局无突出者"
+})
+
 /** 结算弹窗：确认关闭（飞书同步改在「分数明细 → 累积」页手动触发） */
 function onWinConfirm() {
   winNoticeOpen.value = false
@@ -72,6 +82,7 @@ function onTabChange(key: string) {
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
           <p class="small">已自动结算并保存本局积分与日志。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入</p>
+          <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">🏆 MVP/SVP 自动建议：{{ honorSuggestion }}</p>
           <a-button type="primary" size="large" block style="margin-top: 10px" @click="onWinConfirm">
             知道了
           </a-button>

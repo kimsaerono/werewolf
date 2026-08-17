@@ -107,6 +107,8 @@ export const DEFAULT_VOICES: Record<string, string> = {
   night_start: "天黑请闭眼。",
   cupid: "丘比特请睁眼！指认你选定的两位情侣，让大家感受爱情，看完赶紧闭眼。",
   cupid_close: "丘比特请闭眼。",
+  lovers_meet: "被选中的情侣请睁眼，互相认识一下。",
+  lovers_close: "情侣请闭眼。",
   wolf: "狼崽子睁眼！认认你的同伙，商量今晚刀哪个大冤种，密谋完赶紧闭眼装好人。",
   wolf_king_gesture: "狼王、白狼王请举手示意，法官确认！",
   wolf_close: "狼人请闭眼。",
@@ -1276,10 +1278,12 @@ export function recalcScore(state: GameState): void {
       s -= 0.5
       detail.push("背锅侠-0.5")
     }
-    if (win === "wolf" && isWolfRole(p.role)) {
+    // 狼人胜利：真狼 +（狼狼恋时丘比特随狼）
+    const chainType = getChainType(state)
+    if (win === "wolf" && (isWolfRole(p.role) || (chainType === "WW" && p.role === "丘比特"))) {
       s += 3
       detail.push("狼人胜利+3")
-      if (p.alive) {
+      if (isWolfRole(p.role) && p.alive) {
         if (aliveWolfCount >= 4) {
           s += 1
           detail.push("4狼存活+1")
@@ -1302,7 +1306,8 @@ export function recalcScore(state: GameState): void {
       s += 3
       detail.push("第三方胜利+3")
     }
-    if ((win === "god" || win === "civil") && p.role === "丘比特") {
+    // 丘比特好人胜利 +3：仅人人恋(GG)/未成链时；狼狼恋随狼、人狼恋走第三方
+    if ((win === "god" || win === "civil") && p.role === "丘比特" && chainType !== "WW") {
       s += 3
       detail.push("好人胜利·丘比特+3")
     }
@@ -1332,14 +1337,15 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   const aliveCivil = state.players.filter((p) => p.alive && p.role === "平民")
   const allAssigned = state.players.length > 0 && state.players.every((p) => p.role)
   const started = allAssigned && (state.phase !== "idle" || state.round > 0)
-  // 人狼恋第三方：情侣仍存活（殉情保证两人同生共死）
+  // 人狼恋第三方：只要丘比特存活第三方即存在（情侣死亡不解散，殉情保证两人同生共死）
   const chain = getChainType(state)
-  const loversBothAlive = state.lovers.length === 2 && state.lovers.every((n) => state.players.find((p) => p.name === n)?.alive)
-  const thirdActive = started && chain === "WG" && loversBothAlive
+  const cupidObj = state.players.find((p) => p.role === "丘比特")
+  const cupidAlive = started && !!cupidObj && cupidObj.alive
+  const thirdActive = started && chain === "WG" && !!cupidAlive
   let wc: WinCamp = null
   if (started) {
     if (thirdActive) {
-      // ① 第三方胜：存活玩家全部是第三方成员（丘比特/恋人）——丘比特已死时只剩情侣两人也算
+      // ① 第三方胜：存活玩家全部是第三方成员（丘比特/恋人）——丘比特存活时第三方保留
       const aliveAll = state.players.filter((p) => p.alive)
       if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
         wc = "third"
@@ -1387,6 +1393,34 @@ export function applyHonor(state: GameState, mvp: string, svp: string, beiguo: s
   state.svp = svp
   state.beiguo = beiguo
   pushGlobalLog(state, `🏆荣誉：MVP=${mvp || "-"},SVP=${svp || "-"},背锅侠=${beiguo || "-"}`)
+}
+
+/** 根据对局自动建议 MVP/SVP：胜方第一比第二≥2分且有高光→MVP；败方同理→SVP；否则空 */
+export function suggestHonor(state: GameState): { mvp: string; svp: string } {
+  const win = state.winCamp
+  if (!win || win === "third") return { mvp: "", svp: "" }
+  const winnerIsWolf = win === "wolf"
+  const winners = state.players
+    .filter((p) => (winnerIsWolf ? isWolfRole(p.role) : !isWolfRole(p.role)))
+    .sort((a, b) => b.scoreRound - a.scoreRound)
+  const losers = state.players
+    .filter((p) => (winnerIsWolf ? !isWolfRole(p.role) : isWolfRole(p.role)))
+    .sort((a, b) => b.scoreRound - a.scoreRound)
+  const highlight = (p: Player): boolean => {
+    const m = p.mark
+    if (p.role === "女巫") return m.witchPoWolf || m.witchSaveGood
+    if (p.role === "守卫") return m.guardHit
+    if (p.role === "预言家") return m.prophetFirstDayWolf
+    if (p.role === "猎人" || p.role === "骑士") return m.hunterKillWolf
+    if (p.role === "狼王") return m.wolfKingShotGood
+    if (isWolfRole(p.role)) return m.wolfHanTiaoJinghui || m.wolfSelfKillCheat
+    return false
+  }
+  const pick = (arr: Player[]): string => {
+    if (arr.length < 2) return ""
+    return arr[0].scoreRound - arr[1].scoreRound >= 2 && highlight(arr[0]) ? arr[0].name : ""
+  }
+  return { mvp: pick(winners), svp: pick(losers) }
 }
 
 export function resetRoundScore(state: GameState): void {

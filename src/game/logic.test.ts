@@ -739,24 +739,32 @@ describe("丘比特 / 情侣", () => {
     expect(st.winCamp).toBeNull()
   })
 
-  it("人狼恋：情侣双死 → 第三方解散，回归好狼对抗", () => {
+  it("人狼恋：情侣双死但丘比特存活 → 第三方保留，好/狼均不判胜", () => {
     const st = setupQ()
     cupidConnect(st, ["P0", "P8"])
     st.round = 3
     st.phase = "day"
-    ;["P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 情侣+所有狼死
+    ;["P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 情侣+所有狼死，丘比特 P7 活
     const r = checkWin(st)
+    expect(st.winCamp).toBeNull()
+    expect(r.reason).not.toContain("好人")
+    // 丘比特也出局 → 第三方解散，好人胜
+    g(st, "P7").alive = false
+    checkWin(st)
     expect(st.winCamp).toBe("god")
-    expect(r.reason).toContain("好人")
   })
 
-  it("人狼恋：情侣双死且屠边 → 狼胜", () => {
+  it("人狼恋：情侣双死且屠边但丘比特存活 → 狼不判胜", () => {
     const st = setupQ()
     cupidConnect(st, ["P0", "P8"])
     st.round = 3
     st.phase = "day"
     // 情侣 + 神 + 民 全部出局，只剩狼 P1 与丘比特 P7
     ;["P0", "P8", "P4", "P5", "P6", "P9", "P10", "P11"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+    // 丘比特也出局 → 狼胜
+    g(st, "P7").alive = false
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
   })
@@ -788,5 +796,18 @@ describe("丘比特 / 情侣", () => {
     st.winCamp = "god"
     recalcScore(st)
     expect(g(st, "P7").scoreRound).toBe(3)
+  })
+
+  it("狼狼恋：丘比特随狼（狼胜+3，好人胜不给丘比特+3）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P1"]) // 狼狼恋
+    st.winCamp = "wolf"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
+    const st2 = setupQ()
+    cupidConnect(st2, ["P0", "P1"])
+    st2.winCamp = "god"
+    recalcScore(st2)
+    expect(g(st2, "P7").scoreRound).toBe(0)
   })
 })

@@ -348,6 +348,7 @@ const wwkTarOptions = computed(() =>
 const STEP_META: Record<string, { label: string; emoji: string }> = {
   idle: { label: "开始游戏", emoji: "🚀" },
   cupid: { label: "丘比特连人", emoji: "💘" },
+  loversMeet: { label: "情侣认亲", emoji: "💑" },
   guard: { label: "守卫守人", emoji: "🛡️" },
   wolf: { label: "狼人刀人", emoji: "🌑" },
   prophet: { label: "预言家验人", emoji: "🔮" },
@@ -373,6 +374,7 @@ const STEP_VOICE: Record<string, string> = {
   witch: "witch",
   knight: "knight",
   cupid: "cupid",
+  loversMeet: "lovers_meet",
   hunterOpen: "hunter_open",
   idiotOpen: "idiot_open",
   wolfkingShot: "wolfkingShot",
@@ -389,6 +391,7 @@ const STEP_CLOSE: Record<string, string> = {
   witch: "witch_close",
   knight: "knight_close",
   cupid: "cupid_close",
+  loversMeet: "lovers_close",
   hunterOpen: "hunter_close",
   idiotOpen: "idiot_close",
 }
@@ -396,6 +399,8 @@ const VOICE_LABEL: Record<string, string> = {
   night_start: "进入夜晚（天黑请闭眼）",
   cupid: "丘比特睁眼",
   cupid_close: "丘比特闭眼",
+  lovers_meet: "情侣认亲",
+  lovers_close: "情侣闭眼",
   wolf: "狼人睁眼",
   wolf_king_gesture: "狼王/白狼王举手示意",
   wolf_close: "狼人闭眼",
@@ -449,6 +454,7 @@ const stepKeys = computed(() => {
     const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
     // 行动顺序：丘比特(仅首夜) → 守卫 → 狼人 → 女巫 → 预言家 → 白痴(仅首夜) → 骑士(仅首夜) → 猎人状态确认(每夜) → 竞选警长(首夜) → 天亮
     if (state.round <= 1 && roles.includes("丘比特") && !uiDone.value.cupid) ks.push("cupid")
+    if (state.round <= 1 && state.lovers.length === 2 && !uiDone.value.loversMeet) ks.push("loversMeet")
     if (roles.includes("守卫") && (!guardObj.value || guardObj.value.alive) && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
     if (wolfQuotaN > 0 && (!wolfDone || aliveWolf) && !uiDone.value.wolf) ks.push("wolf")
     if (roles.includes("女巫") && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
@@ -708,16 +714,15 @@ function confirmCupidConnect() {
     // onCancel：保持连人弹窗打开，可重新选择
   })
 }
-function skipCupid() {
-  confirmSkip("本轮不连人？", "丘比特本局不连情侣，确认后闭眼", () => {
-    markDoneStep("cupid")
-    playVoice("cupid_close")
-  })
-}
 /** 情侣已连：法官确认完成本步 */
 function finishCupidStep() {
   markDoneStep("cupid")
   playVoice("cupid_close")
+}
+/** 情侣认亲：确认情侣已互相认识，闭眼 */
+function doLoversMeetClose() {
+  markDoneStep("loversMeet")
+  playVoice("lovers_close")
 }
 /** 情侣解散判定（双方均已出局） */
 const loversGone = computed(() => state.lovers.length === 2 && state.lovers.every((n) => !state.players.find((p) => p.name === n)?.alive))
@@ -1191,10 +1196,21 @@ function effect(type: string, sfx?: SfxName, result?: string) {
               丘比特：{{ cupidObj ? refs.playerLabel(cupidObj) : "-" }}
               <template v-if="state.lovers.length">｜已连：{{ loversLabel }}<template v-if="chainText">（{{ chainText }}）</template></template>
             </p>
-            <a-button v-if="state.lovers.length < 2" type="primary" size="large" @click="openCupidConnect">💘 选择两位情侣</a-button>
+            <a-button v-if="state.lovers.length < 2" type="primary" size="large" @click="openCupidConnect">💘 选择两位情侣（必须连两人）</a-button>
             <a-button v-else type="primary" size="large" @click="finishCupidStep">✅ 确认连人，闭眼</a-button>
-            <a-button v-if="!state.lovers.length" type="text" style="margin-top: 12px" @click="skipCupid">本轮不连人</a-button>
           </template>
+        </div>
+
+        <!-- 情侣认亲 -->
+        <div v-else-if="currentStep === 'loversMeet'" class="step-body">
+          <div class="step-emoji">💑</div>
+          <h3 class="step-title">情侣认亲</h3>
+          <p class="small" style="text-align: center">被选中的两位情侣睁眼，互相认识一下（只知道对方编号，不知道身份）</p>
+          <div class="fs-result" style="border-color:#ff85c0">
+            <div class="fs-result-emoji">💑</div>
+            <div class="fs-result-text" style="font-size:26px">{{ loversLabel }}</div>
+          </div>
+          <a-button type="primary" size="large" @click="doLoversMeetClose">确认情侣闭眼</a-button>
         </div>
 
         <!-- 守卫 -->
