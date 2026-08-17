@@ -756,7 +756,6 @@ function doProphetCheck(v: string) {
     const lbl = target ? refs.playerLabel(target) : r.name
     const verdict = r.isWolf ? "狼人🐺" : "好人👼"
     checkResult.value = `查验结果：${lbl} 是【${verdict}】`
-    effect("prophet", "magic", `${lbl} → ${verdict}`)
     prophetReveal.value = { label: lbl, isWolf: r.isWolf }
   } else {
     message.info("本晚不验人，已记录")
@@ -1483,8 +1482,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </template>
         <template v-else>
           <div class="fs-result" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
-            <div class="fs-result-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
-            <div class="fs-result-text">
+            <div class="fx-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
+            <div class="fx-result">
               {{ prophetReveal.label }}{{ prophetReveal.isWolf === null ? "" : ` 是【${prophetReveal.isWolf ? "狼人" : "好人"}】` }}
             </div>
           </div>
