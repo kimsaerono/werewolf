@@ -210,6 +210,7 @@ function refresh(): void {
   g.recalcScore(state)
   const r = g.checkWin(state)
   if (r.ended && r.text) {
+    const isDraw = state.winCamp === "draw"
     g.finishGameAuto(state)
     state.recordText = g.buildAutoRecord(state, sessionTitle.value)
     history.value.push({
@@ -235,13 +236,12 @@ function refresh(): void {
       synced: false,
     })
     saveHistory()
-    // 判出胜负即自动同步到飞书对应场次并累计（失败可到「分数明细 → 累积」重试）
-    autoSyncRecord(history.value[history.value.length - 1])
-    // 狼全灭 → 提示好人胜利；狼胜 → 狼人胜利；第三方 → 第三方胜利（原因由 reason 说明）
-    const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : "好人胜利"
+    // 平局或模拟模式：不计积分、不同步飞书
+    if (!isDraw && !state.simMode) {
+      autoSyncRecord(history.value[history.value.length - 1])
+    }
+    const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : state.winCamp === "draw" ? "平局" : "好人胜利"
     winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
-    // 对局结束后停留在「对局操作」，由法官点「开启下一局」
-    // 胜利播报最高优先级：必须是最后的语音，后续非胜利播报应被抑制
     speak(`${winText}！${r.reason}`)
   }
   persist()

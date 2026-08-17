@@ -197,6 +197,10 @@ const labelOf = (name: string) => {
   const p = state.players.find((x) => x.name === name)
   return p ? refs.playerLabel(p) : name
 }
+const noOf = (name: string) => {
+  const p = state.players.find((x) => x.name === name)
+  return p ? `${p.no || "?"}号` : name
+}
 const hunterStatus = computed(() => {
   const h = hunterObj.value
   if (!h) return ""
@@ -489,7 +493,7 @@ const currentStep = computed(() => {
   return stepKeys.value[0] || "idle"
 })
 
-/** 只在「对局操作」tab 可见时自动播报；延迟足够长避免截断闭眼语音；出局播报期间抑制 */
+/** 只在「对局操作」tab 可见时自动播报；出局播报期间抑制 */
 let suppressStepVoiceUntil = 0
 watch(
   currentStep,
@@ -499,20 +503,18 @@ watch(
     if (Date.now() < suppressStepVoiceUntil) return
     const vid = STEP_VOICE[key]
     if (vid && state.voiceEnabled) {
-      setTimeout(() => {
-        if (currentStep.value === key && Date.now() >= suppressStepVoiceUntil)
-          speak(refs.resolveVoice(state, vid))
-        // 狼人睁眼：仅首夜板子含狼王/白狼王 → 补一句举手示意（身份确认一次即可）
-        if (key === "wolf" && state.round <= 1) {
-          const roles = refs.getBoardRoles(state)
-          if (roles.includes("狼王") || roles.includes("白狼王")) {
-            setTimeout(() => {
-              if (currentStep.value === key && Date.now() >= suppressStepVoiceUntil)
-                speak(refs.resolveVoice(state, "wolf_king_gesture"))
-            }, 3200)
-          }
+      if (currentStep.value === key && Date.now() >= suppressStepVoiceUntil)
+        speak(refs.resolveVoice(state, vid))
+      // 狼人睁眼：仅首夜板子含狼王/白狼王 → 补一句举手示意
+      if (key === "wolf" && state.round <= 1) {
+        const roles = refs.getBoardRoles(state)
+        if (roles.includes("狼王") || roles.includes("白狼王")) {
+          setTimeout(() => {
+            if (currentStep.value === key && Date.now() >= suppressStepVoiceUntil)
+              speak(refs.resolveVoice(state, "wolf_king_gesture"))
+          }, 3200)
         }
-      }, 2200)
+      }
     }
   },
 )
@@ -546,9 +548,10 @@ watch(
       })
       .filter(Boolean)
     if (names.length) {
-      const txt = `${names.join("、")} 因情侣殉情出局`
+      const nos = names.map((n) => noOf(n))
+      const txt = `${nos.join("、")} 因情侣殉情出局`
       loverDeathMsg.value = txt
-      if (state.voiceEnabled) speak(`💔${txt}`)
+      if (state.voiceEnabled) speak(txt)
     }
   },
 )
@@ -618,7 +621,7 @@ function confirmRoleWithCheck(role: string, v: string) {
       snapshot()
       const err = actions.confirmRole(v, role)
       if (err) return message.error(err)
-      if (state.voiceEnabled) speak(`已确认${role}${refs.ROLE_EMOJI[role] || ""}身份`)
+      if (state.voiceEnabled) speak(`已确认${role}身份`)
       message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
     },
     onCancel() {
@@ -661,7 +664,10 @@ function confirmWolfSel() {
 
 // ===== 丘比特连人 =====
 const cupidObj = computed(() => state.players.find((p) => p.role === "丘比特"))
+/** 链型是否公开：狼人身份确认后（狼人步骤确认完）才体现 GG/WW/WG */
+const chainRevealed = computed(() => wolfAllConfirmed.value)
 const chainText = computed(() => {
+  if (!chainRevealed.value) return ""
   const c = refs.getChainType(state)
   if (c === "WG") return "人狼恋·第三方"
   if (c === "WW") return "狼狼恋"
@@ -727,7 +733,7 @@ function doLoversMeetClose() {
 }
 /** 情侣解散判定（双方均已出局） */
 const loversGone = computed(() => state.lovers.length === 2 && state.lovers.every((n) => !state.players.find((p) => p.name === n)?.alive))
-const thirdActive = computed(() => refs.getChainType(state) === "WG" && !loversGone.value)
+const thirdActive = computed(() => chainRevealed.value && refs.getChainType(state) === "WG" && !loversGone.value)
 /** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标） */
 const thirdMembersList = computed(() =>
   thirdActive.value
@@ -736,6 +742,7 @@ const thirdMembersList = computed(() =>
 )
 /** 情侣标签 tooltip 说明 */
 const loversTip = computed(() => {
+  if (!chainRevealed.value) return "情侣已连接，狼人身份确认后判定链型"
   if (thirdActive.value) return "❤️ 第三方阵营：丘比特 + 人狼情侣三人一体，需双方阵营连同情侣一起清空才能获胜"
   if (refs.getChainType(state) === "GG" || refs.getChainType(state) === "WW")
     return "情侣同生共死：一人出局另一人立即殉情（丘比特属好人阵营）"
@@ -1073,7 +1080,7 @@ function doDawn() {
   const deathInfo = lastDawnDeaths.value
     .map((n) => {
       const p = state.players.find((x) => x.name === n)
-      return p ? refs.playerLabel(p) : n
+      return p ? `${p.no || "?"}号` : n
     })
     .join("、")
   // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页
@@ -1087,25 +1094,23 @@ function doDawn() {
   // 出局播报（只读号码）；对局已结束时交给胜利播报
   if (lastDawnDeaths.value.length && !state.finished) {
     suppressStepVoiceUntil = Date.now() + 5000
-    setTimeout(() => {
-      if (state.finished) return
-      // 骷髅死亡页：展示死亡玩家信息
-      effect("death", "death", `昨夜死亡：${deathInfo}`)
-      const poisonedHunter = lastDawnDeaths.value.find((n) => {
-        const p = state.players.find((x) => x.name === n)
-        return p?.role === "猎人" && p.mark.hunterIsPoisoned
-      })
-      if (poisonedHunter) playVoice("hunter_poisoned")
-      const nos = lastDawnDeaths.value.map((n) => {
-        const p = state.players.find((x) => x.name === n)
-        return `${p?.no || "?"}`
-      })
-      const txt =
-        nos.length === 1
-          ? `${nos[0]}号玩家出局，bye-bye，下局见！`
-          : `昨夜${nos.length === 2 ? "双死" : `${nos.length}死`}，${nos.join("、")}号玩家出局，bye-bye，下局见！`
-      speakQueue([txt])
-    }, 700)
+    if (state.finished) return
+    // 骷髅死亡页：展示死亡玩家信息
+    effect("death", "death", `昨夜死亡：${deathInfo}`)
+    const poisonedHunter = lastDawnDeaths.value.find((n) => {
+      const p = state.players.find((x) => x.name === n)
+      return p?.role === "猎人" && p.mark.hunterIsPoisoned
+    })
+    if (poisonedHunter) playVoice("hunter_poisoned")
+    const nos = lastDawnDeaths.value.map((n) => {
+      const p = state.players.find((x) => x.name === n)
+      return `${p?.no || "?"}`
+    })
+    const txt =
+      nos.length === 1
+        ? `${nos[0]}号玩家出局，bye-bye，下局见！`
+        : `昨夜${nos.length === 2 ? "双死" : `${nos.length}死`}，${nos.join("、")}号玩家出局，bye-bye，下局见！`
+    speakQueue([txt])
   }
   checkSheriffDeath()
 }
@@ -1162,7 +1167,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <a-tag :color="aliveCount > 0 ? 'green' : 'error'">存活 {{ aliveCount }} / {{ state.players.length }}</a-tag>
           <a-tooltip v-if="state.lovers.length" :title="loversTip">
             <a-tag :color="thirdActive ? 'purple' : 'volcano'" style="cursor: help">
-              💘 {{ loversLabel }}<template v-if="chainText"> · {{ chainText }}</template>
+              💘 {{ loversLabel }}<template v-if="chainText"> ｜ <b style="color: #fff">{{ chainText }}</b></template><template v-else> ｜ <span style="opacity:.75">待确认链型</span></template>
             </a-tag>
           </a-tooltip>
           <a-tag v-if="state.jingHui" color="gold">👑 警长：{{ jingHuiLabel }}</a-tag>
@@ -1194,7 +1199,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <template v-else>
             <p class="small" style="text-align: center">
               丘比特：{{ cupidObj ? refs.playerLabel(cupidObj) : "-" }}
-              <template v-if="state.lovers.length">｜已连：{{ loversLabel }}<template v-if="chainText">（{{ chainText }}）</template></template>
+              <template v-if="state.lovers.length">｜已连：{{ loversLabel }}<template v-if="chainText"> ｜ 链型：<b style="color:#fff">{{ chainText }}</b></template><template v-else> ｜ 链型待狼人确认</template></template>
             </p>
             <a-button v-if="state.lovers.length < 2" type="primary" size="large" @click="openCupidConnect">💘 选择两位情侣（必须连两人）</a-button>
             <a-button v-else type="primary" size="large" @click="finishCupidStep">✅ 确认连人，闭眼</a-button>
@@ -1407,7 +1412,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <h3 class="step-title">公布首夜情况</h3>
           <p class="small" style="text-align: center">竞选警长结束，法官公布首夜死讯（验人结果由预言家自己发言）</p>
           <div v-if="lastDawnDeaths.length" class="prophet-result-main">
-            ☠️ 昨夜死亡：{{ lastDawnDeaths.map((n) => labelOf(n)).join("、") }}
+            ☠️ 昨夜死亡：{{ lastDawnDeaths.map((n) => noOf(n)).join("、") }}
           </div>
           <div v-else class="prophet-result-main">☠️ 昨夜平安夜</div>
           <a-button type="primary" size="large" @click="markDoneStep('prophetReport')">已公布，进入发言</a-button>
@@ -1554,7 +1559,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 
       <!-- 遗言计时（白天出局玩家） -->
       <a-card v-if="lastWordsShow && state.phase === 'day'" class="last-words-card" :bordered="false">
-        <div class="last-words-title">💬 遗言（{{ labelOf(lastWordsName) }}）</div>
+        <div class="last-words-title">💬 遗言（{{ noOf(lastWordsName) }}）</div>
         <div class="last-words-timer">
           <span class="countdown" :class="{ warning: lastWordsRunning && lastWordsLeft <= 7 }">
             {{ lastWordsRunning ? `${lastWordsLeft}s` : "待开始" }}
@@ -1756,11 +1761,11 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       <!-- 弹窗：警长出局，警徽去留 -->
       <a-modal v-model:open="sheriffDeathModal" title="👑 警长出局" :footer="null" width="420px" :mask-closable="false">
         <p class="small" style="margin-bottom: 10px">
-          警长 {{ labelOf(deadSheriff) }} 已出局，警徽如何处理？
+          警长 {{ noOf(deadSheriff) }} 已出局，警徽如何处理？
         </p>
         <a-space direction="vertical" style="width: 100%">
           <a-button type="primary" block @click="onSheriffAuto">
-            按警徽流移交{{ state.jingHuiFlow.length ? `（${state.jingHuiFlow.map((n) => labelOf(n)).join(" → ")}）` : "" }}
+            按警徽流移交{{ state.jingHuiFlow.length ? `（${state.jingHuiFlow.map((n) => noOf(n)).join(" → ")}）` : "" }}
           </a-button>
           <a-button block @click="onSheriffManual">手动移交警徽</a-button>
           <a-button danger block @click="onSheriffLose">警徽流失（作废）</a-button>

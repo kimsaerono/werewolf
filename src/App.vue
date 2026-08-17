@@ -38,8 +38,7 @@ const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
 
 function onTabChange(key: string) {
-  const locked = ["game", "score", "record"]
-  if (locked.includes(key) && !gameReady.value) {
+  if (key === "game" && !gameReady.value) {
     message.warning("请先在「板子与选人」确认参与玩家")
     activeTab.value = prevTab.value
     return
@@ -62,7 +61,7 @@ function onTabChange(key: string) {
             v-for="t in tabs"
             :key="t.id"
             :tab="t.label"
-            :disabled="['game', 'score', 'record'].includes(t.id) && !gameReady"
+            :disabled="t.id === 'game' && !gameReady"
           />
         </a-tabs>
       </div>
@@ -85,7 +84,8 @@ function onTabChange(key: string) {
           <h2 class="win-title">{{ winNotice.text }}</h2>
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
-          <p class="small">已自动结算并保存本局积分与日志。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入</p>
+          <p v-if="state.simMode" class="small" style="color:#ffa502;margin-top:6px">🧪 模拟模式：本局数据不会同步到飞书</p>
+          <p class="small">已自动结算并保存本局积分与日志{{ state.simMode ? '' : '。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入' }}</p>
           <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">🏆 MVP/SVP 自动建议：{{ honorSuggestion }}</p>
           <a-button type="primary" size="large" block style="margin-top: 10px" @click="onWinConfirm">
             知道了

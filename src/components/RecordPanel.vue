@@ -7,7 +7,7 @@ import type { GameRecord } from "@/composables/useGame"
 const { message, modal } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { historyByDay, actions, refs, recordTxtOf, syncStatus, isSyncing } = props.game
+const { historyByDay, actions, refs, recordTxtOf, syncStatus, isSyncing, state } = props.game
 
 /** 历史记录日志展示：去时间 + 玩家名转 号码(身份) */
 function fmtLog(h: GameRecord, l: string, i: number): string {
@@ -78,7 +78,7 @@ function onClearAll() {
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
       <template #extra>
         <a-space :wrap="true">
-          <a-button size="small" @click="onTestSync">🧪 测试同步（模拟新玩家）</a-button>
+          <a-button v-if="!state.simMode" size="small" @click="onTestSync">🧪 测试同步（模拟新玩家）</a-button>
           <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
         </a-space>
       </template>
@@ -95,7 +95,8 @@ function onClearAll() {
               <span class="game-line">
                 <span class="game-title">{{ `第${i + 1}局 · ${refs.boardShortName(h.board)} ｜ ${h.winner}` }}</span>
                 <span v-if="h.synced" class="game-sync synced">✅已同步</span>
-                <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
+                <a-button v-else-if="!state.simMode" size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
+                <span v-else class="game-sync" style="color: #ffa502">🧪 模拟</span>
               </span>
             </template>
             <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.board }}（{{ refs.boardShortName(h.board) }}）</p>

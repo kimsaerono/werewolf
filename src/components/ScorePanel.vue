@@ -133,9 +133,12 @@ function rowKey(r: { name: string }) {
               :scroll="{ x: 'max-content' }"
               :row-key="rowKey"
             />
-            <div class="sync-row">
+            <div v-if="!state.simMode" class="sync-row">
               <a-button type="primary" :loading="syncing" @click="doSyncDay">☁️ 同步今日到飞书</a-button>
               <span class="small" style="color: #888">手动触发：逐局写入复盘表 + 按姓名累加排名；已同步的局不会重复累加</span>
+            </div>
+            <div v-else class="sync-row">
+              <a-tag color="orange">🧪 模拟模式：不同步飞书</a-tag>
             </div>
           </template>
         </a-tab-pane>

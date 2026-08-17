@@ -266,6 +266,15 @@ function onPoolPointerEnd(e: PointerEvent) {
           />
         </span>
       </template>
+      <div v-if="!state.playersConfirmed" class="mode-select-row">
+        <span class="field-label">对局模式</span>
+        <a-radio-group :value="state.simMode" @change="(e: any) => { state.simMode = e.target.value }">
+          <a-radio :value="false">🎯 真实对局</a-radio>
+          <a-radio :value="true">🧪 模拟对局</a-radio>
+        </a-radio-group>
+        <span v-if="state.simMode" class="sim-hint">（数据不会同步到飞书）</span>
+      </div>
+      <a-tag v-if="state.simMode && state.playersConfirmed" color="orange" style="margin-left: 8px">🧪 模拟模式</a-tag>
       <div class="row" style="margin-top: 0">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
@@ -385,5 +394,15 @@ function onPoolPointerEnd(e: PointerEvent) {
   color: #888;
   font-size: 13px;
   white-space: nowrap;
+}
+.mode-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sim-hint {
+  color: #ffa502;
+  font-size: 12px;
 }
 </style>

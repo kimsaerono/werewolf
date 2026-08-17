@@ -100,7 +100,7 @@ export interface Player {
   mark: Mark
 }
 
-export type WinCamp = "wolf" | "god" | "civil" | "third" | null
+export type WinCamp = "wolf" | "god" | "civil" | "third" | "draw" | null
 export type Phase = "idle" | "night" | "day"
 
 export const DEFAULT_VOICES: Record<string, string> = {
@@ -192,6 +192,8 @@ export interface GameState {
   finished: boolean
   /** 丘比特首夜连的情侣（2 人名字，顺序无关） */
   lovers: string[]
+  /** 模拟对局模式：不同步飞书 */
+  simMode: boolean
 }
 
 export function defaultMark(): Mark {
@@ -262,6 +264,7 @@ export function defaultState(): GameState {
     beiguo: "",
     finished: false,
     lovers: [],
+    simMode: false,
   }
 }
 
@@ -1320,11 +1323,12 @@ export function recalcScore(state: GameState): void {
   })
 }
 
-export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third", string> = {
+export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", string> = {
   wolf: "狼人胜利",
   god: "神职胜利",
   civil: "平民胜利",
   third: "第三方胜利",
+  draw: "平局",
 }
 
 /** 第三方成员：丘比特 + 两位恋人（人狼恋时三人一体） */
@@ -1354,6 +1358,14 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
       if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
         wc = "third"
       }
+      // ② 平局：第三方存活 + 狼全灭 + 剩余无技能平民（无法打破僵局）
+      else if (aliveWolf.length === 0) {
+        const aliveNonThird = aliveAll.filter((p) => !isThirdMember(state, p))
+        const onlyCivil = aliveNonThird.every((p) => p.role === "平民")
+        if (onlyCivil) {
+          wc = "draw"
+        }
+      }
       // 否则：情侣未死前，好/狼一律不判胜（第三方保留）
     } else if (aliveWolf.length > 0) {
       // 屠边：神或民任一全灭；屠城：神与民全灭
@@ -1364,7 +1376,9 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
     }
   }
   let reason = ""
-  if (wc === "third") {
+  if (wc === "draw") {
+    reason = "第三方阵营与平民僵持，无人能获胜，平局"
+  } else if (wc === "third") {
     reason = "场上只剩丘比特与人狼情侣，第三方存活到最后"
   } else if (wc === "wolf") {
     const goneGod = aliveGod.length === 0

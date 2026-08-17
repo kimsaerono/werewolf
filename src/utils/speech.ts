@@ -128,14 +128,21 @@ function enqueueAudio(url: string, fallbackText?: string, style?: VoiceStyleKey)
   pump()
 }
 
+/** 去掉文本中的 emoji / 特殊 Unicode 符号，防止 TTS 读出乱码 */
+function stripEmoji(text: string): string {
+  // 移除 emoji + 各类 Unicode 封装符号
+  // eslint-disable-next-line no-misleading-character-class
+  return text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\uFE0F\u20E3]/gu, "").replace(/\s{2,}/g, " ").trim()
+}
+
 /** 播报一段文字（中文语音）；若正在播报则排队，播完再播，保证完整不吞字 */
 export function speak(text: string, style?: VoiceStyleKey): void {
-  enqueue(text, style)
+  enqueue(stripEmoji(text), style)
 }
 
 /** 逐条排队播报：一条播完再播下一条 */
 export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
-  for (const t of texts) enqueue(t, style)
+  for (const t of texts) enqueue(stripEmoji(t), style)
 }
 
 /** 预生成音频资源（当前停用：全部走系统TTS；如需启用，填入 public/audio/<id>.mp3 映射） */

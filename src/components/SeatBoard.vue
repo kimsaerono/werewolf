@@ -4,6 +4,8 @@ import Sortable from "sortablejs"
 import { ROLE_EMOJI } from "@/game/logic"
 import type { Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
+import cupidThirdIcon from "@/assets/roles/第三阵营邱比特.png"
+import sheriffIcon from "@/assets/roles/警长.png"
 
 const props = withDefaults(
   defineProps<{
@@ -152,35 +154,12 @@ function vibrate(ms: number) {
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || idx + 1 }}</span>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
               class="seat-lover"
               :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-            <span v-if="p.name === jingHui" class="seat-sheriff">👑</span>
-            <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
-          </div>
-        </div>
-        <div class="seat-col-spacer"></div>
-        <div ref="rightEl" class="seat-col">
-          <div
-            v-for="(p, idx) in rightPlayers"
-            :key="p.name"
-            class="seat-card"
-            :data-name="p.name"
-            :class="{ dead: !p.alive }"
-          >
-            <span v-if="draggable" class="seat-grip">⠿</span>
-            <span class="seat-name float">{{ p.name }}</span>
-            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
-            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
-            <span v-if="!p.alive" class="seat-dead-x">✕</span>
-            <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
-            <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
-              class="seat-lover"
-              :class="badgeClass(p)"
-            >{{ badgeText(p) }}</span>
-            <span v-if="p.name === jingHui" class="seat-sheriff">👑</span>
+            <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
           </div>
         </div>
@@ -200,7 +179,7 @@ function vibrate(ms: number) {
           <div class="seat-info">
             <div class="seat-name">
               <span v-if="p.name === judge" style="color: #ffd666">⚖️</span>
-              <span v-if="p.name === jingHui" style="color: #ffd666">👑</span>
+              <img v-if="p.name === jingHui" :src="sheriffIcon" alt="警长" class="seat-sheriff-inline" />
               {{ p.name }}
             </div>
             <div class="seat-role">
@@ -212,11 +191,12 @@ function vibrate(ms: number) {
             <span v-if="showAlive" class="seat-alive" :class="{ dead: !p.alive }">{{ p.alive ? "✅" : "❌" }}</span>
             <span class="seat-no">{{ p.no || idx + 1 }}</span>
           </div>
-          <span
-            v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name))"
-            class="seat-lover"
-            :class="badgeClass(p)"
-          >{{ badgeText(p) }}</span>
+            <span
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
+              class="seat-lover"
+              :class="badgeClass(p)"
+            >{{ badgeText(p) }}</span>
+          <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
           <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
         </div>
       </template>
@@ -474,6 +454,22 @@ function vibrate(ms: number) {
   top: 2px;
   left: 2px;
   font-size: 12px;
+}
+.seat-sheriff img,
+.seat-sheriff-inline {
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+}
+.seat-cupid-third {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 11px;
+}
+.seat-cupid-third img {
+  width: 16px;
+  height: 16px;
 }
 .seat-idiot {
   position: absolute;
