@@ -8,7 +8,7 @@ import type { Game } from "@/types"
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, playerCount, maxNeed, actions, refs, activeTab, judgeScore } = props.game
+const { state, playerCount, maxNeed, actions, refs, activeTab } = props.game
 
 const loading = ref(false)
 const loadStatus = ref("")
@@ -264,7 +264,7 @@ function onPoolPointerEnd(e: PointerEvent) {
             style="max-width: 180px"
             @change="onJudgeCustom"
           />
-          <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
+          <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}</a-tag>
         </span>
       </template>
       <div class="row" style="margin-top: 0">

@@ -99,7 +99,7 @@ function onClearAll() {
               </span>
             </template>
             <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.board }}（{{ refs.boardShortName(h.board) }}）</p>
-            <p class="small">原因：{{ h.reason }} ｜ 法官：{{ h.judge || "-" }}（累计 {{ h.judgeScore }} 分）</p>
+            <p class="small">原因：{{ h.reason }} ｜ 法官：{{ h.judge || "-" }}</p>
             <a-divider style="margin: 8px 0">积分</a-divider>
             <a-space :wrap="true">
               <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'">

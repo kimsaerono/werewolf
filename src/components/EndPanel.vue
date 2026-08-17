@@ -6,7 +6,7 @@ import type { Game } from "@/types"
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, actions, refs, judgeScore } = props.game
+const { state, actions, refs } = props.game
 
 const winText = computed(() => (state.winCamp ? refs.WIN_TEXT[state.winCamp] : "未判定"))
 const starOptions = ["-", "⭐入门", "⭐⭐熟练", "⭐⭐⭐精通"]
@@ -30,7 +30,7 @@ function doFinish() {
           <a-tag color="gold" style="font-size: 15px">{{ winText }}</a-tag>
         </a-descriptions-item>
         <a-descriptions-item v-if="state.judge" label="⚖️ 法官（+0.5/局）">
-          {{ state.judge }} —— 累计 {{ judgeScore }} 分
+          {{ state.judge }}
         </a-descriptions-item>
       </a-descriptions>
     </a-card>
