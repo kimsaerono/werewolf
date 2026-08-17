@@ -138,20 +138,8 @@ export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
   for (const t of texts) enqueue(t, style)
 }
 
-/** 预生成音频资源（edge-tts/EmotiVoice 生成到 public/audio/<id>.mp3） */
-const AUDIO_BASE = import.meta.env.BASE_URL || "/"
-/** 固定播报 ID → 音频文件；生成后即自动启用，缺文件时回退系统TTS */
-const FIXED_VOICE_IDS = [
-  "night_start", "cupid", "cupid_close", "wolf", "wolf_close", "wolf_king_gesture",
-  "prophet", "prophet_close", "guard", "guard_close", "witch", "witch_close",
-  "knight", "knight_close", "hunter_open", "hunter_close", "idiot_open", "idiot_close",
-  "dawn", "dawn_peace", "vote", "explode", "wwk_boom", "hunter", "hunter_poisoned",
-  "idiot_flip", "knight_duel_wolf", "knight_duel_good", "jinghui", "wolfkingShot",
-  "prophetReport", "speech",
-]
-export const SPEAK_AUDIO: Record<string, string> = Object.fromEntries(
-  FIXED_VOICE_IDS.map((id) => [id, `${AUDIO_BASE}audio/${id}.mp3`]),
-)
+/** 预生成音频资源（当前停用：全部走系统TTS；如需启用，填入 public/audio/<id>.mp3 映射） */
+export const SPEAK_AUDIO: Record<string, string> = {}
 
 /** 播放固定语音ID：有预生成音频则播音频（失败回退TTS），否则系统TTS */
 export function speakVoice(id: string, text: string, style?: VoiceStyleKey): void {
