@@ -1481,7 +1481,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <a-button size="large" @click="doProphetCheck(refs.NO_CHECK)">🙅 不验</a-button>
         </template>
         <template v-else>
-          <div class="fs-result" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
+          <div class="fs-result prophet-reveal" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
             <div class="fx-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
             <div class="fx-result">
               {{ prophetReveal.label }}{{ prophetReveal.isWolf === null ? "" : ` 是【${prophetReveal.isWolf ? "狼人" : "好人"}】` }}
@@ -2245,6 +2245,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 }
 .fs-result.none {
   border-color: #888;
+}
+.fs-result.prophet-reveal {
+  background: rgba(80, 50, 150, 0.92); /* 预言家查验：保留原过场紫色背景 */
 }
 .fs-result-emoji {
   font-size: 60px;

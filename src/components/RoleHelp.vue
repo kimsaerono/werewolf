@@ -49,15 +49,23 @@ const ROLE_INFO: Record<string, { play: string; score: string }> = {
     score: "胜利+2",
   },
   丘比特: {
-    play: "首夜连两人为情侣；人狼恋第三方阵营，情侣同死",
-    score: "第三方胜+3｜好人胜·丘比特+3",
+    play: "首夜必连两人成情侣（可连自己），随后情侣认亲；人狼恋入第三方，情侣同死殉情",
+    score: "人人恋好人胜+3｜狼狼恋随狼·狼胜+3｜人狼恋第三方胜+3",
   },
 }
 const ROLE_ORDER = ["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"]
 
 /** 通用计分规则 */
 const GENERAL_NOTE =
-  "胜利分：狼胜·狼+3（3狼存活+0.5、4狼存活+1）；好人胜·神职+3、平民+2。通用：MVP+1、SVP+0.5、背锅-0.5；法官主持+0.5/局"
+  "胜利分：狼胜·狼+3（3狼存活+0.5、4狼存活+1）；好人胜·神职+3、平民+2；第三方胜·丘比特+情侣+3；狼狼恋·丘比特随狼+3。通用：MVP+1、SVP+0.5、背锅-0.5；法官主持+0.5/局"
+
+/** 丘比特/情侣 完整规则（按链型） */
+const CUPID_RULES = [
+  { key: "人人恋", desc: "情侣都是好人：丘比特属好人，狼全灭好人胜" },
+  { key: "人狼恋", desc: "一好一狼：丘比特+两情侣=第三方，屠城胜；丘比特活着第三方就在，好/狼都要先清掉丘比特才能赢" },
+  { key: "狼狼恋", desc: "情侣都是狼：丘比特随狼阵营，狼屠边胜（不产生第三方）" },
+]
+const CUPID_NOTE = "丘比特首夜必须连两人（可连自己），随后情侣认亲互相认识（只知编号不知身份）。殉情：情侣一方出局另一方立刻同死；殉情出局的猎人/狼王不能开枪。"
 
 /** 只列本板子存在的角色，按固定顺序展示 */
 const shownRoles = computed(() => {
@@ -75,6 +83,14 @@ const shownRoles = computed(() => {
         <a-button size="small" type="text" style="color: #888" @click="open = false">✕</a-button>
       </div>
       <div class="rh-general">{{ GENERAL_NOTE }}</div>
+      <div class="rh-cupid">
+        <div class="rh-cupid-title">💘 丘比特 · 情侣规则（按链型）</div>
+        <div v-for="c in CUPID_RULES" :key="c.key" class="rh-cupid-item">
+          <span class="rh-cupid-key">{{ c.key }}</span>
+          <span class="rh-cupid-desc">{{ c.desc }}</span>
+        </div>
+        <div class="rh-cupid-note">{{ CUPID_NOTE }}</div>
+      </div>
       <div class="rh-list">
         <div v-for="r in shownRoles" :key="r" class="rh-item">
           <span class="rh-emoji">{{ ROLE_EMOJI[r] || "🎭" }}</span>
