@@ -246,6 +246,26 @@ function onPoolPointerEnd(e: PointerEvent) {
   <div class="panel setup-panel">
     <a-card title="🎲 板子与法官" :bordered="false">
       <div class="row" style="margin-top: 0">
+        <span class="field-label">法官</span>
+        <a-select
+          v-model:value="judgePick"
+          style="flex: 1; min-width: 160px"
+          placeholder="选择法官（选中即确认）"
+          :options="nameOptions"
+          allow-clear
+          @change="onJudgeSelect"
+          @clear="onJudgeClear"
+        />
+        <a-input
+          v-if="judgePick === '__OTHER__'"
+          v-model:value="customJudge"
+          placeholder="输入法官名字，回车/失焦确认"
+          style="max-width: 180px"
+          @change="onJudgeCustom"
+        />
+        <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
+      </div>
+      <div class="row">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
           <a-select-option v-for="(_, key) in refs.boardConfig" :key="key" :value="key">
@@ -275,27 +295,6 @@ function onPoolPointerEnd(e: PointerEvent) {
           <a-button size="small" type="dashed" @click="addRoleModal = true">＋ 加角色</a-button>
           <a-button size="small" @click="resetBoardRoles">重置默认</a-button>
         </a-space>
-      </div>
-      <a-divider style="margin: 12px 0" />
-      <div class="row">
-        <span class="field-label">法官</span>
-        <a-select
-          v-model:value="judgePick"
-          style="flex: 1; min-width: 160px"
-          placeholder="选择法官（选中即确认）"
-          :options="nameOptions"
-          allow-clear
-          @change="onJudgeSelect"
-          @clear="onJudgeClear"
-        />
-        <a-input
-          v-if="judgePick === '__OTHER__'"
-          v-model:value="customJudge"
-          placeholder="输入法官名字，回车/失焦确认"
-          style="max-width: 180px"
-          @change="onJudgeCustom"
-        />
-        <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
       </div>
     </a-card>
 
