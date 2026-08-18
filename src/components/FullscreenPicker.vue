@@ -115,10 +115,14 @@ const selected = computed(() => (props.multi ? multi.value : single.value))
   font-size: 16px;
 }
 .fp-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px;
+  columns: 3;
+  column-gap: 12px;
   width: min(760px, 100%);
+}
+@media (max-width: 560px) {
+  .fp-grid {
+    columns: 2;
+  }
 }
 .fp-card {
   background: #1d2233;
@@ -129,6 +133,8 @@ const selected = computed(() => (props.multi ? multi.value : single.value))
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   position: relative;
+  break-inside: avoid;
+  margin-bottom: 10px;
 }
 .fp-card:hover {
   border-color: #2ed573;
