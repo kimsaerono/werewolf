@@ -839,7 +839,7 @@ function doWitchPoison(v: string) {
   if (err) return message.error(err)
   const t = state.players.find((x) => x.name === v)
   message.success(`已对 ${v} 用毒`)
-  effect("witch", "witch", t ? `毒药：${refs.playerLabel(t)}` : `毒药：${v}`)
+  effect("witchPoison", "witch", t ? `毒药：${refs.playerLabel(t)}` : `毒药：${v}`)
 }
 function doWitchDone() {
   // 解药毒药都用完时直接闭眼，不再二次确认
@@ -1129,6 +1129,7 @@ const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> 
   prophet: { emoji: "🔮", bg: "rgba(80,50,150,.92)", label: "预言家查验" },
   guard: { emoji: "🛡️", bg: "rgba(30,80,150,.92)", label: "守卫守护" },
   witch: { emoji: "🧪", bg: "rgba(20,120,80,.92)", label: "女巫用药" },
+  witchPoison: { emoji: "☠️", bg: "rgba(90,30,110,.95)", label: "女巫用毒" },
   hunter: { emoji: "🔫", bg: "rgba(190,110,20,.92)", label: "猎人开枪" },
   idiot: { emoji: "🙊", bg: "rgba(190,150,20,.92)", label: "白痴翻牌" },
   dawn: { emoji: "🌅", bg: "rgba(210,130,40,.88)", label: "天亮了" },
@@ -1838,17 +1839,22 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 }
 .witch-actions {
   display: flex;
+  flex-wrap: nowrap;
   gap: 12px;
   margin: 8px 0;
+  width: 100%;
+  max-width: 420px;
 }
 .witch-action {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 14px 8px;
-  border-radius: 12px;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 8px;
+  border-radius: 14px;
   border: 2px solid rgba(46, 213, 115, 0.6);
   background: rgba(46, 213, 115, 0.12);
   cursor: pointer;
@@ -1872,7 +1878,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   pointer-events: none;
 }
 .witch-action-emoji {
-  font-size: 30px;
+  font-size: 34px;
   line-height: 1;
 }
 .witch-action-name {
