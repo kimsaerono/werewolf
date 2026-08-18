@@ -137,6 +137,16 @@ async function loadMembers() {
     loading.value = false
   }
 }
+
+/** 当前板子实际角色组成（含手动加的角色）：角色×数量 */
+const boardSummaryText = computed(() => {
+  const roles = refs.getBoardRoles(state)
+  const counts: Record<string, number> = {}
+  roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
+  return Object.entries(counts)
+    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${role}×${n}`)
+    .join(" ")
+})
 onMounted(loadMembers)
 
 function confirmPlayers() {
@@ -268,11 +278,8 @@ function onPoolPointerEnd(e: PointerEvent) {
         </span>
       </template>
       <div class="mode-select-row">
-        <span class="field-label">对局模式</span>
-        <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
-        <a-button size="small" @click="actions.setModeChosen(false)">切换模式</a-button>
+        <a-button size="small" @click="actions.setModeChosen(false)">↩️ 切换对局模式</a-button>
       </div>
-      <a-tag v-if="state.simMode && state.playersConfirmed" color="#2e7d32" style="margin-left: 8px">🧪 模拟模式</a-tag>
       <div class="row" style="margin-top: 0">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
@@ -378,7 +385,7 @@ function onPoolPointerEnd(e: PointerEvent) {
         </div>
         <div class="confirm-item">
           <span class="confirm-label">板子</span>
-          <b>{{ refs.boardLabels[state.board] || state.board }}</b>
+          <b>{{ boardSummaryText }}</b>
         </div>
         <div class="confirm-item">
           <span class="confirm-label">参与玩家</span>

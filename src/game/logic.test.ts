@@ -86,7 +86,7 @@ describe("夜晚结算", () => {
     guardDo(st, "P8", false)
     resolveNightDeath(st)
     expect(g(st, "P8").alive).toBe(true)
-    expect(byRole(st, "守卫")!.mark.guardHit).toBe(true)
+    expect(byRole(st, "守卫")!.mark.guardHitCount).toBe(1)
   })
 
   it("毒药无视守卫", () => {
@@ -842,5 +842,27 @@ describe("丘比特 / 情侣", () => {
     st2.winCamp = "wolf"
     recalcScore(st2)
     expect(g(st2, "P7").scoreRound).toBe(0)
+  })
+
+  it("人狼恋：2平民+丘比特 → 不判平局（平民票数足够放逐第三方）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，P0狼恋人 P8好人恋人，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9"].forEach((n) => (g(st, n).alive = false))
+    // 存活：P7 丘比特 + P10 P11 两个平民
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 平民 2 票 > 第三方 1 人，可投出第三方 → 不判平局
+  })
+
+  it("人狼恋：1平民+丘比特 → 平局（平民票数与第三方持平，僵局）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9", "P10"].forEach((n) => (g(st, n).alive = false))
+    // 存活：P7 丘比特 + P11 一个平民
+    checkWin(st)
+    expect(st.winCamp).toBe("draw")
   })
 })

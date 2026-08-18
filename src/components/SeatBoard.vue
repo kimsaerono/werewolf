@@ -479,6 +479,14 @@ function vibrate(ms: number) {
   top: 2px;
   left: 2px;
   font-size: 12px;
+  background: linear-gradient(180deg, #ffd666 0%, #d49a00 100%);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 .seat-sheriff img,
 .seat-sheriff-inline {

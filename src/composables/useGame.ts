@@ -338,6 +338,7 @@ export function useGame() {
     startNextGame() {
       clearPendingUndo()
       const board = state.board
+      const boardRoles = state.boardRoles ? [...state.boardRoles] : null
       const judge = state.judge
       const judgeScores = { ...state.judgeScores }
       const winMode = state.winMode
@@ -349,6 +350,7 @@ export function useGame() {
       })
       const s = g.defaultState()
       s.board = board
+      s.boardRoles = boardRoles
       s.judge = judge
       s.judgeScores = judgeScores
       s.winMode = winMode

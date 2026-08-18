@@ -18,13 +18,19 @@ watch(syncStatus, (s) => {
   if (s && s.startsWith("⚠️")) message.error(s, 6)
 })
 
-// ===== 通用单选玩家弹窗 =====
+// ===== 通用玩家弹窗（单选 / 多选）=====
 const picker = ref<{
   title: string
   options: { value: string; label: string }[]
-  onConfirm: (v: string) => void
+  multi?: boolean
+  min?: number
+  max?: number
+  onConfirm?: (v: string) => void
+  onConfirmMulti?: (v: string[]) => void
 } | null>(null)
 const pickerValue = ref("")
+const pickerValues = ref<string[]>([])
+/** 打开单选弹窗 */
 function openPicker(
   title: string,
   options: { value: string; label: string }[],
@@ -32,14 +38,48 @@ function openPicker(
 ) {
   picker.value = { title, options, onConfirm }
   pickerValue.value = ""
+  pickerValues.value = []
+}
+/** 打开多选弹窗：需至少选 min 个（默认 1） */
+function openMultiPicker(
+  title: string,
+  options: { value: string; label: string }[],
+  onConfirm: (v: string[]) => void,
+  min = 1,
+  max = options.length,
+  initial: string[] = [],
+) {
+  picker.value = { title, options, multi: true, min, max, onConfirmMulti: onConfirm }
+  pickerValue.value = ""
+  pickerValues.value = [...initial]
+}
+function togglePickerValue(v: string) {
+  if (!picker.value?.multi) {
+    pickerValue.value = v
+    return
+  }
+  const i = pickerValues.value.indexOf(v)
+  if (i >= 0) pickerValues.value.splice(i, 1)
+  else pickerValues.value.push(v)
 }
 function confirmPicker() {
-  if (!picker.value || !pickerValue.value) return
+  if (!picker.value) return
+  if (picker.value.multi) {
+    const cb = picker.value.onConfirmMulti
+    const vals = [...pickerValues.value]
+    const min = picker.value.min ?? 1
+    if (vals.length < min) return message.warning(`请至少选择 ${min} 位`)
+    picker.value = null
+    pickerValues.value = []
+    cb?.(vals)
+    return
+  }
+  if (!pickerValue.value) return
   const cb = picker.value.onConfirm
   const v = pickerValue.value
   picker.value = null
   pickerValue.value = ""
-  cb(v)
+  cb?.(v)
 }
 
 // ===== 各步选择状态 =====
@@ -59,10 +99,6 @@ const loverDeathMsg = ref("")
 const jinghuiModal = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
-const wolfConfirmOpen = ref(false)
-const wolfSel = ref<string[]>([])
-const cupidConnectOpen = ref(false)
-const cupidSel = ref<string[]>([])
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35
@@ -189,6 +225,8 @@ const hasWWK = hasRole("白狼王")
 const hasCupid = hasRole("丘比特")
 const hunterObj = computed(() => state.players.find((p) => p.role === "猎人"))
 const guardObj = computed(() => state.players.find((p) => p.role === "守卫"))
+const witchObj = computed(() => state.players.find((p) => p.role === "女巫"))
+const prophetObj = computed(() => state.players.find((p) => p.role === "预言家"))
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
 const jingHuiLabel = computed(() =>
   jingHuiObj.value ? refs.playerLabel(jingHuiObj.value) : state.jingHui,
@@ -294,6 +332,16 @@ const playerOptions = computed(() =>
   state.players.map((p) => ({
     value: p.name,
     label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
+  })),
+)
+/** 守卫守人选项：上局守护对象加「上次」标记，提醒不能同守 */
+const guardOptions = computed(() =>
+  aliveList.value.map((p) => ({
+    value: p.name,
+    label:
+      (p.name === state.jingHui ? "👑 " : "") +
+      refs.playerLabel(p) +
+      (p.name === state.guardLastTarget ? "（上次守过）" : ""),
   })),
 )
 const wolfAliveOptions = computed(() =>
@@ -459,7 +507,7 @@ const stepKeys = computed(() => {
     // 行动顺序：丘比特(仅首夜) → 情侣认亲(仅首夜) → 守卫 → 狼人 → 女巫 → 预言家 → 白痴(仅首夜) → 骑士(仅首夜) → 猎人状态确认(每夜) → 竞选警长(首夜) → 天亮
     if (state.round <= 1 && roles.includes("丘比特") && !uiDone.value.cupid) ks.push("cupid")
     if (state.round <= 1 && state.lovers.length === 2 && !uiDone.value.loversMeet) ks.push("loversMeet")
-    if (roles.includes("守卫") && (!guardObj.value || guardObj.value.alive) && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
+    if (roles.includes("守卫") && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
     if (wolfQuotaN > 0 && (!wolfDone || aliveWolf) && !uiDone.value.wolf) ks.push("wolf")
     if (roles.includes("女巫") && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
     if (roles.includes("预言家") && !uiDone.value.prophet) ks.push("prophet")
@@ -549,7 +597,7 @@ watch(
       .filter(Boolean)
     if (names.length) {
       const nos = names.map((n) => noOf(n))
-      const txt = `${nos.join("、")} 因情侣殉情出局`
+      const txt = `${nos.join("、")}号出局`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
     }
@@ -621,7 +669,6 @@ function confirmRoleWithCheck(role: string, v: string) {
       snapshot()
       const err = actions.confirmRole(v, role)
       if (err) return message.error(err)
-      if (state.voiceEnabled) speak(`已确认${role}身份`)
       message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
     },
     onCancel() {
@@ -631,35 +678,23 @@ function confirmRoleWithCheck(role: string, v: string) {
   })
 }
 function openWolfConfirm() {
-  wolfSel.value = state.players.filter((p) => p.role === "狼人").map((p) => p.name)
-  wolfConfirmOpen.value = true
-}
-function confirmWolfSel() {
-  if (wolfSel.value.length !== wolfNeed.value) {
-    return message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${wolfSel.value.length} 个`)
-  }
-  const list = wolfSel.value.map((n) => {
-    const p = state.players.find((x) => x.name === n)
-    return h("div", { style: "font-size:34px;font-weight:800;color:#ff4d4f;line-height:1.5" }, p ? refs.playerLabel(p) : n)
-  })
-  modal.confirm({
-    title: "确认狼人？",
-    width: "min(620px, 94vw)",
-    content: h("div", { style: "text-align:center;padding:10px 0" }, [
-      h("div", { style: "font-size:18px;color:#aaa;margin-bottom:10px" }, "将以下玩家确认为 🐺狼人："),
-      ...list,
-    ]),
-    okText: "✅ 确认",
-    cancelText: "🔄 重新选择",
-    onOk() {
+  openMultiPicker(
+    "🐺 确认狼人（睁眼认人，勾选" + wolfNeed.value + "个）",
+    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+    (sel) => {
+      if (sel.length !== wolfNeed.value) {
+        message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${sel.length} 个`)
+        return
+      }
       snapshot()
-      const err = actions.confirmWolves(wolfSel.value)
-      if (err) return message.error(err)
-      wolfConfirmOpen.value = false
-      message.success("狼人身份已确认")
+      const err = actions.confirmWolves(sel)
+      if (err) message.error(err)
+      else message.success("狼人身份已确认")
     },
-    // onCancel：保持勾选弹窗打开，可重新勾选
-  })
+    wolfNeed.value,
+    wolfNeed.value,
+    state.players.filter((p) => p.role === "狼人").map((p) => p.name),
+  )
 }
 
 // ===== 丘比特连人 =====
@@ -676,41 +711,18 @@ const chainText = computed(() => {
 })
 const loversLabel = computed(() => state.lovers.map((n) => labelOf(n)).join(" ❤ ") || "")
 function openCupidConnect() {
-  cupidSel.value = state.lovers.filter((n) => n)
-  cupidConnectOpen.value = true
-}
-function confirmCupidConnect() {
-  if (cupidSel.value.length !== 2) {
-    return message.error("请选择两位玩家作为情侣")
-  }
-  const [a, b] = cupidSel.value
-  const pa = state.players.find((x) => x.name === a)
-  const pb = state.players.find((x) => x.name === b)
-  const aw = pa && refs.isWolfRole(pa.role)
-  const bw = pb && refs.isWolfRole(pb.role)
-  let chainText = ""
-  if (aw !== undefined && bw !== undefined) {
-    if (aw && bw) chainText = "狼狼恋"
-    else if (!aw && !bw) chainText = "人人恋"
-    else chainText = "人狼恋·第三方"
-  } else {
-    chainText = "待身份确认后判定链型"
-  }
-  const labels = cupidSel.value.map((n) => labelOf(n)).join(" ❤ ")
-  modal.confirm({
-    title: "确认连人？",
-    width: "min(620px, 94vw)",
-    content: h("div", { style: "text-align:center;padding:10px 0" }, [
-      h("div", { style: "font-size:34px;font-weight:800;color:#ff85c0;line-height:1.5" }, labels),
-      h("div", { style: "font-size:18px;color:#aaa;margin-top:10px" }, chainText ? `链型：${chainText}` : "确认连为情侣？"),
-    ]),
-    okText: "✅ 确认",
-    cancelText: "🔄 重新选择",
-    onOk() {
+  const initial = state.lovers.filter((n) => n)
+  openMultiPicker(
+    "💘 丘比特连人（首夜，勾选 2 位）",
+    state.players.map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+    (sel) => {
+      if (sel.length !== 2) {
+        message.error("请选择两位玩家作为情侣")
+        return
+      }
       snapshot()
-      const err = actions.cupidConnect(cupidSel.value)
+      const err = actions.cupidConnect(sel)
       if (err) return message.error(err)
-      cupidConnectOpen.value = false
       const c = refs.getChainType(state)
       const txt = c === "WG" ? "人狼恋 → 第三方阵营成立！" : c === "WW" ? "狼狼恋" : c === "GG" ? "人人恋" : "已连人（身份确认后判定链型）"
       message.success(`💘 ${state.lovers.join(" ❤ ")} 连为情侣（${txt}）`)
@@ -718,8 +730,10 @@ function confirmCupidConnect() {
       markDoneStep("cupid")
       playVoice("cupid_close")
     },
-    // onCancel：保持连人弹窗打开，可重新选择
-  })
+    2,
+    2,
+    initial,
+  )
 }
 /** 情侣已连：法官确认完成本步 */
 function finishCupidStep() {
@@ -733,7 +747,7 @@ function doLoversMeetClose() {
 }
 /** 情侣解散判定（双方均已出局） */
 const loversGone = computed(() => state.lovers.length === 2 && state.lovers.every((n) => !state.players.find((p) => p.name === n)?.alive))
-const thirdActive = computed(() => chainRevealed.value && refs.getChainType(state) === "WG" && !loversGone.value)
+const thirdActive = computed(() => chainRevealed.value && refs.getChainType(state) === "WG")
 /** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标） */
 const thirdMembersList = computed(() =>
   thirdActive.value
@@ -778,9 +792,13 @@ function doProphetClose() {
   playVoice("prophet_close")
 }
 function doGuard(v: string) {
-  snapshot()
   const err = actions.guardDo(v, false)
-  if (err) return message.error(err)
+  if (err) {
+    message.warning(err)
+    openPicker("选择守护对象", guardOptions.value, (v2) => doGuard(v2))
+    return
+  }
+  snapshot()
   const target = state.players.find((x) => x.name === v)
   effect("guard", "guard", target ? `守卫：${refs.playerLabel(target)}` : "")
   playVoice("guard_close")
@@ -991,32 +1009,12 @@ function doFinishVote(v: string) {
   if (!outP) return message.error("请选择放逐出局对象")
   snapshot()
   if (outP.role === "白痴" && !outP.mark.idiotFlipped) {
-    // 白痴被放逐 → 弹窗询问翻牌免死
-    modal.confirm({
-      title: "🙊 白痴被放逐",
-      content: `${refs.playerLabel(outP)} 被放逐，是否翻牌免死？`,
-      okText: "翻牌免死",
-      cancelText: "直接出局",
-      onOk() {
-        const err = actions.finishVote(outP.name, true)
-        if (err) message.error(err)
-        else {
-          effect("idiot", "boing")
-          playVoice("idiot_flip")
-          markDone("vote")
-        }
-      },
-      onCancel() {
-        const err = actions.finishVote(outP.name, false)
-        if (err) message.error(err)
-        else {
-          markDone("vote")
-          checkSheriffDeath()
-          lastWordsName.value = outP.name
-          lastWordsShow.value = true
-        }
-      },
-    })
+    // 白痴被放逐 → 直接翻牌免死（失去投票权，保留在场上）
+    const err = actions.finishVote(outP.name, true)
+    if (err) return message.error(err)
+    effect("idiot", "boing")
+    playVoice("idiot_flip")
+    markDone("vote")
     return
   }
   const err = actions.finishVote(v, false)
@@ -1227,12 +1225,18 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('守卫', v))">🛡️ 确认守卫</a-button>
           </template>
           <template v-else>
+            <template v-if="guardObj && !guardObj.alive">
+              <p class="small" style="text-align: center; color: #ff7875">守卫已出局，本晚不能守人（走流程）</p>
+              <a-button type="primary" size="large" @click="markDoneStep('guard')">已确认守卫出局，进入下一步</a-button>
+            </template>
+            <template v-else>
             <p class="small" style="text-align: center">
               守卫：{{ guardObj ? refs.playerLabel(guardObj) : "-" }}
-              <template v-if="state.guardLastTarget">｜上局守护 {{ state.guardLastTarget }}（不能同守）</template>
+              <template v-if="state.guardLastTarget">｜上局守护 {{ labelOf(state.guardLastTarget) }}（不能同守）</template>
             </p>
-            <a-button type="primary" size="large" @click="openPicker('选择守护对象', aliveOptions, (v) => doGuard(v))">🛡️ 确认守人</a-button>
+            <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardOptions, (v) => doGuard(v))">🛡️ 确认守人</a-button>
             <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不守？', '守卫本晚不守护任何人，确认后进入下一步', () => markDoneStep('guard'))">本轮不守</a-button>
+            </template>
           </template>
         </div>
 
@@ -1266,11 +1270,17 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('预言家', v))">🔮 确认预言家</a-button>
           </template>
           <template v-else>
+            <template v-if="prophetObj && !prophetObj.alive">
+              <p class="small" style="text-align: center; color: #ff7875">预言家已出局，本晚不能验人（走流程）</p>
+              <a-button type="primary" size="large" @click="doProphetClose">已确认预言家出局，进入下一步</a-button>
+            </template>
+            <template v-else>
             <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...aliveOptions], (v) => doProphetCheck(v))">🔮 确认查验</a-button>
             <div v-else class="prophet-result">
               <div class="prophet-result-main">{{ checkResult }}</div>
               <a-button type="primary" danger @click="doProphetClose">已告知预言家，闭眼</a-button>
             </div>
+            </template>
           </template>
         </div>
 
@@ -1283,37 +1293,41 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('女巫', v))">🧙 确认女巫</a-button>
           </template>
           <template v-else>
+          <template v-if="witchObj && !witchObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">女巫已出局，本晚不能用药（走流程）</p>
+            <a-button type="primary" size="large" @click="doWitchDone">已确认女巫出局，进入下一步</a-button>
+          </template>
+          <template v-else>
           <p class="small" style="text-align: center; margin-bottom: 4px">
             本晚被刀：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
           </p>
-          <div class="bottles">
+          <div class="witch-actions">
             <div
-              class="bottle"
-              :class="{ used: state.witchSaveUsed, clickable: !state.witchSaveUsed }"
+              class="witch-action"
+              :class="{ used: state.witchSaveUsed }"
               @click="!state.witchSaveUsed && openWitchModal('save')"
             >
-              <div class="bottle-emoji">💚</div>
-              <div class="bottle-name">解药</div>
-              <div class="bottle-state" :class="{ 'bottle-done': state.witchSaveUsed }">{{ state.witchSaveUsed ? "已用" : "点击使用" }}</div>
+              <div class="witch-action-emoji">💚</div>
+              <div class="witch-action-name">用解药</div>
             </div>
             <div
-              class="bottle bottle-purple"
-              :class="{ used: state.witchPoisonUsed, clickable: !state.witchPoisonUsed }"
+              class="witch-action"
+              :class="{ used: state.witchPoisonUsed }"
               @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', aliveOptions, (v) => doWitchPoison(v))"
             >
-              <div class="bottle-emoji">🟣</div>
-              <div class="bottle-name">毒药</div>
-              <div class="bottle-state" :class="{ 'bottle-done': state.witchPoisonUsed }">{{ state.witchPoisonUsed ? "已用" : "点击使用" }}</div>
+              <div class="witch-action-emoji">🟣</div>
+              <div class="witch-action-name">用毒药</div>
+            </div>
+            <div class="witch-action" @click="doWitchDone">
+              <div class="witch-action-emoji">🙅</div>
+              <div class="witch-action-name">不用药</div>
             </div>
           </div>
-          <div class="small">一晚只能使用一瓶；点击药瓶使用</div>
-
-          <a-space direction="vertical" style="width: 100%; max-width: 360px">
-            <a-button block style="margin-top: 4px" @click="doWitchDone">本轮不开药，闭眼</a-button>
-          </a-space>
+          <div class="small">一晚只能使用一瓶</div>
 
           <div v-if="state.nightWitchSave" class="small">💚 已解救：{{ labelOf(state.nightWitchSave) }}</div>
           <div v-if="state.nightWitchPoison" class="small">☠️ 已毒杀：{{ labelOf(state.nightWitchPoison) }}</div>
+          </template>
           </template>
         </div>
 
@@ -1679,31 +1693,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-tooltip>
       </div>
 
-      <!-- 弹窗：确认狼人（首夜睁眼认人） -->
-      <a-modal v-model:open="wolfConfirmOpen" title="🐺 确认狼人（睁眼认人）" :footer="null" width="420px" :mask-closable="false">        <p class="small">勾选本板子的狼人玩家（{{ wolfSel.length }}/{{ wolfNeed }}），选满 {{ wolfNeed }} 个后确认</p>
-        <a-checkbox-group v-model:value="wolfSel" style="width: 100%">
-          <div v-for="p in aliveList.filter((x) => !x.role || x.role === '狼人')" :key="p.name" class="wolf-pick-item">
-            <a-checkbox :value="p.name" :disabled="!wolfSel.includes(p.name) && wolfSel.length >= wolfNeed">
-              {{ refs.playerLabel(p) }}
-            </a-checkbox>
-          </div>
-        </a-checkbox-group>
-        <a-button type="primary" danger block style="margin-top: 12px" @click="confirmWolfSel">确认狼人</a-button>
-      </a-modal>
-
-      <!-- 弹窗：丘比特连人（首夜） -->
-      <a-modal v-model:open="cupidConnectOpen" title="💘 丘比特连人（首夜）" :footer="null" width="420px" :mask-closable="false">
-        <p class="small">勾选两位玩家作为情侣（可连自己；{{ cupidSel.length }}/2，选满 2 人后确认）</p>
-        <a-checkbox-group v-model:value="cupidSel" style="width: 100%">
-          <div v-for="p in aliveList" :key="p.name" class="wolf-pick-item">
-            <a-checkbox :value="p.name" :disabled="!cupidSel.includes(p.name) && cupidSel.length >= 2">
-              {{ p.name === cupidObj?.name ? "💘 " : "" }}{{ refs.playerLabel(p) }}
-            </a-checkbox>
-          </div>
-        </a-checkbox-group>
-        <a-button type="primary" block style="margin-top: 12px" :disabled="cupidSel.length !== 2" @click="confirmCupidConnect">确认连人</a-button>
-      </a-modal>
-
       <!-- 弹窗：警徽设置（移交 + 警徽流） -->
       <a-modal v-model:open="jinghuiModal" title="👑 警徽设置" :footer="null" width="400px" :mask-closable="false">
         <p class="small" style="margin-bottom: 12px">
@@ -1739,21 +1728,21 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-space>
       </a-modal>
 
-      <!-- 弹窗：通用单选玩家（置于最后，层级高于其他弹窗） -->
+      <!-- 弹窗：通用玩家选择（单选 / 多选；置于最后，层级高于其他弹窗） -->
       <a-modal :open="!!picker" :title="picker?.title" :footer="null" width="480px" :z-index="2000" :mask-closable="false" @cancel="picker = null">
         <div class="pick-list">
           <div
             v-for="opt in picker?.options"
             :key="opt.value"
             class="pick-item"
-            :class="{ active: pickerValue === opt.value }"
-            @click="pickerValue = opt.value"
+            :class="picker?.multi ? { active: pickerValues.includes(opt.value) } : { active: pickerValue === opt.value }"
+            @click="togglePickerValue(opt.value)"
           >
-            <span class="pick-check">{{ pickerValue === opt.value ? "●" : "○" }}</span>
+            <span class="pick-check">{{ picker?.multi ? (pickerValues.includes(opt.value) ? "☑" : "☐") : (pickerValue === opt.value ? "●" : "○") }}</span>
             {{ opt.label }}
           </div>
         </div>
-        <a-button type="primary" size="large" block style="margin-top: 14px" :disabled="!pickerValue" @click="confirmPicker">
+        <a-button type="primary" size="large" block style="margin-top: 14px" :disabled="picker?.multi ? !pickerValues.length : !pickerValue" @click="confirmPicker">
           确认
         </a-button>
       </a-modal>
@@ -1857,9 +1846,49 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   border-color: #2b3145;
   color: #555;
 }
-.bottles {
+.witch-actions {
   display: flex;
   gap: 12px;
+  margin: 8px 0;
+}
+.witch-action {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+  border-radius: 12px;
+  border: 2px solid rgba(46, 213, 115, 0.6);
+  background: rgba(46, 213, 115, 0.12);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+}
+.witch-action:nth-child(2) {
+  border-color: rgba(150, 90, 220, 0.7);
+  background: rgba(150, 90, 220, 0.14);
+}
+.witch-action:nth-child(3) {
+  border-color: rgba(120, 130, 150, 0.6);
+  background: rgba(120, 130, 150, 0.12);
+}
+.witch-action:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+.witch-action.used {
+  opacity: 0.4;
+  border-style: dashed;
+  pointer-events: none;
+}
+.witch-action-emoji {
+  font-size: 30px;
+  line-height: 1;
+}
+.witch-action-name {
+  font-weight: 700;
+  color: #eee;
+  font-size: 15px;
 }
 .pick-list {
   max-height: 380px;
@@ -1915,53 +1944,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   font-size: 12px;
   color: #999;
   margin-bottom: 4px;
-}
-.bottle {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  width: 96px;
-  padding: 10px 8px;
-  border-radius: 12px;
-  border: 2px solid rgba(46, 213, 115, 0.6);
-  background: rgba(46, 213, 115, 0.12);
-  transition: opacity 0.2s;
-}
-.bottle-purple {
-  border-color: rgba(150, 90, 220, 0.7);
-  background: rgba(150, 90, 220, 0.14);
-}
-.bottle.used {
-  opacity: 0.45;
-  border-style: dashed;
-}
-.bottle.clickable {
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-.bottle.clickable:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
-}
-.bottle-emoji {
-  font-size: 34px;
-  line-height: 1;
-}
-.bottle-name {
-  font-weight: 700;
-  color: #eee;
-}
-.bottle-state {
-  font-size: 12px;
-  color: #2ed573;
-  font-weight: 600;
-}
-.bottle-purple .bottle-state {
-  color: #b28cff;
-}
-.bottle-state.bottle-done {
-  color: #888;
 }
 .prophet-result {
   display: flex;

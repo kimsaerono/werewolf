@@ -78,7 +78,7 @@ export interface Mark {
   wolfKingShotGood: boolean
   wolfKingShotWolf: boolean
   wolfKingIsPoisoned: boolean
-  guardHit: boolean
+  guardHitCount: number
   guardSameSaveKill: boolean
   wolfHanTiaoJinghui: boolean
   wolfSelfKillCheat: boolean
@@ -211,7 +211,7 @@ export function defaultMark(): Mark {
     wolfKingShotGood: false,
     wolfKingShotWolf: false,
     wolfKingIsPoisoned: false,
-    guardHit: false,
+    guardHitCount: 0,
     guardSameSaveKill: false,
     wolfHanTiaoJinghui: false,
     wolfSelfKillCheat: false,
@@ -290,6 +290,9 @@ export function normalizeState(s: GameState): GameState {
     if (p.star === undefined) p.star = "-"
     if (!p.scoreDetail) p.scoreDetail = []
     if (p.no === undefined) p.no = 0
+    // 旧数据：guardHit 布尔 → guardHitCount 计数（守中过即算 1 次）
+    const legacyGuardHit = (p.mark as unknown as { guardHit?: boolean }).guardHit
+    if (legacyGuardHit && !(p.mark.guardHitCount || 0)) p.mark.guardHitCount = 1
   })
   if (!st.judgeScores || typeof st.judgeScores !== "object") st.judgeScores = {}
   if (!st.uiDone || typeof st.uiDone !== "object") st.uiDone = {}
@@ -672,14 +675,20 @@ export function clearAllPlayers(state: GameState): void {
 
 export function resetWholeGame(state: GameState): GameState {
   const board = state.board
+  const boardRoles = state.boardRoles ? [...state.boardRoles] : null
   const judge = state.judge
   const judgeScores = state.judgeScores
   const winMode = state.winMode
+  const simMode = state.simMode
+  const modeChosen = state.modeChosen
   const s = defaultState()
   s.board = board
+  s.boardRoles = boardRoles
   s.judge = judge
   s.judgeScores = judgeScores
   s.winMode = winMode
+  s.simMode = simMode
+  s.modeChosen = modeChosen
   return s
 }
 
@@ -825,14 +834,15 @@ export function prophetNoCheck(state: GameState): string | null {
 
 export function guardDo(state: GameState, sel: string, flagSame: boolean): string | null {
   if (!sel) return "请选择守护对象"
+  const guard = state.players.find((p) => p.role === "守卫")
+  if (!guard) return "本局没有守卫"
+  if (!guard.alive) return "守卫已出局，本晚不能守人"
   if (state.guardLastTarget && sel === state.guardLastTarget) {
     return `守卫不能连续两晚守同一人（${sel}上晚已被守）`
   }
   state.nightGuardTarget = sel
   state.nightSameSaveKill = flagSame
   state.nightSteps.guard = true
-  const guard = state.players.find((p) => p.role === "守卫")
-  if (!guard) return "本局没有守卫"
   pushNightLog(state, `🛡️守卫守护${sel}${flagSame ? "【同守同救触发】" : ""}`)
   pushGlobalLog(state, `🛡️守卫守护：${sel}${flagSame ? "（触发同守同救）" : ""}`)
   pushFlow(state, "守卫守人", sel, flagSame ? "同守同救" : "")
@@ -847,6 +857,7 @@ export function witchSave(state: GameState): string | null {
   if (state.nightUsedDrug !== null) return "本晚女巫已经使用过一瓶药，同一夜晚不能同时使用解药和毒药"
   const witch = state.players.find((p) => p.role === "女巫")
   if (!witch) return "本局没有女巫"
+  if (!witch.alive) return "女巫已出局，本晚不能用药"
   if (target === witch.name && state.round > 1) return "女巫只有首夜可以自救，之后夜晚不能自救"
   state.witchSaveUsed = true
   state.nightUsedDrug = "save"
@@ -869,6 +880,7 @@ export function witchPoison(state: GameState, sel: string): string | null {
   if (state.nightUsedDrug !== null) return "本晚女巫已经使用过一瓶药，同一夜晚不能同时使用解药和毒药"
   const witch = state.players.find((p) => p.role === "女巫")
   if (!witch) return "本局没有女巫"
+  if (!witch.alive) return "女巫已出局，本晚不能用药"
   const tar = state.players.find((x) => x.name === sel)
   state.witchPoisonUsed = true
   state.nightUsedDrug = "poison"
@@ -1140,7 +1152,7 @@ export function resolveNightDeath(state: GameState): string | null {
     deathList.push(wolfKillTarget)
   } else if (wolfKillTarget && wolfKillTarget === guardTarget) {
     const guard = state.players.find((p) => p.role === "守卫")
-    if (guard) guard.mark.guardHit = true
+    if (guard) guard.mark.guardHitCount = (guard.mark.guardHitCount || 0) + 1
   } else if (wolfKillTarget && wolfKillTarget !== witchSavedTarget) {
     deathList.push(wolfKillTarget)
   }
@@ -1259,9 +1271,10 @@ export function recalcScore(state: GameState): void {
       }
     }
     if (p.role === "守卫") {
-      if (m.guardHit) {
-        s += 0.5
-        detail.push("守中+0.5")
+      const hits = m.guardHitCount || 0
+      if (hits > 0) {
+        s += 0.5 * hits
+        detail.push(`守中+${0.5 * hits}`)
       }
       if (m.guardSameSaveKill) {
         s -= 0.5
@@ -1362,11 +1375,13 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
       if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
         wc = "third"
       }
-      // ② 平局：第三方存活 + 狼全灭 + 剩余无技能平民（无法打破僵局）
+      // ② 平局：狼全灭 + 剩余全是平民，且平民投票无法放逐第三方（票数不足/平票 → 僵局）。
+      //    平民票数 > 第三方存活数时仍可投出第三方 → 游戏继续，好人可胜，不判平局。
       else if (aliveWolf.length === 0) {
         const aliveNonThird = aliveAll.filter((p) => !isThirdMember(state, p))
         const onlyCivil = aliveNonThird.every((p) => p.role === "平民")
-        if (onlyCivil) {
+        const thirdAliveCount = aliveAll.filter((p) => isThirdMember(state, p)).length
+        if (onlyCivil && aliveNonThird.length <= thirdAliveCount) {
           wc = "draw"
         }
       }
@@ -1381,7 +1396,7 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   }
   let reason = ""
   if (wc === "draw") {
-    reason = "第三方阵营与平民僵持，无人能获胜，平局"
+    reason = "第三方与平民票数持平僵持，无法继续放逐，平局"
   } else if (wc === "third") {
     reason = "场上只剩丘比特与人狼情侣，第三方存活到最后"
   } else if (wc === "wolf") {
@@ -1431,7 +1446,7 @@ export function suggestHonor(state: GameState): { mvp: string; svp: string } {
   const highlight = (p: Player): boolean => {
     const m = p.mark
     if (p.role === "女巫") return m.witchPoWolf || m.witchSaveGood
-    if (p.role === "守卫") return m.guardHit
+    if (p.role === "守卫") return (m.guardHitCount || 0) > 0
     if (p.role === "预言家") return m.prophetFirstDayWolf
     if (p.role === "猎人" || p.role === "骑士") return m.hunterKillWolf
     if (p.role === "狼王") return m.wolfKingShotGood
