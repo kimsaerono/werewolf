@@ -62,7 +62,6 @@ function confirm() {
   }
 }
 const selected = computed(() => (props.multi ? multi.value : single.value))
-const allDisabled = computed(() => props.multi && props.max > 0 && multi.value.length >= props.max)
 </script>
 
 <template>
@@ -85,7 +84,7 @@ const allDisabled = computed(() => props.multi && props.max > 0 && multi.value.l
     </div>
     <div v-if="multi" class="fp-actions">
       <a-button size="large" @click="emit('cancel')">取消</a-button>
-      <a-button type="primary" size="large" :disabled="multi.length < min || allDisabled" @click="confirm">确认</a-button>
+      <a-button type="primary" size="large" :disabled="multi.length < min" @click="confirm">确认</a-button>
     </div>
   </div>
 </template>
