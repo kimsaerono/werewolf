@@ -26,14 +26,14 @@ const emit = defineEmits<{
 }>()
 
 const single = ref("")
-const multi = ref<string[]>([])
+const multiSel = ref<string[]>([])
 
 watch(
   () => props.open,
   (o) => {
     if (o) {
       single.value = ""
-      multi.value = [...props.initial]
+      multiSel.value = [...props.initial]
     }
   },
 )
@@ -41,7 +41,7 @@ watch(
 /** 卡片是否禁用：多选且已选满 max 个，且当前卡未选中 */
 function disabled(v: string): boolean {
   if (!props.multi) return false
-  if (props.max > 0 && !multi.value.includes(v) && multi.value.length >= props.max) return true
+  if (props.max > 0 && !multiSel.value.includes(v) && multiSel.value.length >= props.max) return true
   return false
 }
 function toggle(v: string) {
@@ -51,43 +51,43 @@ function toggle(v: string) {
     return
   }
   if (disabled(v)) return
-  const i = multi.value.indexOf(v)
-  if (i >= 0) multi.value.splice(i, 1)
-  else multi.value.push(v)
+  const i = multiSel.value.indexOf(v)
+  if (i >= 0) multiSel.value.splice(i, 1)
+  else multiSel.value.push(v)
 }
 function confirm() {
   if (props.multi) {
-    if (multi.value.length < props.min) return
-    emit("confirmMulti", [...multi.value])
+    if (multiSel.value.length < props.min) return
+    emit("confirmMulti", [...multiSel.value])
     return
   }
   if (!single.value) return
   emit("confirmSingle", single.value)
 }
-const selected = computed(() => (props.multi ? multi.value : single.value))
+const selected = computed(() => (props.multi ? multiSel.value : single.value))
 </script>
 
 <template>
   <div v-if="open" class="fp-overlay">
     <div class="fp-title">
       {{ title }}
-      <span v-if="multi" class="fp-count">{{ multi.length }}/{{ max || "任选" }}</span>
+      <span v-if="multi" class="fp-count">{{ multiSel.length }}/{{ max || "任选" }}</span>
     </div>
     <div class="fp-grid">
       <div
         v-for="opt in options"
         :key="opt.value"
         class="fp-card"
-        :class="{ active: selected.includes(opt.value), disabled: disabled(opt.value) }"
+        :class="{ active: multi ? multiSel.includes(opt.value) : selected === opt.value, disabled: disabled(opt.value) }"
         @click="toggle(opt.value)"
       >
-        <span class="fp-check">{{ multi ? (selected.includes(opt.value) ? "☑" : "☐") : (selected === opt.value ? "●" : "○") }}</span>
+        <span class="fp-check">{{ multi ? (multiSel.includes(opt.value) ? "☑" : "☐") : (selected === opt.value ? "●" : "○") }}</span>
         {{ opt.label }}
       </div>
     </div>
     <div class="fp-actions">
       <a-button size="large" @click="emit('cancel')">取消</a-button>
-      <a-button type="primary" size="large" :disabled="multi ? multi.length < min : !single" @click="confirm">确认</a-button>
+      <a-button type="primary" size="large" :disabled="multi ? multiSel.length < min : !single" @click="confirm">确认</a-button>
     </div>
   </div>
 </template>
