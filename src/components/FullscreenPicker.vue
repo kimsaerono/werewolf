@@ -5,7 +5,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
-    options: { value: string; label: string }[]
+    options: { value: string; label: string; no?: number; name?: string; role?: string }[]
     /** 单选用值（点选即确认）；多选用的值数组 */
     multi?: boolean
     min?: number
@@ -65,6 +65,36 @@ function confirm() {
   emit("confirmSingle", single.value)
 }
 const selected = computed(() => (props.multi ? multiSel.value : single.value))
+/** 角色配色（与 GamePanel 一致，用于姓名/角色着色） */
+const ROLE_COLOR: Record<string, string> = {
+  狼人: "#ff4d4f",
+  白狼王: "#ff4d4f",
+  狼王: "#ff4d4f",
+  预言家: "#40a9ff",
+  女巫: "#73d13d",
+  猎人: "#ffa940",
+  守卫: "#36cfc9",
+  骑士: "#b37feb",
+  白痴: "#ffd666",
+  丘比特: "#ff85c0",
+  平民: "#bfbfbf",
+}
+const roleColor = (r?: string) => ROLE_COLOR[r || ""] || "#fff"
+const ROLE_EMOJI: Record<string, string> = {
+  狼人: "🐺",
+  白狼王: "❄️🐺",
+  狼王: "🔫🐺",
+  预言家: "🔮",
+  女巫: "🧙",
+  猎人: "🔫",
+  守卫: "🛡️",
+  骑士: "⚔️",
+  白痴: "🙊",
+  平民: "👤",
+  丘比特: "💘",
+}
+/** 选项是否已选中（多选用数组，单选用值） */
+const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.value.includes(opt.value) : single.value === opt.value)
 </script>
 
 <template>
@@ -78,11 +108,17 @@ const selected = computed(() => (props.multi ? multiSel.value : single.value))
         v-for="opt in options"
         :key="opt.value"
         class="fp-card"
-        :class="{ active: multi ? multiSel.includes(opt.value) : selected === opt.value, disabled: disabled(opt.value) }"
+        :class="{ active: isActive(opt), disabled: disabled(opt.value) }"
         @click="toggle(opt.value)"
       >
-        <span class="fp-check">{{ multi ? (multiSel.includes(opt.value) ? "☑" : "☐") : (selected === opt.value ? "●" : "○") }}</span>
-        {{ opt.label }}
+        <template v-if="opt.no !== undefined">
+          <div class="fp-no">{{ opt.no }}</div>
+          <div class="fp-name">{{ opt.name || opt.label }}</div>
+          <div class="fp-role" :style="{ color: roleColor(opt.role) }">{{ ROLE_EMOJI[opt.role || ""] || "" }}{{ opt.role || "" }}</div>
+        </template>
+        <template v-else>
+          {{ opt.label }}
+        </template>
       </div>
     </div>
     <div class="fp-actions">
@@ -118,26 +154,19 @@ const selected = computed(() => (props.multi ? multiSel.value : single.value))
   font-size: 16px;
 }
 .fp-grid {
-  columns: 3;
-  column-gap: 12px;
-  width: min(760px, 100%);
-}
-@media (max-width: 560px) {
-  .fp-grid {
-    columns: 2;
-  }
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+  width: min(720px, 100%);
 }
 .fp-card {
   background: #1d2233;
   border: 1px solid #2b3145;
   border-radius: 12px;
-  padding: 14px 10px;
+  padding: 12px 8px;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
-  position: relative;
-  break-inside: avoid;
-  margin-bottom: 10px;
 }
 .fp-card:hover {
   border-color: #2ed573;
@@ -151,15 +180,19 @@ const selected = computed(() => (props.multi ? multiSel.value : single.value))
   opacity: 0.4;
   cursor: not-allowed;
 }
-.fp-check {
-  position: absolute;
-  top: 6px;
-  left: 8px;
-  font-size: 16px;
-  color: #888;
+.fp-no {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
 }
-.fp-card.active .fp-check {
-  color: #2ed573;
+.fp-name {
+  font-size: 14px;
+  color: #eee;
+  margin-top: 2px;
+}
+.fp-role {
+  font-size: 12px;
+  margin-top: 2px;
 }
 .fp-actions {
   display: flex;

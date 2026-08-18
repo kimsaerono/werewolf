@@ -8,6 +8,7 @@ import SeatBoard from "@/components/SeatBoard.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import FullscreenPicker from "@/components/FullscreenPicker.vue"
 import type { Game } from "@/types"
+import type { Player } from "@/game/logic"
 
 const { message, modal } = AntApp.useApp()
 
@@ -315,47 +316,33 @@ function nightSituation(steps: { label: string; target: string; detail: string }
 const displayLog = (l: string) => refs.decorateLog(state, refs.cleanLogLine(l))
 
 /** 统一玩家下拉选项：号码（姓名 角色），警长加👑标识 */
-const aliveOptions = computed(() =>
-  aliveList.value.map((p) => ({
+function playerOption(p: Player, extra = "") {
+  return {
     value: p.name,
-    label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
-  })),
-)
+    label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p) + extra,
+    no: p.no,
+    name: p.name,
+    role: p.role || "",
+  }
+}
+const aliveOptions = computed(() => aliveList.value.map((p) => playerOption(p)))
 /** 女巫毒药目标：排除女巫自己（不能对自己用毒） */
 const witchPoisonOptions = computed(() =>
-  aliveList.value
-    .filter((p) => p.name !== witchObj.value?.name)
-    .map((p) => ({
-      value: p.name,
-      label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
-    })),
+  aliveList.value.filter((p) => p.name !== witchObj.value?.name).map((p) => playerOption(p)),
 )
-const playerOptions = computed(() =>
-  state.players.map((p) => ({
-    value: p.name,
-    label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
-  })),
-)
+const playerOptions = computed(() => state.players.map((p) => playerOption(p)))
 /** 守卫守人选项：上局守护对象加「上次」标记，提醒不能同守 */
 const guardOptions = computed(() =>
-  aliveList.value.map((p) => ({
-    value: p.name,
-    label:
-      (p.name === state.jingHui ? "👑 " : "") +
-      refs.playerLabel(p) +
-      (p.name === state.guardLastTarget ? "（上次守过）" : ""),
-  })),
+  aliveList.value.map((p) => playerOption(p, p.name === state.guardLastTarget ? "（上次守过）" : "")),
 )
 const wolfAliveOptions = computed(() =>
-  aliveList.value
-    .filter((p) => refs.isWolfRole(p.role))
-    .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+  aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
 /** 普通自爆：狼阵营（狼人/狼王）；白狼王走专属自爆带人 */
 const wolfPlainOptions = computed(() =>
   aliveList.value
     .filter((p) => refs.isWolfRole(p.role) && p.role !== "白狼王")
-    .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+    .map((p) => playerOption(p)),
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
 const boardRolesArr = computed(() => refs.getBoardRoles(state))
@@ -384,17 +371,11 @@ const wolfCampSingleUnconfirmed = computed(() => wolfCampUnconfirmed.value.filte
 const wolfNeed = computed(() => wolfCampStatus.value["狼人"]?.need || 0)
 const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 /** 未确认身份且存活的玩家（用于睁眼认人） */
-const unassignedAliveOptions = computed(() =>
-  aliveList.value
-    .filter((p) => !p.role)
-    .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
-)
+const unassignedAliveOptions = computed(() => aliveList.value.filter((p) => !p.role).map((p) => playerOption(p)))
 /** 白狼王自爆带走目标：白狼王本人除外 */
 const wwkObj = computed(() => state.players.find((p) => p.role === "白狼王"))
 const wwkTarOptions = computed(() =>
-  aliveList.value
-    .filter((p) => p.name !== wwkObj.value?.name)
-    .map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+  aliveList.value.filter((p) => p.name !== wwkObj.value?.name).map((p) => playerOption(p)),
 )
 
 // ===== 单步向导 =====
@@ -684,7 +665,7 @@ function confirmRoleWithCheck(role: string, v: string) {
 function openWolfConfirm() {
   openMultiPicker(
     "🐺 确认狼人（睁眼认人，勾选" + wolfNeed.value + "个）",
-    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => playerOption(p)),
     (sel) => {
       if (sel.length !== wolfNeed.value) {
         message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${sel.length} 个`)
@@ -718,7 +699,7 @@ function openCupidConnect() {
   const initial = state.lovers.filter((n) => n)
   openMultiPicker(
     "💘 丘比特连人（首夜，勾选 2 位）",
-    state.players.map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+    state.players.map((p) => playerOption(p)),
     (sel) => {
       if (sel.length !== 2) {
         message.error("请选择两位玩家作为情侣")
