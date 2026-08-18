@@ -865,4 +865,36 @@ describe("丘比特 / 情侣", () => {
     checkWin(st)
     expect(st.winCamp).toBe("draw")
   })
+
+  it("人狼恋常驻：丘比特死但好人恋人活+狼全灭 → 不判好人胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    // 丘比特死 + 狼恋人死 + 单身狼全死，仅好人恋人 P8 存活（第三方还在）
+    ;["P7", "P0", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋常驻：三方成员全灭+狼全灭 → 好人胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 丘比特 P7，恋人 P0/P8
+    st.round = 3
+    st.phase = "day"
+    ;["P7", "P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+  })
+
+  it("人狼恋常驻：丘比特死但狼恋人活（第三方保留）→ 狼屠边也不判狼胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人
+    st.round = 3
+    st.phase = "day"
+    // 丘比特 P7 死；神全灭；仅剩狼恋人 P0 + 好人恋人 P8 + 平民
+    ;["P7", "P4", "P5", "P6", "P9", "P10", "P11"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 第三方存在，狼胜不成立
+  })
 })

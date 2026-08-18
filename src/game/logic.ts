@@ -1362,11 +1362,11 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   const aliveCivil = state.players.filter((p) => p.alive && p.role === "平民")
   const allAssigned = state.players.length > 0 && state.players.every((p) => p.role)
   const started = allAssigned && (state.phase !== "idle" || state.round > 0)
-  // 人狼恋第三方：只要丘比特存活第三方即存在（情侣死亡不解散，殉情保证两人同生共死）
+  // 人狼恋第三方：一旦建立（丘比特连出人狼恋）就一直存在，直到所有第三方成员（丘比特+恋人）全部出局才解散。
+  // 狼恋人属第三方，不计入狼阵营；好人恋人属第三方，不计入好人阵营。
   const chain = getChainType(state)
-  const cupidObj = state.players.find((p) => p.role === "丘比特")
-  const cupidAlive = started && !!cupidObj && cupidObj.alive
-  const thirdActive = started && chain === "WG" && !!cupidAlive
+  const thirdAlive = state.players.some((p) => p.alive && isThirdMember(state, p))
+  const thirdActive = started && chain === "WG" && thirdAlive
   let wc: WinCamp = null
   if (started) {
     if (thirdActive) {
