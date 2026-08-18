@@ -6,6 +6,7 @@ import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
+import FullscreenPicker from "@/components/FullscreenPicker.vue"
 import type { Game } from "@/types"
 
 const { message, modal } = AntApp.useApp()
@@ -25,6 +26,7 @@ const picker = ref<{
   multi?: boolean
   min?: number
   max?: number
+  initial?: string[]
   onConfirm?: (v: string) => void
   onConfirmMulti?: (v: string[]) => void
 } | null>(null)
@@ -49,37 +51,28 @@ function openMultiPicker(
   max = options.length,
   initial: string[] = [],
 ) {
-  picker.value = { title, options, multi: true, min, max, onConfirmMulti: onConfirm }
+  picker.value = { title, options, multi: true, min, max, initial: [...initial], onConfirmMulti: onConfirm }
   pickerValue.value = ""
   pickerValues.value = [...initial]
 }
-function togglePickerValue(v: string) {
-  if (!picker.value?.multi) {
-    pickerValue.value = v
-    return
-  }
-  const i = pickerValues.value.indexOf(v)
-  if (i >= 0) pickerValues.value.splice(i, 1)
-  else pickerValues.value.push(v)
-}
-function confirmPicker() {
-  if (!picker.value) return
-  if (picker.value.multi) {
-    const cb = picker.value.onConfirmMulti
-    const vals = [...pickerValues.value]
-    const min = picker.value.min ?? 1
-    if (vals.length < min) return message.warning(`请至少选择 ${min} 位`)
-    picker.value = null
-    pickerValues.value = []
-    cb?.(vals)
-    return
-  }
-  if (!pickerValue.value) return
-  const cb = picker.value.onConfirm
-  const v = pickerValue.value
+/** 全屏单选：点选即确认 */
+function onPickerSingle(v: string) {
+  const cb = picker.value?.onConfirm
   picker.value = null
   pickerValue.value = ""
   cb?.(v)
+}
+/** 全屏多选：选满后确认 */
+function onPickerMulti(vals: string[]) {
+  const cb = picker.value?.onConfirmMulti
+  const min = picker.value?.min ?? 1
+  if (vals.length < min) {
+    message.warning(`请至少选择 ${min} 位`)
+    return
+  }
+  picker.value = null
+  pickerValues.value = []
+  cb?.(vals)
 }
 
 // ===== 各步选择状态 =====
@@ -605,7 +598,9 @@ watch(
 )
 // 步骤切换时清空弹窗选择（v28）
 watch(currentStep, (key) => {
+  picker.value = null
   pickerValue.value = ""
+  pickerValues.value = []
   if (key === "jinghui") {
     flow1Sel.value = state.jingHuiFlow[0] || ""
     flow2Sel.value = state.jingHuiFlow[1] || ""
@@ -1728,24 +1723,19 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-space>
       </a-modal>
 
-      <!-- 弹窗：通用玩家选择（单选 / 多选；置于最后，层级高于其他弹窗） -->
-      <a-modal :open="!!picker" :title="picker?.title" :footer="null" width="480px" :z-index="2000" :mask-closable="false" @cancel="picker = null">
-        <div class="pick-list">
-          <div
-            v-for="opt in picker?.options"
-            :key="opt.value"
-            class="pick-item"
-            :class="picker?.multi ? { active: pickerValues.includes(opt.value) } : { active: pickerValue === opt.value }"
-            @click="togglePickerValue(opt.value)"
-          >
-            <span class="pick-check">{{ picker?.multi ? (pickerValues.includes(opt.value) ? "☑" : "☐") : (pickerValue === opt.value ? "●" : "○") }}</span>
-            {{ opt.label }}
-          </div>
-        </div>
-        <a-button type="primary" size="large" block style="margin-top: 14px" :disabled="picker?.multi ? !pickerValues.length : !pickerValue" @click="confirmPicker">
-          确认
-        </a-button>
-      </a-modal>
+      <!-- 通用玩家选择（全屏卡片式：单选点选即确认；多选选满N个后确认） -->
+      <FullscreenPicker
+        :open="!!picker"
+        :title="picker?.title || ''"
+        :options="picker?.options || []"
+        :multi="!!picker?.multi"
+        :min="picker?.min ?? 1"
+        :max="picker?.max ?? 0"
+        :initial="picker?.initial || []"
+        @confirm-single="onPickerSingle"
+        @confirm-multi="onPickerMulti"
+        @cancel="picker = null"
+      />
 
       <!-- 弹窗：警长出局，警徽去留 -->
       <a-modal v-model:open="sheriffDeathModal" title="👑 警长出局" :footer="null" width="420px" :mask-closable="false">

@@ -38,7 +38,8 @@ function onResetGame() {
     cancelText: "取消",
     onOk() {
       actions.resetWholeGame()
-      msg.success("已整局重置")
+      activeTab.value = "board"
+      msg.success("已整局重置，请重新选人开局")
     },
   })
 }
@@ -104,7 +105,7 @@ function onTabChange(key: string) {
         <a-button class="reset-fab" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
       </a-tooltip>
 
-      <!-- 右下悬浮：同步口令设置（所有 tab 可见，真实模式才需要） -->
+      <!-- 左下悬浮：同步口令设置（真实模式才需要） -->
       <SyncSettings v-if="!state.simMode" />
 
       <!-- 胜负弹窗 -->
@@ -276,15 +277,16 @@ body {
 .ant-card + .ant-card {
   margin-top: 12px;
 }
-/* 整局重置悬浮按钮：左下，位于角色玩法悬浮钮上方 */
+/* 整局重置悬浮按钮：左下，位于角色玩法悬浮钮上方、钥匙下方 */
 .reset-fab {
   position: fixed;
   left: 16px;
   bottom: 84px;
-  z-index: 500;
+  z-index: 600;
   width: 48px;
   height: 48px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 77, 79, 0.6);
 }
 /* 文案尽量不换行、不省略：缩小字号适配 */
 .ant-card-head-title {

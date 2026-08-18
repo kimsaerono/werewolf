@@ -28,7 +28,7 @@ async function onTest() {
 </script>
 
 <template>
-  <a-tooltip title="同步设置（口令）" placement="left">
+  <a-tooltip title="同步设置（口令）" placement="right">
     <a-button class="sync-fab" type="default" shape="circle" size="large" @click="open = true">🔑</a-button>
   </a-tooltip>
 
@@ -53,8 +53,8 @@ async function onTest() {
 <style scoped>
 .sync-fab {
   position: fixed;
-  right: 16px;
-  bottom: 84px;
+  left: 16px;
+  bottom: 148px;
   z-index: 500;
   width: 48px;
   height: 48px;
