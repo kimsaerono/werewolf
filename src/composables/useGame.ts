@@ -342,6 +342,8 @@ export function useGame() {
       const judge = state.judge
       const judgeScores = { ...state.judgeScores }
       const winMode = state.winMode
+      const simMode = state.simMode
+      const modeChosen = state.modeChosen
       // 保留上一局参与玩家（号码、姓名），清空角色/状态/分数
       const players = state.players.map((p) => {
         const np = g.newPlayer(p.name)
@@ -354,6 +356,8 @@ export function useGame() {
       s.judge = judge
       s.judgeScores = judgeScores
       s.winMode = winMode
+      s.simMode = simMode
+      s.modeChosen = modeChosen
       s.players = players
       s.playersConfirmed = true
       Object.assign(state, s)

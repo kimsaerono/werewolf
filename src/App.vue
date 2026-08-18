@@ -28,18 +28,18 @@ const honorSuggestion = computed(() => {
 function onWinConfirm() {
   winNoticeOpen.value = false
 }
-/** 整局重置：清空玩家/角色/分数/日志/复盘（保留板子/法官/胜负模式） */
+/** 整局重置：保留参与玩家名单，清空角色/积分/日志/复盘（保留板子/法官/胜负模式/对局模式） */
 function onResetGame() {
   modal.confirm({
     title: "🗑️ 整局重置？",
-    content: "将清空：本局玩家、角色、积分、日志、复盘记录（保留板子/法官/胜负模式）。此操作不可撤销！",
+    content: "保留参与玩家名单，清空：本局角色、积分、日志、复盘记录（保留板子/法官/胜负模式）。此操作不可撤销！",
     okText: "确认重置",
     okButtonProps: { danger: true },
     cancelText: "取消",
     onOk() {
-      actions.resetWholeGame()
+      actions.startNextGame()
       activeTab.value = "board"
-      msg.success("已整局重置，请重新选人开局")
+      msg.success("已整局重置，玩家名单保留，请重新发牌")
     },
   })
 }
