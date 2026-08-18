@@ -9,9 +9,13 @@ import RecordPanel from "@/components/RecordPanel.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import ModeSelectPage from "@/components/ModeSelectPage.vue"
 import SyncSettings from "@/components/SyncSettings.vue"
+import loadingPng from "@/assets/roles/loading.png"
 
 const game = useGame()
-const { state, activeTab, winNotice, winNoticeOpen, refs, actions } = game
+const { state, activeTab, winNotice, winNoticeOpen, refs, actions, syncStatus } = game
+
+/** 全局忙碌中：同步飞书/测试连接等耗时操作时显示 loading 遮罩 */
+const busy = computed(() => syncStatus.value === "syncing" || syncStatus.value === "testing")
 
 /** 本局 MVP/SVP 自动建议（非必需，仅供参考） */
 const honorSuggestion = computed(() => {
@@ -123,6 +127,12 @@ function onTabChange(key: string) {
         </div>
       </a-modal>
       </template>
+
+      <!-- 全局忙碌遮罩：同步飞书等耗时操作时显示 loading.png 动画 -->
+      <div v-if="busy" class="global-loading">
+        <img class="global-loading-img" :src="loadingPng" alt="加载中" />
+        <div class="global-loading-text">处理中…</div>
+      </div>
     </a-app>
   </a-config-provider>
 </template>
@@ -134,6 +144,36 @@ function onTabChange(key: string) {
 body {
   margin: 0;
   background: #0f1115;
+}
+/* 全局忙碌遮罩：半透明深色背景 + 居中 loading 图旋转动画 */
+.global-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(8, 11, 20, 0.72);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.global-loading-img {
+  width: 72px;
+  height: 72px;
+  animation: global-loading-spin 1.1s linear infinite;
+}
+.global-loading-text {
+  color: #ddd;
+  font-size: 14px;
+  letter-spacing: 2px;
+}
+@keyframes global-loading-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* 卡片半透明（不带 backdrop-filter，避免成为 fixed 定位的包含块，破坏悬浮座位牌左右固定布局） */
 .ant-card {
