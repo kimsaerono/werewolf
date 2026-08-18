@@ -46,8 +46,8 @@ function disabled(v: string): boolean {
 }
 function toggle(v: string) {
   if (!props.multi) {
-    // 单选：点选即确认
-    emit("confirmSingle", v)
+    // 单选：点选高亮，底部确认后执行
+    single.value = v
     return
   }
   if (disabled(v)) return
@@ -59,7 +59,10 @@ function confirm() {
   if (props.multi) {
     if (multi.value.length < props.min) return
     emit("confirmMulti", [...multi.value])
+    return
   }
+  if (!single.value) return
+  emit("confirmSingle", single.value)
 }
 const selected = computed(() => (props.multi ? multi.value : single.value))
 </script>
@@ -82,9 +85,9 @@ const selected = computed(() => (props.multi ? multi.value : single.value))
         {{ opt.label }}
       </div>
     </div>
-    <div v-if="multi" class="fp-actions">
+    <div class="fp-actions">
       <a-button size="large" @click="emit('cancel')">取消</a-button>
-      <a-button type="primary" size="large" :disabled="multi.length < min" @click="confirm">确认</a-button>
+      <a-button type="primary" size="large" :disabled="multi ? multi.length < min : !single" @click="confirm">确认</a-button>
     </div>
   </div>
 </template>

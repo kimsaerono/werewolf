@@ -599,7 +599,7 @@ watch(
       .filter(Boolean)
     if (names.length) {
       const nos = names.map((n) => noOf(n))
-      const txt = `${nos.join("、")}号出局`
+      const txt = `${nos.join("、")}出局`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
     }
