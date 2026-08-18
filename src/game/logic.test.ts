@@ -105,6 +105,15 @@ describe("夜晚结算", () => {
     expect(g(st, "P7").alive).toBe(false)
   })
 
+  it("女巫不能对自己用毒", () => {
+    const st = setup()
+    nextNight(st)
+    const w = byRole(st, "女巫")!
+    const err = witchPoison(st, w.name)
+    expect(err).toContain("不能对自己用毒")
+    expect(st.witchPoisonUsed).toBe(false)
+  })
+
   it("同守同救被刀目标死亡", () => {
     const st = setup()
     nextNight(st)

@@ -321,6 +321,15 @@ const aliveOptions = computed(() =>
     label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
   })),
 )
+/** 女巫毒药目标：排除女巫自己（不能对自己用毒） */
+const witchPoisonOptions = computed(() =>
+  aliveList.value
+    .filter((p) => p.name !== witchObj.value?.name)
+    .map((p) => ({
+      value: p.name,
+      label: (p.name === state.jingHui ? "👑 " : "") + refs.playerLabel(p),
+    })),
+)
 const playerOptions = computed(() =>
   state.players.map((p) => ({
     value: p.name,
@@ -1309,7 +1318,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <div
               class="witch-action"
               :class="{ used: state.witchPoisonUsed }"
-              @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', aliveOptions, (v) => doWitchPoison(v))"
+              @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
             >
               <div class="witch-action-emoji">🟣</div>
               <div class="witch-action-name">用毒药</div>
@@ -1525,7 +1534,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             v-if="!state.witchPoisonUsed && state.nightUsedDrug === null"
             type="danger"
             size="large"
-            @click="openPicker('选择毒杀目标', aliveOptions, (v) => doWitchPoison(v))"
+            @click="openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
           >🧪 使用毒药（选目标）</a-button>
           <a-button size="large" @click="doWitchDone">🙅 不用药，闭眼</a-button>
         </div>

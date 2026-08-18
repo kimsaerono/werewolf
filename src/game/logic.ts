@@ -881,6 +881,7 @@ export function witchPoison(state: GameState, sel: string): string | null {
   const witch = state.players.find((p) => p.role === "女巫")
   if (!witch) return "本局没有女巫"
   if (!witch.alive) return "女巫已出局，本晚不能用药"
+  if (sel === witch.name) return "女巫不能对自己用毒"
   const tar = state.players.find((x) => x.name === sel)
   state.witchPoisonUsed = true
   state.nightUsedDrug = "poison"
