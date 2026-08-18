@@ -8,10 +8,27 @@ import type { GameRecord } from "@/composables/useGame"
 
 // dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
 const SYNC_URL = (import.meta.env.VITE_SYNC_URL as string | undefined) || ""
-const SYNC_PASSWORD = (import.meta.env.VITE_SYNC_PASSWORD as string | undefined) || ""
 const SYNC_ENABLED = import.meta.env.DEV || !!SYNC_URL
 
 export { SYNC_ENABLED }
+
+/** 同步口令存储键 */
+const PASSWORD_KEY = "werewolf_sync_password"
+/** 运行时口令：不再内置到 bundle，由法官在设置里输入并持久化到 localStorage（所有同步入口共用） */
+export function getSyncPassword(): string {
+  try {
+    return localStorage.getItem(PASSWORD_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+export function setSyncPassword(v: string): void {
+  try {
+    localStorage.setItem(PASSWORD_KEY, v)
+  } catch {
+    /* ignore */
+  }
+}
 
 export interface SyncPlayerRow {
   no: number
@@ -88,7 +105,8 @@ function syncEndpoint(): string {
 }
 function syncHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" }
-  if (SYNC_URL && SYNC_PASSWORD) headers["x-access-password"] = SYNC_PASSWORD
+  const pw = getSyncPassword()
+  if (SYNC_URL && pw) headers["x-access-password"] = pw
   return headers
 }
 
@@ -121,7 +139,7 @@ export async function testSyncConnection(): Promise<string | null> {
   const endpoint = SYNC_URL ? `${SYNC_URL}/api/sync-test` : "/api/sync-test"
   try {
     const res = await fetch(endpoint, { method: "POST", headers: syncHeaders(), body: "{}" })
-    if (res.status === 401) return "鉴权失败：同步口令不正确（检查 VITE_SYNC_PASSWORD）"
+    if (res.status === 401) return "鉴权失败：同步口令不正确（请先在同步设置里填写口令）"
     const data = (await res.json()) as { ok?: boolean; error?: string }
     if (data.ok) return null
     return data.error || `同步测试失败(${res.status})`
@@ -149,7 +167,7 @@ export async function simulateSyncNewPlayer(): Promise<string | null> {
       headers: syncHeaders(),
       body: JSON.stringify(payload),
     })
-    if (res.status === 401) return "鉴权失败：同步口令不正确（检查 VITE_SYNC_PASSWORD）"
+    if (res.status === 401) return "鉴权失败：同步口令不正确（请先在同步设置里填写口令）"
     if (!res.ok) {
       const t = await res.text()
       return `同步失败(${res.status})：${t.slice(0, 120)}`

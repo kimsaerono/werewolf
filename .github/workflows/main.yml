@@ -22,11 +22,10 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      # 注入飞书同步配置（.env 不入库；URL 公开，口令走 GitHub Secret SYNC_PASSWORD）
+      # 注入飞书同步 URL（.env 不入库；口令改为前端运行时输入，不打进公开代码）
       - name: 写入同步配置
         run: |
           echo "VITE_SYNC_URL=https://hymallbosstest.heemoney.com/werewolf-sync" > .env
-          echo "VITE_SYNC_PASSWORD=${{ secrets.SYNC_PASSWORD }}" >> .env
 
       # 安装依赖
       - run: bun install 

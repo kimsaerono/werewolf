@@ -8,6 +8,7 @@ import ScorePanel from "@/components/ScorePanel.vue"
 import RecordPanel from "@/components/RecordPanel.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import ModeSelectPage from "@/components/ModeSelectPage.vue"
+import SyncSettings from "@/components/SyncSettings.vue"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs, actions } = game
@@ -102,6 +103,9 @@ function onTabChange(key: string) {
       <a-tooltip title="整局重置" placement="right">
         <a-button class="reset-fab" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
       </a-tooltip>
+
+      <!-- 右下悬浮：同步口令设置（所有 tab 可见，真实模式才需要） -->
+      <SyncSettings v-if="!state.simMode" />
 
       <!-- 胜负弹窗 -->
       <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
