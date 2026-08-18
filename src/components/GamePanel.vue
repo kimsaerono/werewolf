@@ -1473,8 +1473,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </div>
       </a-card>
 
-      <!-- 预言家全屏查验遮罩：点击玩家即揭示身份 -->
-      <div v-if="currentStep === 'prophet' && hasProphet" class="fullscreen-overlay">
+      <!-- 预言家全屏查验遮罩：点击玩家即揭示身份（预言家存活时才显示，死后走步骤卡片流程） -->
+      <div v-if="currentStep === 'prophet' && hasProphet && prophetObj?.alive" class="fullscreen-overlay">
         <template v-if="!prophetReveal">
           <div class="fs-title">🔮 预言家验人 —— 请选择要查验的玩家</div>
           <div class="fs-grid">
