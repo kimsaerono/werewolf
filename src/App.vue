@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
-import { theme, App as AntApp } from "ant-design-vue"
+import { theme, Modal, message } from "ant-design-vue"
 import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
 import GamePanel from "@/components/GamePanel.vue"
@@ -12,7 +12,6 @@ import SyncSettings from "@/components/SyncSettings.vue"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs, actions } = game
-const { modal, message: msg } = AntApp.useApp()
 
 /** 本局 MVP/SVP 自动建议（非必需，仅供参考） */
 const honorSuggestion = computed(() => {
@@ -30,7 +29,7 @@ function onWinConfirm() {
 }
 /** 整局重置：保留参与玩家名单，清空角色/积分/日志/复盘（保留板子/法官/胜负模式/对局模式） */
 function onResetGame() {
-  modal.confirm({
+  Modal.confirm({
     title: "🗑️ 整局重置？",
     content: "保留参与玩家名单，清空：本局角色、积分、日志、复盘记录（保留板子/法官/胜负模式）。此操作不可撤销！",
     okText: "确认重置",
@@ -39,7 +38,7 @@ function onResetGame() {
     onOk() {
       actions.startNextGame()
       activeTab.value = "board"
-      msg.success("已整局重置，玩家名单保留，请重新发牌")
+      message.success("已整局重置，玩家名单保留，请重新发牌")
     },
   })
 }
@@ -57,7 +56,7 @@ const prevTab = ref("board")
 
 function onTabChange(key: string) {
   if (key === "game" && !gameReady.value) {
-    msg.warning("请先在「板子与选人」确认参与玩家")
+    message.warning("请先在「板子与选人」确认参与玩家")
     activeTab.value = prevTab.value
     return
   }
