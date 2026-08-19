@@ -124,13 +124,14 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         v-for="opt in options"
         :key="opt.value"
         class="fp-card"
-        :class="{ active: isActive(opt), disabled: disabled(opt.value) }"
+        :class="{ active: isActive(opt), disabled: disabled(opt.value) || isBlocked(opt.value) }"
         @click="toggle(opt.value)"
       >
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
           <div class="fp-name">{{ opt.name || opt.label }}</div>
           <div class="fp-role" :style="{ color: roleColor(opt.role) }">{{ ROLE_EMOJI[opt.role || ""] || "" }}{{ opt.role || "" }}</div>
+          <div v-if="isBlocked(opt.value)" class="fp-blocked-badge">{{ blockedMsg }}</div>
         </template>
         <template v-else>
           {{ opt.label }}
@@ -195,6 +196,12 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 .fp-card.disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+.fp-blocked-badge {
+  font-size: 11px;
+  color: #ff7875;
+  margin-top: 4px;
+  line-height: 1.2;
 }
 .fp-no {
   font-size: 18px;

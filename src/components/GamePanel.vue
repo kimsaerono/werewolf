@@ -25,6 +25,8 @@ const picker = ref<{
   min?: number
   max?: number
   initial?: string[]
+  blockedValues?: string[]
+  blockedMsg?: string
   onConfirm?: (v: string) => void
   onConfirmMulti?: (v: string[]) => void
 } | null>(null)
@@ -35,8 +37,9 @@ function openPicker(
   title: string,
   options: { value: string; label: string }[],
   onConfirm: (v: string) => void,
+  opts?: { blockedValues?: string[]; blockedMsg?: string },
 ) {
-  picker.value = { title, options, onConfirm }
+  picker.value = { title, options, onConfirm, ...opts }
   pickerValue.value = ""
   pickerValues.value = []
 }
@@ -334,9 +337,9 @@ const witchPoisonOptions = computed(() =>
   aliveList.value.filter((p) => p.name !== witchObj.value?.name).map((p) => playerOption(p)),
 )
 const playerOptions = computed(() => state.players.map((p) => playerOption(p)))
-/** 守卫守人选项：上局守护对象加「上次」标记，提醒不能同守 */
+/** 守卫守人选项：全员显示，上局守护对象由 FullscreenPicker blockedValues 标记不可点击 */
 const guardOptions = computed(() =>
-  aliveList.value.map((p) => playerOption(p, p.name === state.guardLastTarget ? "（上次守过）" : "")),
+  aliveList.value.map((p) => playerOption(p)),
 )
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
@@ -785,7 +788,7 @@ function doGuard(v: string) {
   if (err) {
     undo()
     message.warning(err)
-    openPicker("选择守护对象", guardOptions.value, (v2) => doGuard(v2))
+    openPicker("选择守护对象", guardOptions.value, (v2) => doGuard(v2), state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: "上局守护，本局不能守护" } : undefined)
     return
   }
   const target = state.players.find((x) => x.name === v)
@@ -1219,7 +1222,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
               守卫：{{ guardObj ? refs.playerLabel(guardObj) : "-" }}
               <template v-if="state.guardLastTarget">｜上局守护 {{ labelOf(state.guardLastTarget) }}（不能同守）</template>
             </p>
-            <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardOptions, (v) => doGuard(v))">🛡️ 确认守人</a-button>
+            <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardOptions, (v) => doGuard(v), state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: '上局守护，本局不能守护' } : undefined)">🛡️ 确认守人</a-button>
             <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不守？', '守卫本晚不守护任何人，确认后进入下一步', () => markDoneStep('guard'))">本轮不守</a-button>
             </template>
           </template>
@@ -1726,6 +1729,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         :min="picker?.min ?? 1"
         :max="picker?.max ?? 0"
         :initial="picker?.initial || []"
+        :blocked-values="picker?.blockedValues || []"
+        :blocked-msg="picker?.blockedMsg || '不能选择该玩家'"
         @confirm-single="onPickerSingle"
         @confirm-multi="onPickerMulti"
         @cancel="picker = null"
