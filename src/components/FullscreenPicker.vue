@@ -11,12 +11,18 @@ const props = withDefaults(
     min?: number
     max?: number
     initial?: string[]
+    /** 被禁点击的值列表（点击时弹全屏提示） */
+    blockedValues?: string[]
+    /** 被禁点击时的提示文字 */
+    blockedMsg?: string
   }>(),
   {
     multi: false,
     min: 1,
     max: 0,
     initial: () => [],
+    blockedValues: () => [],
+    blockedMsg: "不能选择该玩家",
   },
 )
 const emit = defineEmits<{
@@ -27,6 +33,7 @@ const emit = defineEmits<{
 
 const single = ref("")
 const multiSel = ref<string[]>([])
+const blockedToast = ref("")
 
 watch(
   () => props.open,
@@ -44,7 +51,16 @@ function disabled(v: string): boolean {
   if (props.max > 0 && !multiSel.value.includes(v) && multiSel.value.length >= props.max) return true
   return false
 }
+/** 卡片是否被禁（守卫不能同守等） */
+function isBlocked(v: string): boolean {
+  return props.blockedValues.includes(v)
+}
 function toggle(v: string) {
+  if (isBlocked(v)) {
+    blockedToast.value = props.blockedMsg
+    setTimeout(() => (blockedToast.value = ""), 1500)
+    return
+  }
   if (!props.multi) {
     // 单选：点选高亮，底部确认后执行
     single.value = v

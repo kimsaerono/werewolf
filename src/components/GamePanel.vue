@@ -78,8 +78,6 @@ const checkResult = ref("")
 /** 预言家全屏查验：null=选择中；{label,isWolf}=已查验待告知 */
 const prophetReveal = ref<{ label: string; isWolf: boolean | null } | null>(null)
 const jingHuiOwner = ref("")
-const flow1Sel = ref("")
-const flow2Sel = ref("")
 const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const idiotFlip = ref(false)
@@ -325,6 +323,12 @@ function playerOption(p: Player, extra = "") {
   }
 }
 const aliveOptions = computed(() => aliveList.value.map((p) => playerOption(p)))
+/** 放逐投票选项：排除已翻牌白痴（不可被放逐） */
+const voteOptions = computed(() =>
+  aliveList.value
+    .filter((p) => !(p.role === "白痴" && p.mark.idiotFlipped))
+    .map((p) => playerOption(p)),
+)
 /** 女巫毒药目标：排除女巫自己（不能对自己用毒） */
 const witchPoisonOptions = computed(() =>
   aliveList.value.filter((p) => p.name !== witchObj.value?.name).map((p) => playerOption(p)),
@@ -592,8 +596,6 @@ watch(currentStep, (key) => {
   pickerValues.value = []
   if (key === "jinghui") {
     jinghuiPk.value = false
-    flow1Sel.value = state.jingHuiFlow[0] || ""
-    flow2Sel.value = state.jingHuiFlow[1] || ""
   }
 })
 
@@ -933,27 +935,15 @@ function doJingHuiLose() {
   message.warning("两轮竞选平票，警徽永久流失，本局无警长")
 }
 function openJinghuiModal() {
-  flow1Sel.value = state.jingHuiFlow[0] || ""
-  flow2Sel.value = state.jingHuiFlow[1] || ""
   jingHuiOwner.value = ""
   jinghuiModal.value = true
 }
 /** 参考刀人弹窗：弹出单选玩家列表，重复选择同一人时自动交换顺位 */
-function setFlow(slot: 1 | 2, v: string) {
-  if (slot === 1) {
-    if (v === flow2Sel.value) flow2Sel.value = flow1Sel.value
-    flow1Sel.value = v
-  } else {
-    if (v === flow1Sel.value) flow1Sel.value = flow2Sel.value
-    flow2Sel.value = v
-  }
-}
 function finishJinghuiSetup() {
   snapshot()
   const owner = jingHuiOwner.value
   const ownerP = owner ? state.players.find((x) => x.name === owner) : null
   if (owner) actions.setJingHui(owner, false)
-  actions.setJingHuiFlow([flow1Sel.value, flow2Sel.value].filter(Boolean))
   jinghuiModal.value = false
   if (ownerP && refs.isWolfRole(ownerP.role)) {
     message.success(`⚠️ ${refs.playerLabel(ownerP)} 狼人悍跳拿到警徽！`)
@@ -984,9 +974,8 @@ function promptHunterShot() {
 }
 function onSheriffAuto() {
   sheriffDeathModal.value = false
-  const next = actions.autoTransferJingHui()
-  if (next) message.success(`警徽按警徽流移交给 ${next}`)
-  else message.warning("警徽流无人可接，警徽流失")
+  actions.loseJingHui()
+  message.warning("警徽流失")
 }
 function onSheriffManual() {
   sheriffDeathModal.value = false
@@ -1476,7 +1465,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <div class="step-emoji">🗳️</div>
           <h3 class="step-title">放逐投票</h3>
           <p class="small" style="text-align: center">选择本日被放逐出局的玩家</p>
-          <a-button danger type="primary" size="large" @click="openPicker('选择放逐出局对象', aliveOptions, (v) => doFinishVote(v))">🗳️ 确认放逐</a-button>
+          <a-button danger type="primary" size="large" @click="openPicker('选择放逐出局对象', voteOptions, (v) => doFinishVote(v))">🗳️ 确认放逐</a-button>
           <a-button type="text" style="margin-top: 12px" @click="confirmSkip('无人出局？', '本日无人被放逐，确认后进入夜晚', () => markDoneStep('vote'))">无人出局，进入夜晚</a-button>
         </div>
 
@@ -1522,12 +1511,15 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </template>
       </div>
 
-      <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者 -->
+      <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者（解药已用完时隐藏被刀者号码姓名） -->
       <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
         <div class="fs-title">🧪 女巫操作</div>
-        <div class="fs-death">
+        <div v-if="!state.witchSaveUsed" class="fs-death">
           <div class="fs-death-label">本晚被刀</div>
           <div class="fs-death-name">{{ nightKillLabel }}</div>
+        </div>
+        <div v-else class="fs-death" style="border-color: #666">
+          <div class="fs-death-label">解药已用完，隐藏被刀者信息</div>
         </div>
         <div class="fs-actions">
           <a-button
@@ -1688,7 +1680,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（警上自爆吞警徽跳过竞选入夜；白天自爆跳过投票入夜）">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
         </a-tooltip>
-        <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交 / 警徽流）">
+        <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交）">
           <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
         </a-tooltip>
         <a-tooltip v-if="hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）">
@@ -1705,25 +1697,15 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-tooltip>
       </div>
 
-      <!-- 弹窗：警徽设置（移交 + 警徽流） -->
+      <!-- 弹窗：警徽设置（移交警徽） -->
       <a-modal v-model:open="jinghuiModal" title="👑 警徽设置" :footer="null" width="400px" :mask-closable="false">
         <p class="small" style="margin-bottom: 12px">
-          当前警长：{{ jingHuiLabel }}｜警长出局后按警徽流移交，无人可接则警徽流失
+          当前警长：{{ jingHuiLabel }}｜选择新警长或保持现状
         </p>
         <div class="flow-row">
           <span class="flow-row-label">移交警徽</span>
           <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', aliveOptions, (v) => (jingHuiOwner = v))">👤 选择新警长</a-button>
           <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="jingHuiOwner = ''">{{ labelOf(jingHuiOwner) }}</a-tag>
-        </div>
-        <div class="flow-row">
-          <span class="flow-row-label">警徽流·第一顺位</span>
-          <a-button v-if="!flow1Sel" type="dashed" block @click="openPicker('选择警徽流第一顺位', aliveOptions, (v) => setFlow(1, v))">👤 选择（弹出玩家列表）</a-button>
-          <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="flow1Sel = ''">{{ labelOf(flow1Sel) }}</a-tag>
-        </div>
-        <div class="flow-row">
-          <span class="flow-row-label">警徽流·第二顺位</span>
-          <a-button v-if="!flow2Sel" type="dashed" block @click="openPicker('选择警徽流第二顺位', aliveOptions, (v) => setFlow(2, v))">👤 选择（弹出玩家列表）</a-button>
-          <a-tag v-else closable color="blue" style="font-size: 14px; padding: 4px 12px" @close="flow2Sel = ''">{{ labelOf(flow2Sel) }}</a-tag>
         </div>
         <a-space style="width: 100%; margin-top: 14px">
           <a-button type="primary" block @click="finishJinghuiSetup">确认保存</a-button>
@@ -1760,9 +1742,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           警长 {{ noOf(deadSheriff) }} 已出局，警徽如何处理？
         </p>
         <a-space direction="vertical" style="width: 100%">
-          <a-button type="primary" block @click="onSheriffAuto">
-            按警徽流移交{{ state.jingHuiFlow.length ? `（${state.jingHuiFlow.map((n) => noOf(n)).join(" → ")}）` : "" }}
-          </a-button>
           <a-button block @click="onSheriffManual">手动移交警徽</a-button>
           <a-button danger block @click="onSheriffLose">警徽流失（作废）</a-button>
         </a-space>

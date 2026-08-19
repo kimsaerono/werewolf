@@ -40,9 +40,8 @@ import {
   hunterGiveUpShot,
   wolfKingShootConfirm,
   wolfKingGiveUpShot,
-  setJingHui,
-  setJingHuiFlow,
-  autoTransferJingHui,
+   setJingHui,
+   autoTransferJingHui,
   loseJingHui,
   applyHonor,
   suggestHonor,
@@ -406,6 +405,15 @@ describe("放逐/自爆", () => {
     finishVote(st, "P7", true)
     expect(g(st, "P7").alive).toBe(true)
     expect(g(st, "P7").mark.idiotFlipped).toBe(true)
+  })
+
+  it("白痴翻牌后不可被放逐", () => {
+    const st = setup()
+    finishVote(st, "P7", true) // 第一次翻牌免死
+    expect(g(st, "P7").alive).toBe(true)
+    const err = finishVote(st, "P7", false) // 第二次尝试放逐
+    expect(err).toContain("翻牌")
+    expect(g(st, "P7").alive).toBe(true)
   })
 
   it("猎人被放逐可开枪", () => {
@@ -1080,32 +1088,11 @@ describe("警徽系统", () => {
     expect(g(st, "P0").mark.wolfHanTiaoJinghui).toBe(true)
   })
 
-  it("设置警徽流", () => {
-    const st = setup()
-    started(st)
-    setJingHuiFlow(st, ["P1", "P2"])
-    expect(st.jingHuiFlow).toEqual(["P1", "P2"])
-  })
-
-  it("警长死亡自动转移警徽", () => {
+  it("警长死亡警徽流失", () => {
     const st = setup()
     started(st)
     setJingHui(st, "P4", false)
-    setJingHuiFlow(st, ["P5", "P6"])
     g(st, "P4").alive = false
-    const result = autoTransferJingHui(st)
-    expect(result).toBe("P5")
-    expect(st.jingHui).toBe("P5")
-  })
-
-  it("警徽流全死则流失", () => {
-    const st = setup()
-    started(st)
-    setJingHui(st, "P4", false)
-    setJingHuiFlow(st, ["P5", "P6"])
-    g(st, "P4").alive = false
-    g(st, "P5").alive = false
-    g(st, "P6").alive = false
     const result = autoTransferJingHui(st)
     expect(result).toBeNull()
     expect(st.jingHui).toBe("")

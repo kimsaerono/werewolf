@@ -181,7 +181,6 @@ export interface GameState {
   recordText: string
   winCamp: WinCamp
   jingHui: string
-  jingHuiFlow: string[]
   wolfSelfKill: boolean
   knightDuelUsed: boolean
   winMode: "edge" | "city"
@@ -256,7 +255,6 @@ export function defaultState(): GameState {
     recordText: "",
     winCamp: null,
     jingHui: "",
-    jingHuiFlow: [],
     wolfSelfKill: false,
     knightDuelUsed: false,
     winMode: "edge",
@@ -299,7 +297,6 @@ export function normalizeState(s: GameState): GameState {
   // v9：角色改为夜晚睁眼确认。已在局中的旧存档视为已确认参与，保留访问权限
   if (st.players.length > 0 && (st.round > 0 || st.phase !== "idle")) st.playersConfirmed = true
   if (!Array.isArray(st.flow)) st.flow = []
-  if (!Array.isArray(st.jingHuiFlow)) st.jingHuiFlow = []
   if (!Array.isArray(st.lovers)) st.lovers = []
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
@@ -608,9 +605,16 @@ export function applyLoverDeaths(state: GameState): string[] {
     if (partner && partner.alive) {
       partner.alive = false
       killed.push(partnerName)
-      pushGlobalLog(state, `💔${partnerName}因情侣殉情出局`)
-      pushNightLog(state, `💔${partnerName}殉情出局`)
     }
+  }
+  // 合并殉情播报：所有殉情玩家合并为一条日志
+  if (killed.length > 0) {
+    const labels = killed.map((n) => {
+      const p = state.players.find((x) => x.name === n)
+      return p ? `${p.no}号${p.name}` : n
+    }).join("、")
+    pushGlobalLog(state, `💔${labels}因情侣殉情出局`)
+    pushNightLog(state, `💔${labels}殉情出局`)
   }
   return killed
 }
@@ -1018,32 +1022,14 @@ export function setJingHui(state: GameState, owner: string, isWolfHanTiao: boole
   pushFlow(state, "警徽", owner, hanTiao ? "悍跳" : "")
 }
 
-/** 设置警徽流（最多 2 人，出局后按顺序移交） */
-export function setJingHuiFlow(state: GameState, names: string[]): void {
-  state.jingHuiFlow = names.filter(Boolean).slice(0, 2)
-  if (state.jingHuiFlow.length) {
-    pushGlobalLog(state, `👑警长${state.jingHui || ""}的警徽流：${state.jingHuiFlow.join(" → ")}`)
-  }
-}
-
-/** 警长出局：按警徽流自动移交，无人可接则警徽流失 */
+/** 警长出局：警徽流失（无自动移交逻辑） */
 export function autoTransferJingHui(state: GameState): string | null {
   if (!state.jingHui) return null
   const holder = state.players.find((p) => p.name === state.jingHui)
   if (!holder || holder.alive) return null
   const prev = state.jingHui
-  const next = state.jingHuiFlow.find((n) => {
-    const p = state.players.find((x) => x.name === n)
-    return !!p && p.alive
-  })
-  if (next) {
-    state.jingHui = next
-    pushGlobalLog(state, `📢警长${prev}出局，按警徽流移交：${next}`)
-    pushFlow(state, "警徽移交", next, "按警徽流")
-    return next
-  }
   state.jingHui = ""
-  pushGlobalLog(state, `📢警长${prev}出局，警徽流无人可接，警徽流失`)
+  pushGlobalLog(state, `📢警长${prev}出局，警徽流失`)
   pushFlow(state, "警徽流失", prev)
   return null
 }
@@ -1063,6 +1049,10 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
   const outP = state.players.find((p) => p.name === outName)
   if (!outP) return "未找到该玩家"
   if (!outP.alive) return `${outName}已出局，无需放逐`
+  // 白痴翻牌后不可被放逐
+  if (outP.role === "白痴" && outP.mark.idiotFlipped) {
+    return "白痴已翻牌，无法被放逐出局"
+  }
   if (outP.role === "白痴" && !outP.mark.idiotFlipped && idiotFlip) {
     outP.mark.idiotFlipped = true
     outP.alive = true

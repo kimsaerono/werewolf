@@ -499,10 +499,6 @@ export function useGame() {
       g.setJingHui(state, owner, hanTiao)
       refresh()
     },
-    setJingHuiFlow(names: string[]) {
-      g.setJingHuiFlow(state, names)
-      refresh()
-    },
     autoTransferJingHui(): string | null {
       const r = g.autoTransferJingHui(state)
       refresh()
