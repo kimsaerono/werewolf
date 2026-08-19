@@ -569,11 +569,12 @@ watch(
     if (v) promptHunterShot()
   },
 )
-// 殉情：新日志出现"殉情" → 全局提示 + 播报
+// 殉情：新日志出现"殉情" → 仅白天弹全局提示 + 播报（夜晚殉情由天亮死亡播报统一展示）
 watch(
   () => state.globalLog.length,
   (len, old) => {
     if (len <= old) return
+    if (state.phase !== "day") return
     const added = state.globalLog.slice(old)
     const names = added
       .map((l) => {
@@ -1053,13 +1054,7 @@ function doDawn() {
   if (err) return message.error(err)
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))
-  // 殉情玩家已由殉情提示单独播报过，天亮死亡播报需排除，避免重复
-  const loverDeathSet = new Set(
-    state.globalLog
-      .map((l) => l.match(/💔(.+?)因情侣殉情出局/)?.[1])
-      .filter(Boolean),
-  )
-  const dawnDeaths = lastDawnDeaths.value.filter((n) => !loverDeathSet.has(n))
+  const dawnDeaths = lastDawnDeaths.value
   message.success("天亮了，已结算昨夜")
   const deathInfo = dawnDeaths
     .map((n) => {
@@ -1067,7 +1062,7 @@ function doDawn() {
       return p ? `${p.no || "?"}号` : n
     })
     .join("、")
-  // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页（殉情玩家已单独提示，此处排除避免重复）
+  // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页
   effect("dawn", "rooster", lastDawnDeaths.value.length ? "天亮了" : "平安夜")
   // 平安夜 / 有人出局 的语音播报
   if (lastDawnDeaths.value.length) {
@@ -1075,11 +1070,11 @@ function doDawn() {
   } else {
     playVoice("dawn_peace")
   }
-  // 出局播报（只读号码，排除已播报的殉情玩家）；对局已结束时交给胜利播报
+  // 出局播报；对局已结束时交给胜利播报
   if (dawnDeaths.length && !state.finished) {
     suppressStepVoiceUntil = Date.now() + 5000
     if (state.finished) return
-    // 骷髅死亡页：展示非殉情死亡玩家信息
+    // 骷髅死亡页：展示死亡玩家信息
     effect("death", "death", `昨夜死亡：${deathInfo}`)
     const poisonedHunter = dawnDeaths.find((n) => {
       const p = state.players.find((x) => x.name === n)
@@ -1514,12 +1509,12 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者（解药已用完时隐藏被刀者号码姓名） -->
       <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
         <div class="fs-title">🧪 女巫操作</div>
-        <div v-if="!state.witchSaveUsed" class="fs-death">
+        <div v-if="!state.witchSaveUsed && witchObj?.alive" class="fs-death">
           <div class="fs-death-label">本晚被刀</div>
           <div class="fs-death-name">{{ nightKillLabel }}</div>
         </div>
         <div v-else class="fs-death" style="border-color: #666">
-          <div class="fs-death-label">解药已用完，隐藏被刀者信息</div>
+          <div class="fs-death-label">{{ witchObj?.alive ? "无解药" : "女巫已出局" }}</div>
         </div>
         <div class="fs-actions">
           <a-button
