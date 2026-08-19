@@ -1290,13 +1290,13 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <p v-if="!state.witchSaveUsed" class="small" style="text-align: center; margin-bottom: 4px">
             本晚被刀：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
           </p>
-          <div class="witch-actions">
+           <div class="witch-actions">
             <div
               class="witch-action"
               :class="{ used: state.witchSaveUsed }"
               @click="!state.witchSaveUsed && openWitchModal('save')"
             >
-              <div class="witch-action-emoji">💚</div>
+              <div class="witch-action-emoji">🧪</div>
               <div class="witch-action-name">用解药</div>
             </div>
             <div
@@ -1304,14 +1304,11 @@ function effect(type: string, sfx?: SfxName, result?: string) {
               :class="{ used: state.witchPoisonUsed }"
               @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
             >
-              <div class="witch-action-emoji">🟣</div>
+              <div class="witch-action-emoji">☠️</div>
               <div class="witch-action-name">用毒药</div>
             </div>
-            <div class="witch-action" @click="doWitchDone">
-              <div class="witch-action-emoji">🙅</div>
-              <div class="witch-action-name">不用药</div>
-            </div>
           </div>
+          <div class="witch-skip" @click="doWitchDone">🙅 不用药</div>
           <div class="small">一晚只能使用一瓶</div>
 
           <div v-if="state.nightWitchSave" class="small">💚 已解救：{{ labelOf(state.nightWitchSave) }}</div>
@@ -1848,7 +1845,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 20px 10px;
+  padding: 24px 16px;
   border-radius: 14px;
   border: 2px solid rgba(46, 213, 115, 0.6);
   background: rgba(46, 213, 115, 0.12);
@@ -1858,10 +1855,6 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 .witch-action:nth-child(2) {
   border-color: rgba(150, 90, 220, 0.8);
   background: rgba(150, 90, 220, 0.25);
-}
-.witch-action:nth-child(3) {
-  border-color: rgba(120, 130, 150, 0.6);
-  background: rgba(120, 130, 150, 0.12);
 }
 .witch-action:hover {
   transform: translateY(-2px);
@@ -1873,13 +1866,32 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   pointer-events: none;
 }
 .witch-action-emoji {
-  font-size: 34px;
+  font-size: 36px;
   line-height: 1;
 }
 .witch-action-name {
   font-weight: 700;
   color: #eee;
   font-size: 15px;
+}
+.witch-skip {
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 0;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: #bbb;
+  border-radius: 10px;
+  border: 1px dashed rgba(120, 130, 150, 0.5);
+  background: rgba(120, 130, 150, 0.08);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-top: 8px;
+}
+.witch-skip:hover {
+  background: rgba(120, 130, 150, 0.18);
+  color: #eee;
 }
 .pick-list {
   max-height: 380px;
