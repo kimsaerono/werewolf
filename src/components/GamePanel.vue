@@ -1300,7 +1300,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
               <div class="witch-action-name">用解药</div>
             </div>
             <div
-              class="witch-action"
+              class="witch-action witch-action-poison"
               :class="{ used: state.witchPoisonUsed }"
               @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
             >
@@ -1516,21 +1516,25 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <div v-else class="fs-death" style="border-color: #666">
           <div class="fs-death-label">{{ witchObj?.alive ? "无解药" : "女巫已出局" }}</div>
         </div>
-        <div class="fs-actions">
-          <a-button
+        <div class="witch-actions">
+          <div
             v-if="!state.witchSaveUsed && state.nightWolfKill && state.nightUsedDrug === null"
-            type="primary"
-            size="large"
+            class="witch-action"
             @click="doWitchSave"
-          >💚 用解药救 {{ nightKillLabel }}</a-button>
-          <a-button
+          >
+            <div class="witch-action-emoji">🧪</div>
+            <div class="witch-action-name">用解药救 {{ nightKillLabel }}</div>
+          </div>
+          <div
             v-if="!state.witchPoisonUsed && state.nightUsedDrug === null"
-            type="danger"
-            size="large"
+            class="witch-action witch-action-poison"
             @click="openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
-          >🧪 使用毒药（选目标）</a-button>
-          <a-button size="large" @click="doWitchDone">🙅 不用药，闭眼</a-button>
+          >
+            <div class="witch-action-emoji">☠️</div>
+            <div class="witch-action-name">用毒药（选目标）</div>
+          </div>
         </div>
+        <div class="witch-skip" @click="doWitchDone">🙅 不用药，闭眼</div>
         <div v-if="state.nightUsedDrug" class="fs-note">本晚已使用：{{ state.nightUsedDrug === "save" ? "解药" : "毒药" }}</div>
       </div>
 
@@ -1852,7 +1856,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
 }
-.witch-action:nth-child(2) {
+.witch-action:nth-child(2),
+.witch-action-poison {
   border-color: rgba(150, 90, 220, 0.8);
   background: rgba(150, 90, 220, 0.25);
 }
