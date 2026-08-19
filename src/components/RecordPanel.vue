@@ -18,6 +18,14 @@ function timeHM(t: string): string {
   return s.slice(0, 5)
 }
 
+/** 历史对局玩家是否属于人狼恋第三方，返回标注（第三阵营·原角色） */
+function thirdLabel(h: GameRecord, p: { name: string; role: string }): string {
+  const chain = refs.getChainType({ lovers: h.lovers, players: h.players } as never)
+  if (chain !== "WG") return ""
+  if (h.lovers.includes(p.name) || p.role === "丘比特") return `第三阵营·${p.role}`
+  return ""
+}
+
 function download(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime })
   const a = document.createElement("a")
@@ -94,19 +102,22 @@ function onClearAll() {
           <a-collapse-panel v-for="(h, i) in day.games" :key="`${di}-${i}`">
             <template #header>
               <span class="game-line">
-                <span class="game-title">{{ `第${i + 1}局 · ${refs.boardShortName(h.board)} ｜ ${h.winner}` }}</span>
+                <span class="game-title">{{ `第${i + 1}局 · ${h.boardFinal || refs.boardShortName(h.board)} ｜ ${h.winner}` }}</span>
                 <template v-if="!state.simMode">
                   <span v-if="h.synced" class="game-sync synced">✅已同步</span>
                   <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
                 </template>
               </span>
             </template>
-            <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.board }}（{{ refs.boardShortName(h.board) }}）</p>
+            <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.boardFinal || h.board }}</p>
             <p class="small">原因：{{ h.reason }} ｜ 法官：{{ h.judge || "-" }}</p>
+            <div v-if="h.mvp || h.svp || h.beiguo" class="small" style="color: #ffd666">
+              🏆 {{ [h.mvp ? `MVP：${h.mvp}` : "", h.svp ? `SVP：${h.svp}` : "", h.beiguo ? `背锅侠：${h.beiguo}` : ""].filter(Boolean).join(" ｜ ") }}
+            </div>
             <a-divider style="margin: 8px 0">积分</a-divider>
             <a-space :wrap="true">
               <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'">
-                {{ p.no }}.{{ p.name }}({{ p.role }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
+                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) || p.role }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
               </a-tag>
             </a-space>
             <a-divider style="margin: 8px 0">对局日志</a-divider>

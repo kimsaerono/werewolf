@@ -906,4 +906,14 @@ describe("丘比特 / 情侣", () => {
     checkWin(st)
     expect(st.winCamp).toBeNull() // 第三方存在，狼胜不成立
   })
+
+  it("人狼恋第三方输：好人胜时丘比特/恋人不加分", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人，丘比特 P7
+    st.winCamp = "god" // 第三方输了，好人胜
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(0) // 丘比特属第三方，输不加分
+    expect(g(st, "P0").scoreRound).toBe(0)
+    expect(g(st, "P8").scoreRound).toBe(0)
+  })
 })

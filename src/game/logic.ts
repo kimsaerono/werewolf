@@ -266,7 +266,7 @@ export function defaultState(): GameState {
     beiguo: "",
     finished: false,
     lovers: [],
-    simMode: false,
+    simMode: true,
     modeChosen: false,
   }
 }
@@ -301,7 +301,7 @@ export function normalizeState(s: GameState): GameState {
   if (!Array.isArray(st.flow)) st.flow = []
   if (!Array.isArray(st.jingHuiFlow)) st.jingHuiFlow = []
   if (!Array.isArray(st.lovers)) st.lovers = []
-  if (typeof st.simMode !== "boolean") st.simMode = false
+  if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   const legacy = (s as { judgeScore?: number }).judgeScore
   if (typeof legacy === "number" && st.judge) {
@@ -1212,6 +1212,8 @@ export function recalcScore(state: GameState): void {
     const m = p.mark
     const detail: string[] = []
     let s = 0
+    // 人狼恋第三方成员（丘比特/恋人）：第三方存在时，好人/狼胜均不计入对应阵营分
+    const isWGCamp = getChainType(state) === "WG" && (p.role === "丘比特" || isLover(state, p.name))
     if (p.role === "预言家") {
       if (state.jingHui === p.name) {
         s += 0.5
@@ -1304,8 +1306,8 @@ export function recalcScore(state: GameState): void {
       s -= 0.5
       detail.push("背锅侠-0.5")
     }
-    // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分）
-    if (win === "wolf" && isWolfRole(p.role)) {
+    // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分；人狼恋狼恋人属第三方不计狼胜）
+    if (win === "wolf" && isWolfRole(p.role) && !isWGCamp) {
       s += 3
       detail.push("狼人胜利+3")
       if (p.alive) {
@@ -1318,12 +1320,12 @@ export function recalcScore(state: GameState): void {
         }
       }
     }
-    // 好人胜利（狼全灭）：神职与平民同时拿基础分
-    if ((win === "god" || win === "civil") && GOD_LIST.includes(p.role)) {
+    // 好人胜利（狼全灭）：神职与平民同时拿基础分（人狼恋第三方成员除外）
+    if ((win === "god" || win === "civil") && GOD_LIST.includes(p.role) && !isWGCamp) {
       s += 3
       detail.push("神职胜利+3")
     }
-    if ((win === "god" || win === "civil") && p.role === "平民") {
+    if ((win === "god" || win === "civil") && p.role === "平民" && !isWGCamp) {
       s += 2
       detail.push("平民胜利+2")
     }
@@ -1331,8 +1333,8 @@ export function recalcScore(state: GameState): void {
       s += 3
       detail.push("第三方胜利+3")
     }
-    // 丘比特：人人/狼狼恋(无第三方)属好人，好人胜+3；人狼恋走第三方
-    if ((win === "god" || win === "civil") && p.role === "丘比特") {
+    // 丘比特：人人/狼狼恋(无第三方)属好人，好人胜+3；人狼恋属第三方，第三方胜+3、好人/狼胜不加分
+    if ((win === "god" || win === "civil") && p.role === "丘比特" && getChainType(state) !== "WG") {
       s += 3
       detail.push("好人胜利·丘比特+3")
     }
@@ -1352,6 +1354,13 @@ export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", strin
 /** 第三方成员：丘比特 + 两位恋人（人狼恋时三人一体） */
 function isThirdMember(state: GameState, p: Player): boolean {
   return p.role === "丘比特" || isLover(state, p.name)
+}
+
+/** 若该玩家属于人狼恋第三方，返回"第三阵营·原角色"标注，否则返回空串 */
+export function thirdCampLabel(state: GameState, p: Player): string {
+  if (getChainType(state) !== "WG") return ""
+  if (!isThirdMember(state, p)) return ""
+  return `第三阵营·${p.role}`
 }
 
 /** 自动判定胜负；返回是否"本次刚判出胜负"、胜负文案及原因（用于弹窗） */

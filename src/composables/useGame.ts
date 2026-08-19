@@ -12,6 +12,8 @@ export interface GameRecord {
   title: string
   time: string
   board: string
+  /** 最终板子角色组成（含手动加的角色），如"狼人×3 预言家×1…" */
+  boardFinal: string
   winner: string
   reason: string
   judge: string
@@ -33,6 +35,10 @@ export interface GameRecord {
     synced: boolean
     /** 是否模拟对局（真实/模拟各自独立历史与编号） */
     sim: boolean
+    /** MVP / SVP / 背锅侠（有则显示，无则空） */
+    mvp: string
+    svp: string
+    beiguo: string
   }
 
 function load(): GameState {
@@ -49,7 +55,7 @@ function loadHistory(): GameRecord[] {
   try {
     const s = localStorage.getItem(HISTORY_KEY)
     if (s) {
-      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false }))
+      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false, boardFinal: r.boardFinal ?? "", mvp: r.mvp ?? "", svp: r.svp ?? "", beiguo: r.beiguo ?? "" }))
     }
   } catch {
     /* ignore */
@@ -95,6 +101,15 @@ function dayKey(time: string): string {
   const d = new Date(time)
   if (isNaN(d.getTime())) return ""
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+/** 最终板子角色组成（含手动加的角色），如"狼人×3 预言家×1…" */
+function boardFinalText(): string {
+  const roles = g.getBoardRoles(state)
+  const counts: Record<string, number> = {}
+  roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
+  return Object.entries(counts)
+    .map(([role, n]) => `${role}×${n}`)
+    .join(" ")
 }
 /** 日期文案：YYYY年M月D日 */
 function dayLabelOf(key: string): string {
@@ -223,6 +238,7 @@ function refresh(): void {
       title: sessionTitle.value,
       time: new Date().toLocaleString(),
       board: state.board,
+      boardFinal: boardFinalText(),
       winner: r.text,
       reason: r.reason,
       judge: state.judge,
@@ -241,6 +257,9 @@ function refresh(): void {
       lovers: [...state.lovers],
       synced: false,
       sim: state.simMode,
+      mvp: state.mvp,
+      svp: state.svp,
+      beiguo: state.beiguo,
     })
     saveHistory()
     // 平局或模拟模式：不计积分、不同步飞书
@@ -656,6 +675,7 @@ export function useGame() {
       suggestHonor: g.suggestHonor,
       isWolfRole: g.isWolfRole,
       getChainType: g.getChainType,
+      thirdCampLabel: g.thirdCampLabel,
       roleAvatar,
       decorateLog: g.decorateLog,
       cleanLogLine: g.cleanLogLine,

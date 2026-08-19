@@ -15,10 +15,7 @@ const { message, modal } = AntApp.useApp()
 const props = defineProps<{ game: Game }>()
 const { state, activeTab, aliveList, actions, refs, sessionNo, snapshot, softStep, undo, canUndo, syncStatus } = props.game
 
-// 结算后飞书自动同步失败 → 轻提示（成功静默）
-watch(syncStatus, (s) => {
-  if (s && s.startsWith("⚠️")) message.error(s, 6)
-})
+// 同步成功/失败提示已由 App.vue 全局统一处理（此处不再重复弹）
 
 // ===== 通用玩家弹窗（单选 / 多选）=====
 const picker = ref<{
@@ -91,6 +88,8 @@ const lastDawnDeaths = ref<string[]>([])
 const loverDeathMsg = ref("")
 
 const jinghuiModal = ref(false)
+/** 警长竞选平票 PK 状态：false=首轮，true=已平票进入PK二次投票 */
+const jinghuiPk = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
 
@@ -592,6 +591,7 @@ watch(currentStep, (key) => {
   pickerValue.value = ""
   pickerValues.value = []
   if (key === "jinghui") {
+    jinghuiPk.value = false
     flow1Sel.value = state.jingHuiFlow[0] || ""
     flow2Sel.value = state.jingHuiFlow[1] || ""
   }
@@ -924,6 +924,13 @@ function doJingHui(v: string) {
     message.success("警徽已设置")
   }
 }
+/** 两轮竞选平票：警徽永久流失，跳过竞选 */
+function doJingHuiLose() {
+  snapshot()
+  actions.setJingHui("", false)
+  markDoneStep("jinghui")
+  message.warning("两轮竞选平票，警徽永久流失，本局无警长")
+}
 function openJinghuiModal() {
   flow1Sel.value = state.jingHuiFlow[0] || ""
   flow2Sel.value = state.jingHuiFlow[1] || ""
@@ -1056,14 +1063,21 @@ function doDawn() {
   if (err) return message.error(err)
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))
+  // 殉情玩家已由殉情提示单独播报过，天亮死亡播报需排除，避免重复
+  const loverDeathSet = new Set(
+    state.globalLog
+      .map((l) => l.match(/💔(.+?)因情侣殉情出局/)?.[1])
+      .filter(Boolean),
+  )
+  const dawnDeaths = lastDawnDeaths.value.filter((n) => !loverDeathSet.has(n))
   message.success("天亮了，已结算昨夜")
-  const deathInfo = lastDawnDeaths.value
+  const deathInfo = dawnDeaths
     .map((n) => {
       const p = state.players.find((x) => x.name === n)
       return p ? `${p.no || "?"}号` : n
     })
     .join("、")
-  // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页
+  // 全屏过场动画：天亮展示平安夜；死亡名单放到骷髅(死亡)页（殉情玩家已单独提示，此处排除避免重复）
   effect("dawn", "rooster", lastDawnDeaths.value.length ? "天亮了" : "平安夜")
   // 平安夜 / 有人出局 的语音播报
   if (lastDawnDeaths.value.length) {
@@ -1071,18 +1085,18 @@ function doDawn() {
   } else {
     playVoice("dawn_peace")
   }
-  // 出局播报（只读号码）；对局已结束时交给胜利播报
-  if (lastDawnDeaths.value.length && !state.finished) {
+  // 出局播报（只读号码，排除已播报的殉情玩家）；对局已结束时交给胜利播报
+  if (dawnDeaths.length && !state.finished) {
     suppressStepVoiceUntil = Date.now() + 5000
     if (state.finished) return
-    // 骷髅死亡页：展示死亡玩家信息
+    // 骷髅死亡页：展示非殉情死亡玩家信息
     effect("death", "death", `昨夜死亡：${deathInfo}`)
-    const poisonedHunter = lastDawnDeaths.value.find((n) => {
+    const poisonedHunter = dawnDeaths.find((n) => {
       const p = state.players.find((x) => x.name === n)
       return p?.role === "猎人" && p.mark.hunterIsPoisoned
     })
     if (poisonedHunter) playVoice("hunter_poisoned")
-    const nos = lastDawnDeaths.value.map((n) => {
+    const nos = dawnDeaths.map((n) => {
       const p = state.players.find((x) => x.name === n)
       return `${p?.no || "?"}`
     })
@@ -1284,7 +1298,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-button type="primary" size="large" @click="doWitchDone">已确认女巫出局，进入下一步</a-button>
           </template>
           <template v-else>
-          <p class="small" style="text-align: center; margin-bottom: 4px">
+          <!-- 解药已用完时，女巫不需要知道被刀者，隐藏其号码姓名（仅剩毒药仍睁眼走流程） -->
+          <p v-if="!state.witchSaveUsed" class="small" style="text-align: center; margin-bottom: 4px">
             本晚被刀：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
           </p>
           <div class="witch-actions">
@@ -1402,8 +1417,17 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <div v-else-if="currentStep === 'jinghui'" class="step-body">
           <div class="step-emoji">📢</div>
           <h3 class="step-title">竞选警长</h3>
-          <a-button type="primary" size="large" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
-          <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">本轮不竞选</a-button>
+          <template v-if="!jinghuiPk">
+            <a-button type="primary" size="large" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
+            <a-button type="text" style="margin-top: 12px" @click="jinghuiPk = true">平票 → 进入PK（二次投票）</a-button>
+            <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">本轮不竞选</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">第一轮投票平票，进入 PK 二次投票</p>
+            <a-button type="primary" size="large" @click="openPicker('选择警长（PK）', aliveOptions, (v) => doJingHui(v))">📢 设置警长（PK）</a-button>
+            <a-button danger type="text" style="margin-top: 12px" @click="doJingHuiLose">二次仍平票 → 警徽永久流失</a-button>
+            <a-button type="text" style="margin-top: 12px" @click="jinghuiPk = false">返回上一轮</a-button>
+          </template>
         </div>
 
         <!-- 竞选警长后公布首夜情况（仅死讯，验人结果由预言家发言时自报） -->
@@ -1450,7 +1474,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <div v-else-if="currentStep === 'vote'" class="step-body">
           <div class="step-emoji">🗳️</div>
           <h3 class="step-title">放逐投票</h3>
-          <p class="small" style="text-align: center">仅需选择被放逐的玩家（逐人投票记分已移除）</p>
+          <p class="small" style="text-align: center">选择本日被放逐出局的玩家</p>
           <a-button danger type="primary" size="large" @click="openPicker('选择放逐出局对象', aliveOptions, (v) => doFinishVote(v))">🗳️ 确认放逐</a-button>
           <a-button type="text" style="margin-top: 12px" @click="confirmSkip('无人出局？', '本日无人被放逐，确认后进入夜晚', () => markDoneStep('vote'))">无人出局，进入夜晚</a-button>
         </div>
@@ -1659,7 +1683,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <a-tooltip v-if="hasWWK && state.phase === 'day' && !state.skipVote && !state.finished && currentStep !== 'vote' && !lastWordsShow" title="白狼王自爆带人">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择白狼王带走目标', wwkTarOptions, (v) => doWWKBoom(v))">👑💥</a-button>
         </a-tooltip>
-        <a-tooltip v-if="state.phase === 'day' && !state.skipVote && !state.finished && currentStep !== 'vote' && !lastWordsShow" title="狼人自爆（跳过本日投票，直接入夜）">
+        <!-- 狼人自爆：警上(竞选警长)与白天发言期可自爆，投票/退水期禁自爆 -->
+        <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（警上自爆吞警徽跳过竞选入夜；白天自爆跳过投票入夜）">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
         </a-tooltip>
         <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交 / 警徽流）">

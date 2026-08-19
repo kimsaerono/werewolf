@@ -6,12 +6,20 @@ import type { Game } from "@/types"
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, actions, todayGames, syncStatus } = props.game
+const { state, actions, todayGames, syncStatus, refs } = props.game
 
 // ===== 本局明细 =====
 const columns = [
   { title: "玩家", dataIndex: "name", key: "name" },
-  { title: "身份", dataIndex: "role", key: "role" },
+  {
+    title: "身份",
+    dataIndex: "role",
+    key: "role",
+    customRender: ({ record }: { record: { role: string } }) => {
+      const label = refs.thirdCampLabel(state, record as never)
+      return label || record.role
+    },
+  },
   {
     title: "存活",
     dataIndex: "alive",

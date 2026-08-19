@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { theme, Modal, message } from "ant-design-vue"
 import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
@@ -16,6 +16,13 @@ const { state, activeTab, winNotice, winNoticeOpen, refs, actions, syncStatus } 
 
 /** 全局忙碌中：同步飞书/测试连接等耗时操作时显示 loading 遮罩 */
 const busy = computed(() => syncStatus.value === "syncing" || syncStatus.value === "testing")
+
+// 同步完成/失败提示：监听 syncStatus，成功弹 ✅，失败弹 ⚠️（同步中不提示，由遮罩展示）
+watch(syncStatus, (s) => {
+  if (!s || s === "syncing" || s === "testing") return
+  if (s.startsWith("✅")) message.success(s, 5)
+  else if (s.startsWith("⚠️")) message.error(s, 6)
+})
 
 /** 本局 MVP/SVP 自动建议（非必需，仅供参考） */
 const honorSuggestion = computed(() => {
