@@ -1835,8 +1835,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 .witch-actions {
   display: flex;
   flex-wrap: nowrap;
-  gap: 12px;
-  margin: 8px 0;
+  gap: 14px;
+  margin: 10px 0;
   width: 100%;
   max-width: 420px;
 }
@@ -1848,7 +1848,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 18px 8px;
+  padding: 20px 10px;
   border-radius: 14px;
   border: 2px solid rgba(46, 213, 115, 0.6);
   background: rgba(46, 213, 115, 0.12);
@@ -1856,8 +1856,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
 }
 .witch-action:nth-child(2) {
-  border-color: rgba(150, 90, 220, 0.7);
-  background: rgba(150, 90, 220, 0.14);
+  border-color: rgba(150, 90, 220, 0.8);
+  background: rgba(150, 90, 220, 0.25);
 }
 .witch-action:nth-child(3) {
   border-color: rgba(120, 130, 150, 0.6);
