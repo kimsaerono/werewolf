@@ -271,9 +271,10 @@ function onPoolPointerEnd(e: PointerEvent) {
           <a-input
             v-if="judgePick === '__OTHER__'"
             v-model:value="customJudge"
-            placeholder="输入法官名字，回车/失焦确认"
+            placeholder="输入法官名字，回车确认"
             style="max-width: 180px"
-            @change="onJudgeCustom"
+            @press-enter="onJudgeCustom"
+            @blur="onJudgeCustom"
           />
         </span>
       </template>

@@ -42,7 +42,8 @@ async function onTest() {
       type="password"
       allow-clear
       style="margin: 12px 0"
-      @change="onSave"
+      @press-enter="onSave"
+      @blur="onSave"
     />
     <a-space>
       <a-button type="primary" :loading="testing" @click="onTest">测试连接</a-button>

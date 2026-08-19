@@ -347,8 +347,8 @@ export function getBoardRoles(state: GameState): string[] {
 export function setBoardRoles(state: GameState, roles: string[]): string | null {
   const list = roles.filter(Boolean)
   if (list.length < 2) return "板子至少需要 2 个角色"
-  if (!list.includes("狼人")) return "板子至少需要 1 个狼人"
-  if (!list.some((r) => r !== "狼人")) return "板子至少需要 1 个好人"
+  if (!list.some((r) => isWolfRole(r))) return "板子至少需要 1 个狼人"
+  if (!list.some((r) => !isWolfRole(r))) return "板子至少需要 1 个好人"
   for (const r of UNIQUE_ROLES) {
     if (list.filter((x) => x === r).length > 1) return `角色【${r}】最多 1 个，不能重复添加`
   }
@@ -801,6 +801,8 @@ export function wolfKill(state: GameState, sel: string): string | null {
 
 export function prophetCheck(state: GameState, sel: string): string | { name: string; isWolf: boolean } | null {
   if (!sel) return "请选择查验对象"
+  const prophet = state.players.find((p) => p.role === "预言家")
+  if (prophet && !prophet.alive) return "预言家已出局，本晚不能查验"
   if (sel === NO_CHECK) {
     return prophetNoCheck(state)
   }
@@ -1073,7 +1075,7 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     pushFlow(state, "放逐", outName)
     if (outP.role === "猎人" && !outP.mark.hunterIsPoisoned) {
       state.hunterShotPending = true
-      pushGlobalLog(state, `🔫猎人${outName}被放逐，可开枪（到夜间操作处理）`)
+      pushGlobalLog(state, `🔫猎人${outName}被放逐，可开枪（放逐后立即处理）`)
     }
     if (outP.role === "狼王" && !outP.mark.wolfKingIsPoisoned) {
       state.wolfKingShotPending = true

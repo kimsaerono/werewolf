@@ -777,13 +777,14 @@ function doProphetClose() {
   playVoice("prophet_close")
 }
 function doGuard(v: string) {
+  snapshot()
   const err = actions.guardDo(v, false)
   if (err) {
+    undo()
     message.warning(err)
     openPicker("选择守护对象", guardOptions.value, (v2) => doGuard(v2))
     return
   }
-  snapshot()
   const target = state.players.find((x) => x.name === v)
   effect("guard", "guard", target ? `守卫：${refs.playerLabel(target)}` : "")
   playVoice("guard_close")

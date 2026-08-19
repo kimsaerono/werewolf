@@ -148,7 +148,7 @@ function vibrate(ms: number) {
             :class="{ dead: !p.alive }"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
-            <span class="seat-name float">{{ p.name }}</span>
+            <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
             <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
             <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
@@ -173,7 +173,7 @@ function vibrate(ms: number) {
             :class="{ dead: !p.alive }"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
-            <span class="seat-name float">{{ p.name }}</span>
+            <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
             <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
             <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
