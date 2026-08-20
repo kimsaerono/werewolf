@@ -240,7 +240,7 @@ const noOf = (name: string) => {
 const hunterStatus = computed(() => {
   const h = hunterObj.value
   if (!h) return ""
-  if (h.mark.hunterIsPoisoned) return "⛔ 被毒吞枪"
+  if (h.mark.hunterIsPoisoned || state.nightWitchPoison === h.name) return "⛔ 被毒吞枪"
   if (state.hunterShotPending) return "🔴 可开枪"
   if (state.hunterShotDone) return "✅ 已开枪"
   if (!h.alive) return "❌ 已出局"
@@ -250,7 +250,7 @@ const wolfKingObj = computed(() => state.players.find((p) => p.role === "狼王"
 const wolfKingStatus = computed(() => {
   const wk = wolfKingObj.value
   if (!wk) return ""
-  if (wk.mark.wolfKingIsPoisoned) return "⛔ 被毒吞枪"
+  if (wk.mark.wolfKingIsPoisoned || state.nightWitchPoison === wk.name) return "⛔ 被毒吞枪"
   if (state.wolfKingShotPending) return "🔴 可开枪"
   if (state.wolfKingShotDone) return "✅ 已开枪"
   if (!wk.alive) return "❌ 已出局"
@@ -1336,7 +1336,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
             <a-tag
               v-if="hunterStatus"
               size="large"
-              :color="state.hunterShotPending ? 'error' : hunterObj?.mark.hunterIsPoisoned ? 'default' : 'green'"
+              :color="state.hunterShotPending ? 'error' : (hunterObj?.mark.hunterIsPoisoned || state.nightWitchPoison === hunterObj?.name) ? 'default' : 'green'"
             >
               {{ hunterStatus }}
             </a-tag>
