@@ -217,7 +217,6 @@ const hasGuard = hasRole("守卫")
 const hasHunter = hasRole("猎人")
 const hasKnight = hasRole("骑士")
 const hasIdiot = hasRole("白痴")
-const hasWWK = hasRole("白狼王")
 const hasCupid = hasRole("丘比特")
 const hunterObj = computed(() => state.players.find((p) => p.role === "猎人"))
 const guardObj = computed(() => state.players.find((p) => p.role === "守卫"))
@@ -288,7 +287,7 @@ const FLOW_EMOJI: Record<string, string> = {
   警徽: "📢",
   放逐: "🗳️",
   狼人自爆: "💥",
-   白狼王自爆: "👑💥",
+   白狼王自爆: "💥",
 }
 const flowGroups = computed(() => {
   const map: Record<number, typeof state.flow> = {}
@@ -348,10 +347,10 @@ const guardOptions = computed(() =>
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
-/** 普通自爆：狼阵营（狼人/狼王）；白狼王走专属自爆带人 */
+/** 自爆选项：所有存活狼阵营（白狼王选中后走带人流程） */
 const wolfPlainOptions = computed(() =>
   aliveList.value
-    .filter((p) => refs.isWolfRole(p.role) && p.role !== "白狼王")
+    .filter((p) => refs.isWolfRole(p.role))
     .map((p) => playerOption(p)),
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
@@ -384,7 +383,7 @@ const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 const unassignedAliveOptions = computed(() => aliveList.value.filter((p) => !p.role).map((p) => playerOption(p)))
 /** 白狼王自爆带走目标：白狼王本人除外 */
 const wwkObj = computed(() => state.players.find((p) => p.role === "白狼王"))
-const wwkTarOptions = computed(() =>
+const wwkBoomTarOptions = computed(() =>
   aliveList.value.filter((p) => p.name !== wwkObj.value?.name).map((p) => playerOption(p)),
 )
 
@@ -1016,6 +1015,21 @@ function doFinishVote(v: string) {
   lastWordsShow.value = true
 }
 function doWolfBaoZha(v: string) {
+  const p = state.players.find((x) => x.name === v)
+  // 白狼王：弹第二层选择带走目标
+  if (p?.role === "白狼王") {
+    openPicker("选择白狼王带走目标", wwkBoomTarOptions.value, (tar) => {
+      snapshot()
+      stopSpeech()
+      const err = actions.wolfKingBaoZha(v, tar)
+      if (err) return message.error(err)
+      message.success("白狼王自爆带人，直接进入黑夜")
+      effect("explode", "explode")
+      playVoice("wwk_boom")
+      checkSheriffDeath()
+    })
+    return
+  }
   snapshot()
   stopSpeech()
   const err = actions.wolfBaoZha(v)
@@ -1023,18 +1037,6 @@ function doWolfBaoZha(v: string) {
   message.success("狼人自爆，直接进入黑夜")
   effect("explode", "explode")
   playVoice("explode")
-  checkSheriffDeath()
-}
-function doWWKBoom(tar: string) {
-  const wwk = wwkObj.value
-  if (!wwk) return message.error("本局没有白狼王")
-  snapshot()
-  stopSpeech()
-  const err = actions.wolfKingBaoZha(wwk.name, tar)
-  if (err) return message.error(err)
-  message.success("白狼王自爆带人，直接进入黑夜")
-  effect("explode", "explode")
-  playVoice("wwk_boom")
   checkSheriffDeath()
 }
 function doKnightDuel(v: string) {
@@ -1679,12 +1681,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
 
       <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 骑士决斗 + 回退一步 + 重播当前步 + 语音配置 -->
       <div class="floating-actions">
-        <a-tooltip v-if="hasWWK && state.phase === 'day' && !state.skipVote && !state.finished && currentStep !== 'vote' && !lastWordsShow" title="白狼王自爆带人">
-          <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择白狼王带走目标', wwkTarOptions, (v) => doWWKBoom(v))">👑💥</a-button>
-        </a-tooltip>
         <!-- 狼人自爆：警上(竞选警长)与白天发言期可自爆，投票/退水期禁自爆 -->
-        <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（警上自爆吞警徽跳过竞选入夜；白天自爆跳过投票入夜）">
-          <a-button class="fab" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))">💥</a-button>
+        <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）">
+          <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
         </a-tooltip>
         <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交）">
           <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
@@ -2169,6 +2168,16 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   width: 48px;
   height: 48px;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.fab-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  pointer-events: none;
 }
 @media (max-width: 720px) {
   .floating-actions {
