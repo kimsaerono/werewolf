@@ -1062,9 +1062,9 @@ function doDawn() {
     return message.error("还有玩家未确认身份，请先完成所有睁眼确认（剩余玩家会自动补为平民）后再天亮")
   }
   snapshot()
-  dawnLogSnapshot.value = state.globalLog.length
   const before = aliveList.value.map((p) => p.name)
   const err = actions.dawnSettle()
+  dawnLogSnapshot.value = state.globalLog.length
   if (err) return message.error(err)
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))
