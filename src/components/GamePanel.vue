@@ -85,6 +85,8 @@ const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const idiotFlip = ref(false)
 const lastDawnDeaths = ref<string[]>([])
+/** 天亮结算前 globalLog 长度快照，用于区分天亮前后的殉情日志 */
+const dawnLogSnapshot = ref(0)
 /** 殉情全局提示 */
 const loverDeathMsg = ref("")
 
@@ -220,6 +222,8 @@ const hasCupid = hasRole("丘比特")
 const hunterObj = computed(() => state.players.find((p) => p.role === "猎人"))
 const guardObj = computed(() => state.players.find((p) => p.role === "守卫"))
 const witchObj = computed(() => state.players.find((p) => p.role === "女巫"))
+const witchIsKillTarget = computed(() => !!witchObj.value && state.nightWolfKill === witchObj.value.name)
+const witchCanSelfSave = computed(() => state.round <= 1 || !witchIsKillTarget.value)
 const prophetObj = computed(() => state.players.find((p) => p.role === "预言家"))
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
 const jingHuiLabel = computed(() =>
@@ -578,7 +582,7 @@ watch(
   (len, old) => {
     if (len <= old) return
     if (state.phase !== "day") return
-    const added = state.globalLog.slice(old)
+    const added = state.globalLog.slice(Math.max(old, dawnLogSnapshot.value))
     const names = added
       .map((l) => {
         const m = l.match(/💔(.+?)因情侣殉情出局/)
@@ -587,7 +591,7 @@ watch(
       .filter(Boolean)
     if (names.length) {
       const nos = names.map((n) => noOf(n))
-      const txt = `${nos.join("、")}出局`
+      const txt = `${nos.join("、")}对象没了，跟着殉情了，爱情的力量就是这么无情`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
     }
@@ -1045,6 +1049,12 @@ function doKnightDuel(v: string) {
   effect("knight", "sword", `决斗对象：${lbl}`)
   playVoice(isWolf ? "knight_duel_wolf" : "knight_duel_good")
   checkSheriffDeath()
+  if (isWolf && !state.finished) {
+    state.skipVote = true
+    lastWordsShow.value = false
+    suppressStepVoiceUntil = Date.now() + 5000
+    doFlow()
+  }
 }
 function doDawn() {
   actions.autoFillCivilians()
@@ -1052,6 +1062,7 @@ function doDawn() {
     return message.error("还有玩家未确认身份，请先完成所有睁眼确认（剩余玩家会自动补为平民）后再天亮")
   }
   snapshot()
+  dawnLogSnapshot.value = state.globalLog.length
   const before = aliveList.value.map((p) => p.name)
   const err = actions.dawnSettle()
   if (err) return message.error(err)
@@ -1079,11 +1090,6 @@ function doDawn() {
     if (state.finished) return
     // 骷髅死亡页：展示死亡玩家信息
     effect("death", "death", `昨夜死亡：${deathInfo}`)
-    const poisonedHunter = dawnDeaths.find((n) => {
-      const p = state.players.find((x) => x.name === n)
-      return p?.role === "猎人" && p.mark.hunterIsPoisoned
-    })
-    if (poisonedHunter) playVoice("hunter_poisoned")
     const nos = dawnDeaths.map((n) => {
       const p = state.players.find((x) => x.name === n)
       return `${p?.no || "?"}`
@@ -1293,11 +1299,11 @@ function effect(type: string, sfx?: SfxName, result?: string) {
            <div class="witch-actions">
             <div
               class="witch-action"
-              :class="{ used: state.witchSaveUsed }"
-              @click="!state.witchSaveUsed && openWitchModal('save')"
+              :class="{ used: state.witchSaveUsed || !witchCanSelfSave }"
+              @click="(!state.witchSaveUsed && witchCanSelfSave) && openWitchModal('save')"
             >
               <div class="witch-action-emoji">🧪</div>
-              <div class="witch-action-name">用解药</div>
+              <div class="witch-action-name">{{ witchIsKillTarget && !witchCanSelfSave ? '非首夜不能自救' : '用解药' }}</div>
             </div>
             <div
               class="witch-action witch-action-poison"
@@ -1510,8 +1516,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
         <div class="fs-title">🧪 女巫操作</div>
         <div v-if="!state.witchSaveUsed && witchObj?.alive" class="fs-death">
-          <div class="fs-death-label">本晚被刀</div>
-          <div class="fs-death-name">{{ nightKillLabel }}</div>
+          <div class="fs-death-label">{{ witchIsKillTarget && !witchCanSelfSave ? '本晚被刀（女巫自己，非首夜不能自救）' : '本晚被刀' }}</div>
+          <div v-if="!witchIsKillTarget || witchCanSelfSave" class="fs-death-name">{{ nightKillLabel }}</div>
         </div>
         <div v-else class="fs-death" style="border-color: #666">
           <div class="fs-death-label">{{ witchObj?.alive ? "无解药" : "女巫已出局" }}</div>
@@ -1520,10 +1526,11 @@ function effect(type: string, sfx?: SfxName, result?: string) {
           <div
             v-if="!state.witchSaveUsed && state.nightWolfKill && state.nightUsedDrug === null"
             class="witch-action"
-            @click="doWitchSave"
+            :class="{ used: !witchCanSelfSave }"
+            @click="witchCanSelfSave && doWitchSave()"
           >
             <div class="witch-action-emoji">🧪</div>
-            <div class="witch-action-name">用解药救 {{ nightKillLabel }}</div>
+            <div class="witch-action-name">{{ witchIsKillTarget && !witchCanSelfSave ? '非首夜不能自救' : `用解药救 ${nightKillLabel}` }}</div>
           </div>
           <div
             v-if="!state.witchPoisonUsed && state.nightUsedDrug === null"
