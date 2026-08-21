@@ -1683,26 +1683,28 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </a-drawer>
 
       <!-- 悬浮按钮（右侧）：技能类操作 -->
-      <div class="floating-actions" :class="{ collapsed: !rightActionsOpen }">
-        <a-button class="fab fab-toggle" shape="circle" size="large" @click="rightActionsOpen = !rightActionsOpen">{{ rightActionsOpen ? '◀' : '▶' }}</a-button>
-        <template v-if="rightActionsOpen">
-        <!-- 狼人自爆：警上(竞选警长)与白天发言期可自爆，投票/退水期禁自爆 -->
-        <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）">
-          <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
-        </a-tooltip>
-        <a-tooltip v-if="state.jingHui && !state.finished" title="警徽设置（移交）">
-          <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
-        </a-tooltip>
-        <a-tooltip v-if="hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）">
-          <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️</a-button>
-        </a-tooltip>
-        <a-tooltip v-if="canUndo" title="回退上一步">
-          <a-button class="fab" type="primary" danger shape="circle" size="large" @click="doUndo">↩️</a-button>
-        </a-tooltip>
-        <a-tooltip title="重复播报当前步（防止对应玩家没睁眼）">
-          <a-button class="fab" type="primary" shape="circle" size="large" @click="playStepVoice">🔊</a-button>
-        </a-tooltip>
-        </template>
+      <div class="floating-actions">
+        <TransitionGroup name="fab-slide-right">
+          <!-- 狼人自爆 -->
+          <a-tooltip v-if="rightActionsOpen && !state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）" key="explode">
+            <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
+          </a-tooltip>
+          <a-tooltip v-if="rightActionsOpen && state.jingHui && !state.finished" title="警徽设置（移交）" key="jinghui">
+            <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
+          </a-tooltip>
+          <a-tooltip v-if="rightActionsOpen && hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）" key="knight">
+            <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️</a-button>
+          </a-tooltip>
+          <a-tooltip v-if="rightActionsOpen && canUndo" title="回退上一步" key="undo">
+            <a-button class="fab" type="primary" danger shape="circle" size="large" @click="doUndo">↩️</a-button>
+          </a-tooltip>
+          <a-tooltip v-if="rightActionsOpen" title="重复播报当前步（防止对应玩家没睁眼）" key="voice">
+            <a-button class="fab" type="primary" shape="circle" size="large" @click="playStepVoice">🔊</a-button>
+          </a-tooltip>
+        </TransitionGroup>
+        <a-button class="fab fab-toggle" shape="circle" @click="rightActionsOpen = !rightActionsOpen">
+          <span class="fab-toggle-icon" :class="{ open: rightActionsOpen }">⚙</span>
+        </a-button>
       </div>
 
       <!-- 弹窗：警徽设置（移交警徽） -->
@@ -2164,21 +2166,45 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   bottom: 20px;
   z-index: 500;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 6px;
 }
-.floating-actions.collapsed {
-  gap: 0;
-}
 .fab-toggle {
-  background: rgba(30, 35, 50, 0.85) !important;
+  background: rgba(30, 35, 50, 0.9) !important;
   color: #ccc !important;
-  border: 1px solid rgba(255,255,255,0.15) !important;
-  font-size: 12px;
-  width: 32px !important;
-  height: 32px !important;
-  min-width: 32px;
-  min-height: 32px;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 16px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+}
+.fab-toggle:hover {
+  background: rgba(50, 55, 70, 0.95) !important;
+}
+.fab-toggle-icon {
+  display: inline-block;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fab-toggle-icon.open {
+  transform: rotate(180deg);
+}
+
+/* 展开/收起动画 */
+.fab-slide-right-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fab-slide-right-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+}
+.fab-slide-right-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.7);
+}
+.fab-slide-right-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.7);
 }
 .fab {
   width: 48px;

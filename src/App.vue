@@ -110,18 +110,20 @@ function onTabChange(key: string) {
       </div>
 
       <!-- 左下悬浮：配置类操作（展开/收起） -->
-      <div class="left-actions" :class="{ collapsed: !leftActionsOpen }">
-        <a-button class="fab fab-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">{{ leftActionsOpen ? '▼' : '▲' }}</a-button>
-        <template v-if="leftActionsOpen">
-          <RoleHelp :roles="refs.getBoardRoles(state)" />
-          <a-tooltip title="语音播报配置">
+      <div class="left-actions">
+        <TransitionGroup name="fab-slide-left">
+          <RoleHelp v-if="leftActionsOpen" :roles="refs.getBoardRoles(state)" key="rolehelp" />
+          <a-tooltip v-if="leftActionsOpen" title="语音播报配置" key="voice">
             <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">⚙️</a-button>
           </a-tooltip>
-          <a-tooltip title="整局重置" placement="right">
+          <a-tooltip v-if="leftActionsOpen" title="整局重置" placement="right" key="reset">
             <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
           </a-tooltip>
-          <SyncSettings v-if="!state.simMode" />
-        </template>
+          <SyncSettings v-if="leftActionsOpen && !state.simMode" key="sync" />
+        </TransitionGroup>
+        <a-button class="fab fab-toggle" shape="circle" @click="leftActionsOpen = !leftActionsOpen">
+          <span class="fab-toggle-icon" :class="{ open: leftActionsOpen }">⚙</span>
+        </a-button>
       </div>
 
       <!-- 胜负弹窗 -->
@@ -336,25 +338,49 @@ body {
   bottom: 20px;
   z-index: 600;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 6px;
   align-items: flex-start;
-}
-.left-actions.collapsed {
-  gap: 0;
 }
 .fab-reset {
   border: 1px solid rgba(255, 77, 79, 0.6) !important;
 }
 .fab-toggle {
-  background: rgba(30, 35, 50, 0.85) !important;
+  background: rgba(30, 35, 50, 0.9) !important;
   color: #ccc !important;
-  border: 1px solid rgba(255,255,255,0.15) !important;
-  font-size: 12px;
-  width: 32px !important;
-  height: 32px !important;
-  min-width: 32px;
-  min-height: 32px;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 16px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+}
+.fab-toggle:hover {
+  background: rgba(50, 55, 70, 0.95) !important;
+}
+.fab-toggle-icon {
+  display: inline-block;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fab-toggle-icon.open {
+  transform: rotate(180deg);
+}
+
+/* 展开/收起动画 */
+.fab-slide-left-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fab-slide-left-leave-active {
+  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
+}
+.fab-slide-left-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.7);
+}
+.fab-slide-left-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.7);
 }
 /* 文案尽量不换行、不省略：缩小字号适配 */
 .ant-card-head-title {
