@@ -138,10 +138,10 @@ function vibrate(ms: number) {
 const ROLE_BG: Record<string, string> = {
   白痴: "#fff",
   白狼王: "#F7F7F7",
-  狼人: "#2C2C34",
+  狼人: "rgb(125,4,13)",
   狼王: "#222228",
   猎人: "#B97846",
-  女巫: "#D8B8E4",
+  女巫: "rgb(120,64,116)",
   平民: "#FFC860",
   骑士: "#B2DD98",
   守卫: "#94B8E0",
