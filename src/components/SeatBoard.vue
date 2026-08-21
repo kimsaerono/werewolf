@@ -342,7 +342,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
   border-color: #d5d9e4;
   cursor: grab;
   overflow: hidden;
-  min-height: 72px;
+  min-height: 60px;
 }
 .seat-board.floating .seat-card:active {
   cursor: grabbing;

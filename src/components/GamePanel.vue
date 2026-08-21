@@ -1684,8 +1684,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 
       <!-- 悬浮按钮（右侧）：技能类操作 -->
       <div class="floating-actions">
-        <TransitionGroup name="fab-slide-right">
-          <!-- 狼人自爆 -->
+        <TransitionGroup name="fab-pop-right">
           <a-tooltip v-if="rightActionsOpen && !state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）" key="explode">
             <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
           </a-tooltip>
@@ -1702,9 +1701,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <a-button class="fab" type="primary" shape="circle" size="large" @click="playStepVoice">🔊</a-button>
           </a-tooltip>
         </TransitionGroup>
-        <a-button class="fab fab-toggle" shape="circle" @click="rightActionsOpen = !rightActionsOpen">
-          <span class="fab-toggle-icon" :class="{ open: rightActionsOpen }">⚙</span>
-        </a-button>
+        <a-button class="fab fab-toggle" shape="circle" size="large" @click="rightActionsOpen = !rightActionsOpen">⋯</a-button>
       </div>
 
       <!-- 弹窗：警徽设置（移交警徽） -->
@@ -2163,48 +2160,24 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 .floating-actions {
   position: fixed;
   right: 16px;
-  bottom: 20px;
+  bottom: 16px;
   z-index: 500;
   display: flex;
   flex-direction: column-reverse;
-  gap: 6px;
+  align-items: center;
+  gap: 0;
 }
 .fab-toggle {
-  background: rgba(30, 35, 50, 0.9) !important;
-  color: #ccc !important;
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  width: 36px !important;
-  height: 36px !important;
-  min-width: 36px;
-  min-height: 36px;
-  font-size: 16px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+  background: rgba(30, 35, 50, 0.92) !important;
+  color: #eee !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.5) !important;
+  font-size: 20px;
+  letter-spacing: 2px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
-.fab-toggle:hover {
-  background: rgba(50, 55, 70, 0.95) !important;
-}
-.fab-toggle-icon {
-  display: inline-block;
-  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.fab-toggle-icon.open {
-  transform: rotate(180deg);
-}
-
-/* 展开/收起动画 */
-.fab-slide-right-enter-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.fab-slide-right-leave-active {
-  transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
-}
-.fab-slide-right-enter-from {
-  opacity: 0;
-  transform: translateY(12px) scale(0.7);
-}
-.fab-slide-right-leave-to {
-  opacity: 0;
-  transform: translateY(8px) scale(0.7);
+.fab-toggle:active {
+  transform: scale(0.92);
 }
 .fab {
   width: 48px;
@@ -2220,6 +2193,26 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   height: 30px;
   object-fit: contain;
   pointer-events: none;
+}
+
+/* 展开/收起动画 */
+.fab-pop-right-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.fab-pop-right-leave-active {
+  transition: all 0.18s ease-in;
+  position: relative;
+}
+.fab-pop-right-enter-from {
+  opacity: 0;
+  transform: translateY(16px) scale(0.6);
+}
+.fab-pop-right-leave-to {
+  opacity: 0;
+  transform: scale(0.6);
+}
+.fab-pop-right-move {
+  transition: transform 0.3s ease;
 }
 @media (max-width: 720px) {
   .floating-actions {
