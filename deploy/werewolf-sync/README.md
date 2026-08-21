@@ -21,8 +21,11 @@
 | 文件 | 说明 |
 |---|---|
 | `server.cjs` | 桥接服务（纯 Node，无外部依赖，兼容 Node 14） |
+| `record-block.cjs` | 复盘卡片区块构建器（server.cjs 依赖，需一起上传） |
 | `nginx-werewolf-sync.conf` | nginx 反代配置片段 |
 | `start.sh` | 启动脚本（含环境变量） |
+
+> 实际部署目录：`/data/www/s2b/website/werewolf-sync`（重启用同目录 `run.sh`）
 
 ---
 
@@ -30,10 +33,10 @@
 
 ### 1. 上传代码到服务器
 
-把 `server.cjs` 放到服务器，例如 `/data/werewolf-sync/server.cjs`：
+把 `server.cjs` 和 `record-block.cjs` 放到服务器（实际目录 `/data/www/s2b/website/werewolf-sync/`）：
 
 ```bash
-scp server.cjs root@192.168.5.227:/data/werewolf-sync/server.cjs
+scp server.cjs record-block.cjs root@192.168.5.227:/data/www/s2b/website/werewolf-sync/
 ```
 
 ### 2. 配置环境变量（修改 start.sh 或 export）
@@ -99,8 +102,18 @@ VITE_SYNC_URL=https://hymallbosstest.heemoney.com/werewolf-sync
 
 | 路径 | 方法 | 说明 |
 |---|---|---|
-| `/api/sync` | POST | 接收本局数据，写复盘表 + 更新排名（带 `x-access-password`） |
+| `/api/sync` | POST | 接收本局数据，复盘表写卡片区块（标题/信息/积分/逐行日志）+ 更新排名（带 `x-access-password`） |
 | `/api/health` | GET | 健康检查 |
+
+## 复盘表格式
+
+「每局复盘记录」每局一个卡片区块（构建逻辑见 `record-block.cjs`，与本地桥接 `server/recordBlock.ts` 保持一致）：
+
+- 标题行：A 列局次 gameId（幂等去重依据），B:N 合并显示板子/胜负/法官，深蓝底白字
+- 信息行：B:N 合并，时间 + MVP/SVP/背锅侠（空项省略）
+- 积分行：B:N 合并，每人 `号码.昵称(身份) ±分值`
+- 日志区：B 列逐行编号，灰字小号
+- 末尾空行分隔；合并/样式/行高为装饰性写入，失败只告警不影响数据
 
 ## 常见问题
 

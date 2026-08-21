@@ -83,4 +83,19 @@ describe("buildSyncPayload 胜负/拆分解", () => {
     const p = buildSyncPayload(r).players[0]
     expect(Math.round((p.base + p.skill + p.vote) * 10) / 10).toBe(-0.5)
   })
+
+  it("复盘详情字段：胜负/原因/板子透传，日志清洗+装饰（玩家名→号码(身份)、去时间前缀）", () => {
+    const r = rec("狼人胜利", [{ name: "狼A", role: "狼人", detail: [] }])
+    r.reason = "屠边"
+    r.boardFinal = "狼人×3"
+    r.log = ["狼A刀了平民", "[12:00:00] 狼A出局"]
+    const p = buildSyncPayload(r)
+    expect(p.winner).toBe("狼人胜利")
+    expect(p.reason).toBe("屠边")
+    expect(p.boardFinal).toBe("狼人×3")
+    expect(p.logLines[0]).toContain("1.狼A(")
+    expect(p.logLines[0]).toContain("狼人)")
+    expect(p.logLines[1]).not.toContain("[12:00:00]")
+    expect(p.logLines[1]).toContain("出局")
+  })
 })

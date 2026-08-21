@@ -20,6 +20,7 @@
 const http = require("http")
 const fs = require("fs")
 const path = require("path")
+const { buildRecordBlock } = require("./record-block.cjs")
 
 // 自动加载同目录 .env（KEY=VALUE 每行一行，忽略 # 注释）
 const envFile = path.join(__dirname, ".env")
@@ -98,22 +99,83 @@ function checkAuth(req) {
   return req.headers["x-access-password"] === ENV.ACCESS_PASSWORD
 }
 
-// ===== 追加行到复盘表 =====
+// ===== 追加卡片区块到复盘表 =====
+const RECORD_READ_LIMIT = 5000 // 复盘表物理行数（已扩容），读取/幂等扫描范围
+
 /** 复盘表是否已存在该 gameId（幂等去重：已存在则视为已同步完成） */
 async function recordHasGameId(token, gameId) {
   if (!gameId) return false
   const readUrl =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:A300`
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:A${RECORD_READ_LIMIT}`
   const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (rr.code && rr.code !== 0) throw new Error("读复盘失败: " + rr.code)
   const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
   return vals.some((v) => v && String(v[0] || "").trim() === String(gameId).trim())
 }
 
-async function appendRecordRows(token, rows) {
+/** 复盘表装饰（合并/样式/行高）：纯外观，失败只告警不阻断（数据已落盘） */
+async function decorateRecordBlock(token, block) {
+  try {
+    for (const range of block.mergeRanges) {
+      const mRes = await fetchJson(
+        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ range: `${ENV.RECORD_SHEET_ID}!${range}`, mergeType: "MERGE_ALL" }),
+        },
+      )
+      if (mRes.code && mRes.code !== 0) throw new Error("合并失败: " + mRes.code + " " + mRes.msg)
+    }
+    // 标题行深蓝底白字加粗；信息/积分行顶端对齐；日志区灰字小号
+    // （v2 样式接口不支持 word_wrap；fontSize 必须带行距后缀，如 "11pt/1.5"）
+    const styleData = [
+      {
+        ranges: [`${ENV.RECORD_SHEET_ID}!A${block.titleRow}:N${block.titleRow}`],
+        style: { backColor: "#1668dc", foreColor: "#ffffff", font: { bold: true, fontSize: "11pt/1.5" }, vAlign: 1 },
+      },
+      {
+        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.titleRow + 1}:B${block.titleRow + 2}`],
+        style: { vAlign: 0 },
+      },
+    ]
+    if (block.logEndRow >= block.logStartRow) {
+      styleData.push({
+        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.logStartRow}:B${block.logEndRow}`],
+        style: { foreColor: "#8a8f99", font: { fontSize: "10pt/1.5" }, vAlign: 0 },
+      })
+    }
+    const sRes = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ data: styleData }),
+      },
+    )
+    if (sRes.code && sRes.code !== 0) throw new Error("样式失败: " + sRes.code + " " + sRes.msg)
+    // 标题行行高 30px
+    const dRes = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: block.titleRow, endIndex: block.titleRow },
+          dimensionProperties: { fixedSize: 30 },
+        }),
+      },
+    )
+    if (dRes.code && dRes.code !== 0) throw new Error("行高失败: " + dRes.code + " " + dRes.msg)
+  } catch (e) {
+    console.error("[warn] 复盘卡片装饰失败（数据不受影响）:", (e && e.message) || e)
+  }
+}
+
+async function appendRecordBlock(token, body) {
   // 读复盘表找第一个空行
   const readUrl =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:K300`
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:N${RECORD_READ_LIMIT}`
   const readRes = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (readRes.code && readRes.code !== 0) throw new Error("读复盘失败: " + readRes.code)
   const existing = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
@@ -126,19 +188,26 @@ async function appendRecordRows(token, rows) {
       break
     }
   }
+  const block = buildRecordBlock(body, firstEmpty)
+  const lastRow = firstEmpty + block.rows.length - 1
+  if (lastRow > RECORD_READ_LIMIT) throw new Error(`复盘表已写满（${RECORD_READ_LIMIT} 行），请扩容或归档后重试`)
+  // 值写入 = 提交点：A 列 gameId 落盘后整局视为同步完成
   const url =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=USER_ENTERED`
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
   const res = await fetchJson(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      valueRanges: rows.map((row, i) => ({
-        range: `${ENV.RECORD_SHEET_ID}!A${firstEmpty + i}:K${firstEmpty + i}`,
-        values: [row],
-      })),
+      valueRanges: [
+        {
+          range: `${ENV.RECORD_SHEET_ID}!A${firstEmpty}:B${lastRow}`,
+          values: block.rows.map((r) => [r[0], r[1]]),
+        },
+      ],
     }),
   })
   if (res.code && res.code !== 0) throw new Error("写复盘失败: " + res.code + " " + res.msg)
+  await decorateRecordBlock(token, block)
 }
 
 // ===== 更新积分排名 =====
@@ -369,15 +438,11 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true })
         return
       }
-      const recordRows = body.players.map((p) => [
-        body.gameId, body.date, body.board, `${p.no}号`, p.name, p.role, p.camp,
-        p.win ? "胜" : "负", p.base, p.skill, p.vote,
-      ])
       // 先做排名/法官/重排，复盘表写入放最后作为「提交点」：gameId 落盘 ⇒ 整局已累计完成
       await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
       await addJudgeScore(token, body.judge)
       await reSortRanking(token)
-      await appendRecordRows(token, recordRows)
+      await appendRecordBlock(token, body)
       sendJson(res, 200, { ok: true })
       return
     }

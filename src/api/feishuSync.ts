@@ -3,7 +3,7 @@
  * - dev 环境走 vite 代理 `/api` → localhost:3457
  * - 生产环境（GitHub Pages）可配 VITE_SYNC_URL=http://localhost:3457 让本机浏览器可用
  */
-import { isWolfRole, GOD_LIST } from "@/game/logic"
+import { isWolfRole, GOD_LIST, decorateLog, cleanLogLine } from "@/game/logic"
 import type { GameRecord } from "@/composables/useGame"
 
 // dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
@@ -49,18 +49,43 @@ export interface SyncPayload {
   players: SyncPlayerRow[]
   /** 法官：只计积分、不计场次与胜率 */
   judge: { name: string; score: number } | null
+  /** ===== 复盘卡片详情字段（旧版部署端会忽略） ===== */
+  /** 胜负文案，如"狼人胜利" */
+  winner: string
+  /** 胜负原因，如"屠边" */
+  reason: string
+  /** 最终板子角色组成，如"狼人×3 预言家×1…" */
+  boardFinal: string
+  /** 法官累计分 */
+  judgeScore: number
+  /** MVP / SVP / 背锅侠（可为空） */
+  mvp: string
+  svp: string
+  beiguo: string
+  /** 已清洗+装饰的对局日志（玩家名→号码(身份)），服务端逐行写入复盘卡片 */
+  logLines: string[]
 }
 
 /** 计算单个玩家的阵营与胜负、拆基础分/技能分（投票分已移除恒为 0） */
 export function buildSyncPayload(record: GameRecord): SyncPayload {
   const winWolf = record.winner.includes("狼人")
   const winThird = record.winner.includes("第三方")
+  // 日志清洗（去时间前缀）+ 装饰（玩家名→号码(身份)），与 App 内"复制本局详情"一致
+  const logLines = (record.log || []).map((l) => decorateLog({ players: record.players } as never, cleanLogLine(l)))
   return {
     gameId: record.title,
     date: record.time,
     board: record.board,
     winCamp: winWolf ? "wolf" : winThird ? "third" : "good",
     judge: record.judge ? { name: record.judge, score: 0.5 } : null,
+    winner: record.winner,
+    reason: record.reason,
+    boardFinal: record.boardFinal || "",
+    judgeScore: record.judgeScore || 0,
+    mvp: record.mvp || "",
+    svp: record.svp || "",
+    beiguo: record.beiguo || "",
+    logLines,
     players: record.players.map((p) => {
       const wolf = isWolfRole(p.role)
       const god = GOD_LIST.includes(p.role)
@@ -159,6 +184,14 @@ export async function simulateSyncNewPlayer(): Promise<string | null> {
     board: "-",
     winCamp: "good",
     judge: null,
+    winner: "好人胜利",
+    reason: "测试",
+    boardFinal: "",
+    judgeScore: 0,
+    mvp: "",
+    svp: "",
+    beiguo: "",
+    logLines: ["✅本局开始：测试同步"],
     players: [{ no: 1, name: `测试玩家${tag}`, role: "平民", camp: "平民", win: true, base: 1, skill: 0, vote: 0 }],
   }
   try {

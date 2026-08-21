@@ -4,6 +4,8 @@ import { cors } from "hono/cors"
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import type { SyncPayload } from "../src/api/feishuSync"
+import { buildRecordBlock, buildRecordOps, blockToCsv } from "./recordBlock"
 
 const PORT = Number(process.env.PORT || 3457)
 
@@ -115,7 +117,7 @@ async function readSheet(sheetId: string): Promise<(string | number)[][]> {
     "--sheet-id",
     sheetId,
     "--range",
-    "A1:K200",
+    "A1:N5000",
     "--format",
     "json",
   ])
@@ -159,35 +161,13 @@ function lastDataRow(rows: (string | number)[][]): number {
 /** 同步对局数据到飞书表格 */
 app.post("/api/sync-feishu", async (c) => {
   try {
-    const body = (await c.req.json()) as {
-      gameId: string
-      date: string
-      board: string
-      winCamp: string
-      players: { no: number; name: string; role: string; camp: string; win: boolean; base: number; skill: number; vote: number }[]
-    }
+    const body = (await c.req.json()) as SyncPayload
     if (!body.players?.length) return c.json({ error: "players 不能为空" }, 400)
 
-    // 1. 追加复盘行：从最后数据行的下一行开始
+    // 1. 追加复盘卡片块：从最后数据行的下一行开始（A 列局次保留，兼容部署端 gameId 幂等去重）
     const recordRows = await readSheet(RECORD_SHEET_ID)
     const nextRow = lastDataRow(recordRows) + 1
-    const recordCsv = body.players
-      .map((p) =>
-        [
-          csvCell(body.gameId),
-          csvCell(body.date),
-          csvCell(body.board),
-          csvCell(`${p.no}号`),
-          csvCell(p.name),
-          csvCell(p.role),
-          csvCell(p.camp),
-          csvCell(p.win ? "胜" : "负"),
-          csvCell(p.base),
-          csvCell(p.skill),
-          csvCell(p.vote),
-        ].join(","),
-      )
-      .join("\n")
+    const block = buildRecordBlock(body, nextRow)
     const appendRec = await runLark([
       "sheets",
       "+csv-put",
@@ -198,11 +178,24 @@ app.post("/api/sync-feishu", async (c) => {
       "--start-cell",
       `A${nextRow}`,
       "--csv",
-      recordCsv,
+      blockToCsv(block),
       "--format",
       "json",
     ])
     if (!appendRec.ok) throw new Error(appendRec.error?.message || "写复盘失败")
+    // 合并单元格 + 卡片样式 + 标题行高（单次原子批量提交）
+    const styledRec = await runLark([
+      "sheets",
+      "+batch-update",
+      "--url",
+      SPREADSHEET_URL,
+      "--yes",
+      "--operations",
+      JSON.stringify(buildRecordOps(block, RECORD_SHEET_ID)),
+      "--format",
+      "json",
+    ])
+    if (!styledRec.ok) throw new Error(styledRec.error?.message || "复盘卡片样式失败")
 
     // 2. 更新排名：读现有，按昵称累加，就地改/追加
     const rankRows = await readSheet(RANK_SHEET_ID)
