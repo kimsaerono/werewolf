@@ -153,9 +153,19 @@ const ROLE_BG: Record<string, string> = {
 const DARK_BG = new Set(["狼人", "狼王"])
 
 function cardBg(p: Player): Record<string, string> | undefined {
-  if (!p.alive || !p.role || !ROLE_BG[p.role]) return undefined
-  const bg = ROLE_BG[p.role]
-  const style: Record<string, string> = { background: bg }
+  if (!p.alive || !p.role) return undefined
+  const style: Record<string, string> = {}
+  const img = roleAvatar(p.role)
+  if (img) {
+    style.backgroundImage = `url(${img})`
+    style.backgroundSize = "cover"
+    style.backgroundPosition = "center"
+    style.backgroundRepeat = "no-repeat"
+  }
+  if (ROLE_BG[p.role]) {
+    style.background = ROLE_BG[p.role]
+    if (img) style.backgroundImage = `url(${img})`
+  }
   if (DARK_BG.has(p.role)) {
     style.color = "#f0f0f0"
     style.borderColor = "rgba(255,255,255,0.15)"
@@ -179,8 +189,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
-            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
-            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="!p.role || !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || idx + 1 }}</span>
             <span
@@ -205,8 +214,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
-            <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar float" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
-            <span v-else class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="!p.role || !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
             <span
@@ -325,13 +333,17 @@ function cardBg(p: Player): Record<string, string> | undefined {
   pointer-events: auto; /* 卡片区域可交互（拖动/滚动） */
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   padding: 6px 4px;
   gap: 2px;
   border-radius: 10px;
   background: #ffffff;
+  background-size: cover;
+  background-position: center;
   border-color: #d5d9e4;
   cursor: grab;
+  overflow: hidden;
+  min-height: 72px;
 }
 .seat-board.floating .seat-card:active {
   cursor: grabbing;
@@ -409,6 +421,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  z-index: 1;
 }
 .seat-avatar.float {
   width: 34px;
@@ -433,6 +447,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
   width: 18px;
   height: 18px;
   font-size: 10px;
+  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+  z-index: 1;
 }
 .seat-avatar {
   width: 40px;
