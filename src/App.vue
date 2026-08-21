@@ -343,7 +343,7 @@ body {
   z-index: 600;
   display: flex;
   flex-direction: column-reverse;
-  gap: 0;
+  gap: 10px;
   align-items: center;
 }
 .fab-reset {
@@ -360,24 +360,24 @@ body {
   transform: scale(0.92);
 }
 
-/* 展开/收起动画 */
+/* 左侧展开/收起动画 */
 .fab-pop-left-enter-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .fab-pop-left-leave-active {
-  transition: all 0.18s ease-in;
-  position: relative;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  position: absolute;
 }
 .fab-pop-left-enter-from {
   opacity: 0;
-  transform: translateY(16px) scale(0.6);
+  transform: translateY(20px) scale(0.5);
 }
 .fab-pop-left-leave-to {
   opacity: 0;
-  transform: scale(0.6);
+  transform: translateY(10px) scale(0.5);
 }
 .fab-pop-left-move {
-  transition: transform 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 /* 文案尽量不换行、不省略：缩小字号适配 */
 .ant-card-head-title {

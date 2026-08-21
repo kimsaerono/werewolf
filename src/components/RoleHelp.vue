@@ -161,8 +161,8 @@ const shownRoles = computed(() => {
   align-items: flex-start;
 }
 .rh-fab {
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   line-height: 1;
   display: flex;

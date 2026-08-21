@@ -2171,7 +2171,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   z-index: 500;
   display: flex;
   flex-direction: column-reverse;
-  gap: 0;
+  gap: 10px;
   align-items: center;
 }
 .fab-toggle {
@@ -2202,24 +2202,24 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   pointer-events: none;
 }
 
-/* 展开/收起动画 */
+/* 右侧展开/收起动画 */
 .fab-pop-right-enter-active {
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .fab-pop-right-leave-active {
-  transition: all 0.18s ease-in;
-  position: relative;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  position: absolute;
 }
 .fab-pop-right-enter-from {
   opacity: 0;
-  transform: translateY(16px) scale(0.6);
+  transform: translateY(20px) scale(0.5);
 }
 .fab-pop-right-leave-to {
   opacity: 0;
-  transform: scale(0.6);
+  transform: translateY(10px) scale(0.5);
 }
 .fab-pop-right-move {
-  transition: transform 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @media (max-width: 720px) {
   .right-toggle {
