@@ -1529,7 +1529,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         </div>
         <div class="witch-actions">
           <div
-            v-if="!state.witchSaveUsed && state.nightWolfKill && state.nightUsedDrug === null"
+            v-if="!state.witchSaveUsed && state.nightWolfKill && state.nightUsedDrug === null && witchObj?.alive"
             class="witch-action"
             :class="{ used: !witchCanSelfSave }"
             @click="witchCanSelfSave && doWitchSave()"
@@ -1538,7 +1538,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <div class="witch-action-name">{{ witchIsKillTarget && !witchCanSelfSave ? '非首夜不能自救' : `用解药救 ${nightKillLabel}` }}</div>
           </div>
           <div
-            v-if="!state.witchPoisonUsed && state.nightUsedDrug === null"
+            v-if="!state.witchPoisonUsed && state.nightUsedDrug === null && witchObj?.alive"
             class="witch-action witch-action-poison"
             @click="openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
           >
