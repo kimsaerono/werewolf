@@ -16,6 +16,7 @@ import {
   guardDo,
   finishVote,
   wolfBaoZha,
+  wolfKingBaoZha,
   resetWholeGame,
   setRole,
   roleQuota,
@@ -24,11 +25,27 @@ import {
   getBoardRoles,
   canAddRole,
   applyBoard,
+  reorderPlayers,
   setJudge,
   confirmPlayers,
   boardConfig,
   WIN_TEXT,
   NO_CHECK,
+  cupidConnect,
+  applyLoverDeaths,
+  getChainType,
+  isLover,
+  knightDuel,
+  hunterShootConfirm,
+  hunterGiveUpShot,
+  wolfKingShootConfirm,
+  wolfKingGiveUpShot,
+   setJingHui,
+   autoTransferJingHui,
+  loseJingHui,
+  applyHonor,
+  suggestHonor,
+  resetRoundScore,
   type GameState,
   type Player,
 } from "./logic"
@@ -80,7 +97,7 @@ describe("夜晚结算", () => {
     guardDo(st, "P8", false)
     resolveNightDeath(st)
     expect(g(st, "P8").alive).toBe(true)
-    expect(byRole(st, "守卫")!.mark.guardHit).toBe(true)
+    expect(byRole(st, "守卫")!.mark.guardHitCount).toBe(1)
   })
 
   it("毒药无视守卫", () => {
@@ -97,6 +114,15 @@ describe("夜晚结算", () => {
     st.nightSteps.witch = true
     resolveNightDeath(st)
     expect(g(st, "P7").alive).toBe(false)
+  })
+
+  it("女巫不能对自己用毒", () => {
+    const st = setup()
+    nextNight(st)
+    const w = byRole(st, "女巫")!
+    const err = witchPoison(st, w.name)
+    expect(err).toContain("不能对自己用毒")
+    expect(st.witchPoisonUsed).toBe(false)
   })
 
   it("同守同救被刀目标死亡", () => {
@@ -142,6 +168,16 @@ describe("夜晚结算", () => {
     resolveNightDeath(st2)
     expect(st2.hunterShotPending).toBe(false)
     expect(g(st2, "P5").mark.hunterIsPoisoned).toBe(true)
+  })
+
+  it("女巫毒猎人：下毒时立即标记吞枪（猎人睁眼在女巫之后）", () => {
+    const st = setup()
+    nextNight(st)
+    wolfKill(st, "P0")
+    const err = witchPoison(st, "P5") // 猎人
+    expect(err).toBeNull()
+    expect(g(st, "P5").mark.hunterIsPoisoned).toBe(true)
+    expect(g(st, "P5").alive).toBe(true) // 存活但已被标记哑火，睁眼即告知
   })
 
   it("守卫连守限制", () => {
@@ -219,6 +255,19 @@ describe("预言家/狼人/女巫标记", () => {
     const err = witchPoison(st, "P0")
     expect(err).toContain("不能同时使用解药和毒药")
   })
+
+  it("女巫自救：首夜可自救，之后夜晚不能自救", () => {
+    const st = setup()
+    nextNight(st) // round 1
+    wolfKill(st, "P4") // 刀女巫自己
+    expect(witchSave(st)).toBeNull() // 首夜自救成功
+    const st2 = setup()
+    nextNight(st2)
+    nextNight(st2) // round 2
+    wolfKill(st2, "P4")
+    const err = witchSave(st2)
+    expect(err).toContain("自救")
+  })
 })
 
 describe("算分引擎", () => {
@@ -265,17 +314,19 @@ describe("算分引擎", () => {
     expect(g(st, "P0").scoreRound).toBe(3.5)
   })
 
-  it("神职胜利+3 / 平民胜利+2", () => {
+  it("好人胜利：神职+3 且平民+2（狼全灭同时发分）", () => {
     const st = setup()
     st.winCamp = "god"
     st.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
     recalcScore(st)
     expect(byRole(st, "预言家")!.scoreRound).toBe(3)
+    expect(byRole(st, "平民")!.scoreRound).toBe(2)
     const st2 = setup()
     st2.winCamp = "civil"
     st2.players.filter((p) => p.role !== "平民").forEach((p) => (p.alive = false))
     recalcScore(st2)
     expect(st2.players.find((p) => p.role === "平民")!.scoreRound).toBe(2)
+    expect(byRole(st2, "预言家")!.scoreRound).toBe(3)
   })
 
   it("MVP/SVP/背锅侠", () => {
@@ -356,6 +407,15 @@ describe("放逐/自爆", () => {
     expect(g(st, "P7").mark.idiotFlipped).toBe(true)
   })
 
+  it("白痴翻牌后不可被放逐", () => {
+    const st = setup()
+    finishVote(st, "P7", true) // 第一次翻牌免死
+    expect(g(st, "P7").alive).toBe(true)
+    const err = finishVote(st, "P7", false) // 第二次尝试放逐
+    expect(err).toContain("翻牌")
+    expect(g(st, "P7").alive).toBe(true)
+  })
+
   it("猎人被放逐可开枪", () => {
     const st = setup()
     finishVote(st, "P5", false)
@@ -375,6 +435,38 @@ describe("放逐/自爆", () => {
     wolfBaoZha(st, "P0")
     const err = finishVote(st, "P8", false)
     expect(err).toContain("跳过投票")
+  })
+
+  it("白狼王带猎人：跳过投票，猎人不开枪（被带走无枪）", () => {
+    const st = setup()
+    const wwk = st.players[0]
+    wwk.role = "白狼王"
+    const hunter = byRole(st, "猎人")!
+    const err = wolfKingBaoZha(st, wwk.name, hunter.name)
+    expect(err).toBeNull()
+    expect(st.skipVote).toBe(true)
+    expect(st.hunterShotPending).toBe(false)
+    expect(g(st, hunter.name).alive).toBe(false)
+  })
+
+  it("白狼王带走狼王：狼王不开枪", () => {
+    const st = setup()
+    const wwk = st.players[0]
+    wwk.role = "白狼王"
+    const wolfKing = st.players[1]
+    wolfKing.role = "狼王"
+    const err = wolfKingBaoZha(st, wwk.name, wolfKing.name)
+    expect(err).toBeNull()
+    expect(st.wolfKingShotPending).toBe(false)
+    expect(g(st, wolfKing.name).alive).toBe(false)
+  })
+
+  it("自爆吞警徽：警长自爆 → 警徽流失", () => {
+    const st = setup()
+    st.jingHui = "P0"
+    wolfBaoZha(st, "P0")
+    expect(st.jingHui).toBe("")
+    expect(st.skipVote).toBe(true)
   })
 })
 
@@ -521,5 +613,561 @@ describe("角色配额", () => {
     confirmPlayers(st)
     expect(st.playersConfirmed).toBe(true)
     expect(st.globalLog.some((l) => l.includes("确认"))).toBe(true)
+  })
+
+  it("法官与玩家互斥：设法官移除玩家、法官不可再被添加为玩家", () => {
+    const st = defaultState()
+    addPlayer(st, "张三")
+    addPlayer(st, "李四")
+    setJudge(st, "张三")
+    expect(st.players.map((p) => p.name)).toEqual(["李四"]) // 法官被移出参与玩家
+    const err = addPlayer(st, "张三")
+    expect(err).toContain("法官")
+    expect(st.players.some((p) => p.name === "张三")).toBe(false)
+  })
+
+  it("reorderPlayers 按新顺序整序并重编座位号", () => {
+    const st = defaultState()
+    ;["A", "B", "C", "D"].forEach((n) => addPlayer(st, n))
+    reorderPlayers(st, ["D", "A", "C", "B"])
+    expect(st.players.map((p) => p.name)).toEqual(["D", "A", "C", "B"])
+    expect(st.players.map((p) => p.no)).toEqual([1, 2, 3, 4])
+    // 缺名/多名容错：未出现在新序中的玩家追加到末尾
+    reorderPlayers(st, ["B", "A"])
+    expect(st.players.map((p) => p.name)).toEqual(["B", "A", "D", "C"])
+  })
+})
+
+describe("丘比特 / 情侣", () => {
+  // 预女猎丘 4狼4民：P0-P3狼人 P4预言家 P5女巫 P6猎人 P7丘比特 P8-P11平民
+  function setupQ(): GameState {
+    const st = defaultState()
+    st.board = "12q"
+    st.players = [
+      "狼人", "狼人", "狼人", "狼人",
+      "预言家", "女巫", "猎人", "丘比特",
+      "平民", "平民", "平民", "平民",
+    ].map((r, i) => {
+      const p = newPlayer("P" + i)
+      p.role = r
+      return p
+    })
+    return st
+  }
+
+  it("丘比特连人：成功/重复/数量错误/自连(允许)", () => {
+    const st = setupQ()
+    expect(cupidConnect(st, ["P0", "P8"])).toBeNull()
+    expect(st.lovers).toEqual(["P0", "P8"])
+    expect(getChainType(st)).toBe("WG")
+    expect(cupidConnect(st, ["P1", "P2"])).toContain("不能重复连接")
+    expect(cupidConnect(st, ["P3"])).toContain("两位")
+    // 自连：丘比特可连自己（丘比特+狼 → 人狼恋第三方；丘比特+好人 → 人人恋）
+    const st2 = setupQ()
+    expect(cupidConnect(st2, ["P7", "P1"])).toBeNull()
+    expect(getChainType(st2)).toBe("WG")
+    const st3 = setupQ()
+    expect(cupidConnect(st3, ["P7", "P8"])).toBeNull()
+    expect(getChainType(st3)).toBe("GG")
+  })
+
+  it("链型判定：GG/WW/WG/未确认", () => {
+    const st = setupQ()
+    expect(getChainType(st)).toBe("")
+    cupidConnect(st, ["P0", "P8"])
+    expect(getChainType(st)).toBe("WG")
+    const st2 = setupQ()
+    cupidConnect(st2, ["P0", "P1"])
+    expect(getChainType(st2)).toBe("WW")
+    const st3 = setupQ()
+    cupidConnect(st3, ["P8", "P9"])
+    expect(getChainType(st3)).toBe("GG")
+    const st4 = setupQ()
+    g(st4, "P8").role = ""
+    cupidConnect(st4, ["P0", "P8"])
+    expect(getChainType(st4)).toBe("")
+  })
+
+  it("殉情：被刀后伴侣立刻出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋 P0狼恋人 P8好人恋人
+    nextNight(st)
+    wolfKill(st, "P8") // 狼刀好人恋人
+    resolveNightDeath(st)
+    expect(g(st, "P8").alive).toBe(false)
+    expect(g(st, "P0").alive).toBe(false) // 狼恋人殉情
+    expect(st.globalLog.some((l) => l.includes("殉情"))).toBe(true)
+  })
+
+  it("殉情：被毒后伴侣立刻出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P8", "P9"]) // 人人恋
+    nextNight(st)
+    wolfKill(st, "P5")
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P8"
+    st.nightSteps.witch = true
+    resolveNightDeath(st)
+    expect(g(st, "P8").alive).toBe(false)
+    expect(g(st, "P9").alive).toBe(false)
+  })
+
+  it("殉情：被放逐后伴侣出局", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P10", "P11"])
+    finishVote(st, "P10", false)
+    expect(g(st, "P10").alive).toBe(false)
+    expect(g(st, "P11").alive).toBe(false)
+  })
+
+  it("殉情：猎人被放逐可开枪，但殉情的猎人不触发开枪", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P10", "P6"]) // 平民恋人+猎人恋人
+    finishVote(st, "P10", false) // 平民先出局 → 猎人殉情
+    expect(g(st, "P6").alive).toBe(false)
+    expect(st.hunterShotPending).toBe(false)
+
+    const st2 = setupQ()
+    cupidConnect(st2, ["P6", "P8"]) // 猎人先出局
+    finishVote(st2, "P6", false)
+    expect(g(st2, "P6").alive).toBe(false)
+    expect(st2.hunterShotPending).toBe(true) // 猎人主动出局可开枪
+    expect(g(st2, "P8").alive).toBe(false) // 平民殉情
+  })
+
+  it("殉情：狼王被刀可开枪，殉情的狼王不可", () => {
+    const st2 = setupQ()
+    g(st2, "P7").role = "狼王"
+    st2.lovers = ["P10", "P7"] // 直接设恋人（狼王没有专属板，绕过丘比特）
+    finishVote(st2, "P7", false)
+    expect(g(st2, "P7").alive).toBe(false)
+    expect(st2.wolfKingShotPending).toBe(true)
+    expect(g(st2, "P10").alive).toBe(false)
+  })
+
+  it("互刀限制：狼恋人不能作为刀人目标", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0 狼恋人
+    nextNight(st)
+    const err = wolfKill(st, "P0")
+    expect(err).toContain("互刀")
+    expect(wolfKill(st, "P8")).toBeNull() // 好人恋人可以被刀
+  })
+
+  it("第三方胜：只剩丘比特+情侣时直接获胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋
+    st.round = 3
+    st.phase = "day"
+    // 丘比特 P7 + 恋人 P0 P8 存活；其余全死
+    st.players.forEach((p) => {
+      if (!["P7", "P0", "P8"].includes(p.name)) p.alive = false
+    })
+    const r = checkWin(st)
+    expect(r.ended).toBe(true)
+    expect(st.winCamp).toBe("third")
+    expect(r.text).toBe(WIN_TEXT.third)
+  })
+
+  it("人狼恋：只杀光单身狼不算好人赢（第三方情侣还在）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，P0狼恋人 P8好人恋人
+    st.round = 3
+    st.phase = "day"
+    ;["P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 单身狼死光
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 好人不能赢，第三方 P0/P8 还在
+  })
+
+  it("人狼恋：只达成屠边不算狼赢（第三方情侣还在）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false)) // 屠神，但丘比特 P7 不算神
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：丘比特死但情侣存活 → 第三方保留，好/狼不判胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    g(st, "P7").alive = false // 丘比特死
+    ;["P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：情侣双死但丘比特存活 → 第三方保留，好/狼均不判胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false)) // 情侣+所有狼死，丘比特 P7 活
+    const r = checkWin(st)
+    expect(st.winCamp).toBeNull()
+    expect(r.reason).not.toContain("好人")
+    // 丘比特也出局 → 第三方解散，好人胜
+    g(st, "P7").alive = false
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+  })
+
+  it("人狼恋：情侣双死且屠边但丘比特存活 → 狼不判胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    // 情侣 + 神 + 民 全部出局，只剩狼 P1 与丘比特 P7
+    ;["P0", "P8", "P4", "P5", "P6", "P9", "P10", "P11"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+    // 丘比特也出局 → 狼胜
+    g(st, "P7").alive = false
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+
+  it("屠边不含丘比特：丘比特活着也算屠神成功", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P8", "P9"]) // 人人恋，丘比特属好人但不计神
+    st.round = 2
+    st.phase = "day"
+    ;["P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false)) // 预女猎死光
+    ;["P8", "P9"].forEach((n) => (g(st, n).alive = false)) // 情侣已死（无第三方影响）
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf") // 屠神成功（丘比特活着也不算神）
+  })
+
+  it("第三方算分：丘比特+情侣各+3", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.winCamp = "third"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
+    expect(g(st, "P0").scoreRound).toBe(3)
+    expect(g(st, "P8").scoreRound).toBe(3)
+    expect(g(st, "P1").scoreRound).toBe(0)
+  })
+
+  it("好人胜利时丘比特+3", () => {
+    const st = setupQ()
+    st.winCamp = "god"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
+  })
+
+  it("狼狼恋：无第三方，丘比特属好人（好人胜+3，狼胜不给丘比特+3）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P1"]) // 狼狼恋
+    st.winCamp = "god"
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(3)
+    const st2 = setupQ()
+    cupidConnect(st2, ["P0", "P1"])
+    st2.winCamp = "wolf"
+    recalcScore(st2)
+    expect(g(st2, "P7").scoreRound).toBe(0)
+  })
+
+  it("人狼恋：2平民+丘比特 → 不判平局（平民票数足够放逐第三方）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，P0狼恋人 P8好人恋人，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9"].forEach((n) => (g(st, n).alive = false))
+    // 存活：P7 丘比特 + P10 P11 两个平民
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 平民 2 票 > 第三方 1 人，可投出第三方 → 不判平局
+  })
+
+  it("人狼恋：1平民+丘比特 → 平局（平民票数与第三方持平，僵局）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9", "P10"].forEach((n) => (g(st, n).alive = false))
+    // 存活：P7 丘比特 + P11 一个平民
+    checkWin(st)
+    expect(st.winCamp).toBe("draw")
+  })
+
+  it("人狼恋常驻：丘比特死但好人恋人活+狼全灭 → 不判好人胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人，丘比特 P7
+    st.round = 3
+    st.phase = "day"
+    // 丘比特死 + 狼恋人死 + 单身狼全死，仅好人恋人 P8 存活（第三方还在）
+    ;["P7", "P0", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋常驻：三方成员全灭+狼全灭 → 好人胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 丘比特 P7，恋人 P0/P8
+    st.round = 3
+    st.phase = "day"
+    ;["P7", "P0", "P8", "P1", "P2", "P3"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+  })
+
+  it("人狼恋常驻：丘比特死但狼恋人活（第三方保留）→ 狼屠边也不判狼胜", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人
+    st.round = 3
+    st.phase = "day"
+    // 丘比特 P7 死；神全灭；仅剩狼恋人 P0 + 好人恋人 P8 + 平民
+    ;["P7", "P4", "P5", "P6", "P9", "P10", "P11"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBeNull() // 第三方存在，狼胜不成立
+  })
+
+  it("人狼恋第三方输：好人胜时丘比特/恋人不加分", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0狼恋人 P8好人恋人，丘比特 P7
+    st.winCamp = "god" // 第三方输了，好人胜
+    recalcScore(st)
+    expect(g(st, "P7").scoreRound).toBe(0) // 丘比特属第三方，输不加分
+    expect(g(st, "P0").scoreRound).toBe(0)
+    expect(g(st, "P8").scoreRound).toBe(0)
+  })
+})
+
+describe("骑士决斗", () => {
+  it("决斗狼人：狼死，骑士标记 hunterKillWolf", () => {
+    const st = setup()
+    started(st)
+    const knight = byRole(st, "白痴")!
+    knight.role = "骑士"
+    knight.alive = true
+    const wolf = byRole(st, "狼人")!
+    const err = knightDuel(st, wolf.name)
+    expect(err).toBeNull()
+    expect(wolf.alive).toBe(false)
+    expect(knight.mark.hunterKillWolf).toBe(true)
+    expect(st.knightDuelUsed).toBe(true)
+  })
+
+  it("决斗好人：骑士死，标记 hunterKillGood", () => {
+    const st = setup()
+    started(st)
+    const knight = byRole(st, "白痴")!
+    knight.role = "骑士"
+    knight.alive = true
+    const villager = st.players.find((p) => p.role === "平民")!
+    const err = knightDuel(st, villager.name)
+    expect(err).toBeNull()
+    expect(knight.alive).toBe(false)
+    expect(knight.mark.hunterKillGood).toBe(true)
+  })
+
+  it("骑士已用过决斗不能再次", () => {
+    const st = setup()
+    started(st)
+    const knight = byRole(st, "白痴")!
+    knight.role = "骑士"
+    knight.alive = true
+    st.knightDuelUsed = true
+    const wolf = byRole(st, "狼人")!
+    const err = knightDuel(st, wolf.name)
+    expect(err).toContain("已用过")
+  })
+
+  it("骑士不能决斗自己", () => {
+    const st = setup()
+    started(st)
+    const knight = byRole(st, "白痴")!
+    knight.role = "骑士"
+    knight.alive = true
+    const err = knightDuel(st, knight.name)
+    expect(err).toContain("自己")
+  })
+
+  it("骑士不能决斗死者", () => {
+    const st = setup()
+    started(st)
+    const knight = byRole(st, "白痴")!
+    knight.role = "骑士"
+    knight.alive = true
+    const dead = byRole(st, "狼人")!
+    dead.alive = false
+    const err = knightDuel(st, dead.name)
+    expect(err).toContain("已出局")
+  })
+})
+
+describe("猎人/狼王开枪", () => {
+  it("猎人被放逐后开枪带走狼人", () => {
+    const st = setup()
+    started(st)
+    const hunter = byRole(st, "猎人")!
+    hunter.alive = false
+    st.hunterShotPending = true
+    const wolf = byRole(st, "狼人")!
+    const err = hunterShootConfirm(st, wolf.name)
+    expect(err).toBeNull()
+    expect(wolf.alive).toBe(false)
+    expect(st.hunterShotPending).toBe(false)
+  })
+
+  it("猎人被毒不能开枪", () => {
+    const st = setup()
+    started(st)
+    const hunter = byRole(st, "猎人")!
+    hunter.alive = false
+    hunter.mark.hunterIsPoisoned = true
+    st.hunterShotPending = true
+    const wolf = byRole(st, "狼人")!
+    const err = hunterShootConfirm(st, wolf.name)
+    expect(err).toContain("毒")
+  })
+
+  it("猎人放弃开枪", () => {
+    const st = setup()
+    started(st)
+    st.hunterShotPending = true
+    const err = hunterGiveUpShot(st)
+    expect(err).toBeNull()
+    expect(st.hunterShotPending).toBe(false)
+  })
+
+  it("狼王被放逐后开枪带走好人", () => {
+    const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民", "平民", "平民"])
+    started(st)
+    const wk = byRole(st, "狼王")!
+    wk.alive = false
+    st.wolfKingShotPending = true
+    const villager = st.players.find((p) => p.role === "平民")!
+    const err = wolfKingShootConfirm(st, villager.name)
+    expect(err).toBeNull()
+    expect(villager.alive).toBe(false)
+    expect(st.wolfKingShotPending).toBe(false)
+  })
+
+  it("狼王被毒不能开枪", () => {
+    const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民", "平民", "平民"])
+    started(st)
+    const wk = byRole(st, "狼王")!
+    wk.alive = false
+    wk.mark.wolfKingIsPoisoned = true
+    st.wolfKingShotPending = true
+    const villager = st.players.find((p) => p.role === "平民")!
+    const err = wolfKingShootConfirm(st, villager.name)
+    expect(err).toContain("毒")
+  })
+
+  it("狼王放弃开枪", () => {
+    const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民", "平民", "平民"])
+    started(st)
+    st.wolfKingShotPending = true
+    const err = wolfKingGiveUpShot(st)
+    expect(err).toBeNull()
+    expect(st.wolfKingShotPending).toBe(false)
+  })
+})
+
+describe("警徽系统", () => {
+  it("设置警长 + 狼人悍跳标记", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false) // 预言家，好人
+    expect(st.jingHui).toBe("P4")
+    expect(g(st, "P4").mark.wolfHanTiaoJinghui).toBe(false)
+  })
+
+  it("狼人拿警徽标记悍跳", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P0", true) // 狼人
+    expect(st.jingHui).toBe("P0")
+    expect(g(st, "P0").mark.wolfHanTiaoJinghui).toBe(true)
+  })
+
+  it("警长死亡警徽流失", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    g(st, "P4").alive = false
+    const result = autoTransferJingHui(st)
+    expect(result).toBeNull()
+    expect(st.jingHui).toBe("")
+  })
+
+  it("手动流失警徽", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    loseJingHui(st)
+    expect(st.jingHui).toBe("")
+  })
+})
+
+describe("板子校验（isWolfRole）", () => {
+  it("白狼王算狼角色，板子校验通过", () => {
+    const st = defaultState()
+    const err = setBoardRoles(st, ["白狼王", "预言家", "平民"])
+    expect(err).toBeNull()
+  })
+
+  it("狼王+白狼王=无好人，校验失败", () => {
+    const st = defaultState()
+    const err = setBoardRoles(st, ["狼人", "白狼王"])
+    expect(err).toContain("好人")
+  })
+
+  it("无狼角色校验失败", () => {
+    const st = defaultState()
+    const err = setBoardRoles(st, ["预言家", "平民", "平民"])
+    expect(err).toContain("狼人")
+  })
+})
+
+describe("屠城模式胜负", () => {
+  it("city模式：狼全灭+神全灭 → 好人胜（屠城需全灭才判狼胜）", () => {
+    const st = setup()
+    started(st)
+    st.winMode = "city"
+    // 狼全死 + 神全死，只剩平民
+    ;["P0", "P1", "P2", "P3", "P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+  })
+
+  it("city模式：平民全灭+神全灭（狼活）→ 狼胜", () => {
+    const st = setup()
+    started(st)
+    st.winMode = "city"
+    // 平民死 + 神死，狼活
+    ;["P7", "P8", "P9", "P3", "P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false))
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+})
+
+describe("scoreTotal 跨局保留", () => {
+  it("startNextGame 保留 scoreTotal", () => {
+    const st = setup()
+    started(st)
+    g(st, "P0").scoreTotal = 10
+    g(st, "P1").scoreTotal = 5.5
+    st.players.forEach((p) => { p.scoreRound = 3 })
+    // 模拟 finishGameAuto 累积
+    st.players.forEach((p) => { p.scoreTotal += p.scoreRound })
+    // 但 startNextGame 重建 players 时应保留 scoreTotal
+    const newPlayers = st.players.map((p) => {
+      const np = newPlayer(p.name)
+      np.no = p.no
+      np.scoreTotal = p.scoreTotal
+      return np
+    })
+    const p0new = newPlayers.find((p) => p.name === "P0")!
+    expect(p0new.scoreTotal).toBe(13) // 10 + 3
+    const p1new = newPlayers.find((p) => p.name === "P1")!
+    expect(p1new.scoreTotal).toBe(8.5) // 5.5 + 3
   })
 })

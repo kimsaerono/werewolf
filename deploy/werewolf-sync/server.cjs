@@ -1,0 +1,493 @@
+#!/usr/bin/env node
+/**
+ * 狼人杀 → 飞书表格 同步桥接（部署到公司内网服务器）
+ * - 纯 Node 实现（兼容 Node 14），无外部依赖，直接用 node 运行
+ * - 用飞书 OpenAPI（appId/appSecret 换 tenant_access_token）读写表格
+ * - 前端 H5 通过 nginx 反代 /werewolf-sync 访问本服务
+ *
+ * 环境变量：
+ *   APP_ID            飞书应用 App ID
+ *   APP_SECRET        飞书应用 App Secret
+ *   SPREADSHEET_TOKEN 飞书表格 token
+ *   RANK_SHEET_ID     「积分统计排名」sheet_id
+ *   RECORD_SHEET_ID   「每局复盘记录」sheet_id
+ *   ACCESS_PASSWORD   同步口令（前端带 x-access-password 头）
+ *   PORT              监听端口（默认 3460）
+ * 启动：PORT=3460 APP_ID=.. APP_SECRET=.. node server.js
+ */
+"use strict"
+
+const http = require("http")
+const fs = require("fs")
+const path = require("path")
+const { buildRecordBlock } = require("./record-block.cjs")
+
+// 自动加载同目录 .env（KEY=VALUE 每行一行，忽略 # 注释）
+const envFile = path.join(__dirname, ".env")
+if (fs.existsSync(envFile)) {
+  for (const line of fs.readFileSync(envFile, "utf8").split(/\r?\n/)) {
+    const t = line.trim()
+    if (!t || t.startsWith("#")) continue
+    const eq = t.indexOf("=")
+    if (eq > 0) {
+      const k = t.slice(0, eq).trim()
+      const v = t.slice(eq + 1).trim()
+      if (k && process.env[k] === undefined) process.env[k] = v
+    }
+  }
+}
+
+const PORT = Number(process.env.PORT || 3460)
+const ENV = {
+  APP_ID: process.env.APP_ID || "",
+  APP_SECRET: process.env.APP_SECRET || "",
+  SPREADSHEET_TOKEN: process.env.SPREADSHEET_TOKEN || "",
+  RANK_SHEET_ID: process.env.RANK_SHEET_ID || "",
+  RECORD_SHEET_ID: process.env.RECORD_SHEET_ID || "",
+  ACCESS_PASSWORD: process.env.ACCESS_PASSWORD || "",
+}
+
+// ===== 飞书 tenant_access_token 缓存 =====
+let tokenCache = { token: "", expireAt: 0 }
+
+async function getTenantToken() {
+  const now = Date.now()
+  if (tokenCache.token && now < tokenCache.expireAt) return tokenCache.token
+  const res = await fetchJson("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ app_id: ENV.APP_ID, app_secret: ENV.APP_SECRET }),
+  })
+  if (!res.tenant_access_token) throw new Error("获取飞书 token 失败: " + (res.code || "") + " " + (res.msg || ""))
+  tokenCache = { token: res.tenant_access_token, expireAt: now + ((res.expire || 7200) - 300) * 1000 }
+  return res.tenant_access_token
+}
+
+/** 通用 fetch + JSON（兼容 Node 14：node14 有全局 fetch？无 → 用 http/https） */
+const https = require("https")
+const httpMod = require("http")
+
+function fetchJson(url, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url)
+    const mod = u.protocol === "https:" ? https : httpMod
+    const req = mod.request(
+      u,
+      {
+        method: opts.method || "GET",
+        headers: opts.headers || {},
+      },
+      (res) => {
+        let data = ""
+        res.on("data", (c) => (data += c))
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(data))
+          } catch {
+            resolve({ raw: data })
+          }
+        })
+      },
+    )
+    req.on("error", reject)
+    if (opts.body) req.write(opts.body)
+    req.end()
+  })
+}
+
+function checkAuth(req) {
+  return req.headers["x-access-password"] === ENV.ACCESS_PASSWORD
+}
+
+// ===== 追加卡片区块到复盘表 =====
+const RECORD_READ_LIMIT = 5000 // 复盘表物理行数（已扩容），读取/幂等扫描范围
+
+/** 复盘表是否已存在该 gameId（幂等去重：已存在则视为已同步完成） */
+async function recordHasGameId(token, gameId) {
+  if (!gameId) return false
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:A${RECORD_READ_LIMIT}`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读复盘失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  return vals.some((v) => v && String(v[0] || "").trim() === String(gameId).trim())
+}
+
+/** 复盘表装饰（合并/样式/行高）：纯外观，失败只告警不阻断（数据已落盘） */
+async function decorateRecordBlock(token, block) {
+  try {
+    for (const range of block.mergeRanges) {
+      const mRes = await fetchJson(
+        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ range: `${ENV.RECORD_SHEET_ID}!${range}`, mergeType: "MERGE_ALL" }),
+        },
+      )
+      if (mRes.code && mRes.code !== 0) throw new Error("合并失败: " + mRes.code + " " + mRes.msg)
+    }
+    // 标题行深蓝底白字加粗 + 底边框；信息/积分行中灰；日志区浅灰小字
+    // （v2 样式接口不支持 word_wrap；fontSize 必须带行距后缀，如 "11pt/1.5"）
+    const styleData = [
+      {
+        ranges: [`${ENV.RECORD_SHEET_ID}!A${block.titleRow}:N${block.titleRow}`],
+        style: {
+          backColor: "#1668dc",
+          foreColor: "#ffffff",
+          font: { bold: true, fontSize: "11pt/1.5" },
+          vAlign: 1,
+          borderType: "BOTTOM_BORDER",
+          borderColor: "#0d4a9e",
+        },
+      },
+      {
+        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.titleRow + 1}:B${block.logStartRow - 1}`],
+        style: { foreColor: "#6b7280", vAlign: 0 },
+      },
+    ]
+    if (block.logEndRow >= block.logStartRow) {
+      styleData.push({
+        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.logStartRow}:B${block.logEndRow}`],
+        style: { foreColor: "#8a8f99", font: { fontSize: "10pt/1.5" }, vAlign: 0 },
+      })
+    }
+    const sRes = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ data: styleData }),
+      },
+    )
+    if (sRes.code && sRes.code !== 0) throw new Error("样式失败: " + sRes.code + " " + sRes.msg)
+    // 标题行行高 30px；内容行 20px
+    const dRes = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: block.titleRow, endIndex: block.titleRow },
+          dimensionProperties: { fixedSize: 30 },
+        }),
+      },
+    )
+    if (dRes.code && dRes.code !== 0) throw new Error("行高失败: " + dRes.code + " " + dRes.msg)
+    const contentStart = block.titleRow + 1
+    const contentEnd = block.titleRow + block.rows.length - 2
+    if (contentEnd >= contentStart) {
+      const dRes2 = await fetchJson(
+        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+        {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: contentStart, endIndex: contentEnd },
+            dimensionProperties: { fixedSize: 20 },
+          }),
+        },
+      )
+      if (dRes2.code && dRes2.code !== 0) throw new Error("内容行高失败: " + dRes2.code + " " + dRes2.msg)
+    }
+    // 块尾分隔行压矮到 10px，形成卡片间距
+    const sepRow = block.titleRow + block.rows.length - 1
+    const sRes2 = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: sepRow, endIndex: sepRow },
+          dimensionProperties: { fixedSize: 10 },
+        }),
+      },
+    )
+    if (sRes2.code && sRes2.code !== 0) throw new Error("分隔行行高失败: " + sRes2.code + " " + sRes2.msg)
+  } catch (e) {
+    console.error("[warn] 复盘卡片装饰失败（数据不受影响）:", (e && e.message) || e)
+  }
+}
+
+async function appendRecordBlock(token, body) {
+  // 读复盘表找第一个空行
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RECORD_SHEET_ID}!A1:N${RECORD_READ_LIMIT}`
+  const readRes = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (readRes.code && readRes.code !== 0) throw new Error("读复盘失败: " + readRes.code)
+  const existing = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
+  // 从最后一个非空行的下两行开始写：中间留一个空行作为卡片间距
+  let lastNonEmpty = 1
+  for (let i = 0; i < existing.length; i++) {
+    const v = existing[i]
+    if (v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")) lastNonEmpty = i + 1
+  }
+  const firstEmpty = lastNonEmpty <= 1 ? 2 : lastNonEmpty + 2
+  const block = buildRecordBlock(body, firstEmpty)
+  const lastRow = firstEmpty + block.rows.length - 1
+  if (lastRow > RECORD_READ_LIMIT) throw new Error(`复盘表已写满（${RECORD_READ_LIMIT} 行），请扩容或归档后重试`)
+  // 值写入 = 提交点：A 列 gameId 落盘后整局视为同步完成
+  const url =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  const res = await fetchJson(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      valueRanges: [
+        {
+          range: `${ENV.RECORD_SHEET_ID}!A${firstEmpty}:B${lastRow}`,
+          values: block.rows.map((r) => [r[0], r[1]]),
+        },
+      ],
+    }),
+  })
+  if (res.code && res.code !== 0) throw new Error("写复盘失败: " + res.code + " " + res.msg)
+  await decorateRecordBlock(token, block)
+}
+
+// ===== 更新积分排名 =====
+// 排名表列结构：A排名 B玩家昵称 C总场次 D胜场 E负场 F胜率 G总积分 H MVP次数 I SVP次数 J最佳身份 K称号
+async function updateRanking(token, rows) {
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+  const readRes = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (readRes.code && readRes.code !== 0) throw new Error("读排名失败: " + readRes.code)
+  const values = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
+
+  // 昵称(列B, index1) → 行号（表头占1，故行号=index+2）
+  const nameToRow = new Map()
+  for (let i = 0; i < values.length; i++) {
+    const nick = String(values[i] && values[i][1] ? values[i][1] : "").trim()
+    if (nick) nameToRow.set(nick, i + 2)
+  }
+
+  const agg = new Map()
+  for (const r of rows) {
+    if (!r.name) continue
+    const cur = agg.get(r.name) || { games: 0, wins: 0, score: 0 }
+    cur.games++
+    if (r.win) cur.wins++
+    cur.score += r.score
+    agg.set(r.name, cur)
+  }
+
+  const updates = []
+  const appends = []
+  let nextRank = nameToRow.size + 1
+  for (const [name, a] of agg) {
+    const row = nameToRow.get(name)
+    if (row) {
+      const prev = values[row - 2] || []
+      const g = Number(prev[2] || 0) + a.games
+      const w = Number(prev[3] || 0) + a.wins
+      const l = Number(prev[4] || 0) + (a.games - a.wins)
+      const s = Number(prev[6] || 0) + a.score
+      const rate = g ? ((w / g) * 100).toFixed(2) + "%" : "0.00%"
+      // C总场次 D胜 E负 F胜率 G总积分
+      updates.push({ row, vals: [g, w, l, rate, s] })
+    } else {
+      const rate = a.games ? ((a.wins / a.games) * 100).toFixed(2) + "%" : "0.00%"
+      // A排名 B昵称 C场次 D胜 E负 F胜率 G积分 H MVP I SVP J最佳身份 K称号
+      appends.push([nextRank, name, a.games, a.wins, a.games - a.wins, rate, a.score, 0, 0, "-", "-"])
+      nextRank++
+    }
+  }
+
+  if (updates.length) {
+    const url =
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ valueRanges: updates.map((u) => ({ range: `${ENV.RANK_SHEET_ID}!C${u.row}:G${u.row}`, values: [u.vals] })) }),
+    })
+    if (res.code && res.code !== 0) throw new Error("更新排名失败: " + res.code + " " + res.msg)
+  }
+
+  if (appends.length) {
+    // 找第一个空行（从最后一行往下找，或直接数据行末尾）
+    let firstEmpty = values.length + 2 // 默认：读到200行的下一行
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i]
+      const hasData = v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")
+      if (!hasData) {
+        firstEmpty = i + 2
+        break
+      }
+    }
+    const url =
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        valueRanges: appends.map((row, i) => ({
+          range: `${ENV.RANK_SHEET_ID}!A${firstEmpty + i}:K${firstEmpty + i}`,
+          values: [row],
+        })),
+      }),
+    })
+    if (res.code && res.code !== 0) throw new Error("追加玩家失败: " + res.code + " " + res.msg)
+  }
+}
+
+// ===== 法官计分：只加积分、不加场次、不计算胜率 =====
+async function addJudgeScore(token, judge) {
+  if (!judge || !judge.name) return
+  const score = Number(judge.score || 0)
+  if (!score) return
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  const url =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  let row = null
+  for (let i = 0; i < vals.length; i++) {
+    if (vals[i] && String(vals[i][1] || "").trim() === String(judge.name).trim()) {
+      row = i + 2
+      break
+    }
+  }
+  if (row) {
+    const prev = vals[row - 2] || []
+    const s = Math.round((Number(prev[6] || 0) + score) * 10) / 10
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!G${row}:G${row}`, values: [[s]] }] }),
+    })
+    if (res.code && res.code !== 0) throw new Error("法官计分失败: " + res.code + " " + res.msg)
+  } else {
+    // 新法官：0场 0胜 0负 胜率0 只记积分
+    let firstEmpty = vals.length + 2
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i]
+      const hasData = v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")
+      if (!hasData) {
+        firstEmpty = i + 2
+        break
+      }
+    }
+    const res = await fetchJson(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!A${firstEmpty}:K${firstEmpty}`, values: [[firstEmpty - 1, judge.name, 0, 0, 0, "0", score, 0, 0, "-", "-"]] }],
+      }),
+    })
+    if (res.code && res.code !== 0) throw new Error("法官新增失败: " + res.code + " " + res.msg)
+  }
+}
+
+// ===== 按总积分降序重排排名表（每次同步后调用，保证改分即排序） =====
+async function reSortRanking(token) {
+  const readUrl =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+  const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
+  if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
+  const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
+  const rows = vals
+    .map((v) => v.slice(0, 11))
+    .filter((v) => v.some((x) => x !== null && x !== undefined && String(x).trim() !== ""))
+  // 按总积分(列G,index6)降序，同分按昵称排
+  rows.sort((a, b) => Number(b[6] || 0) - Number(a[6] || 0) || String(a[1] || "").localeCompare(String(b[1] || ""), "zh"))
+  rows.forEach((r, i) => {
+    r[0] = i + 1
+  })
+  const out = rows.slice()
+  while (out.length < 199) out.push(["", "", "", "", "", "", "", "", "", "", ""])
+  const url =
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  const res = await fetchJson(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!A2:K200`, values: out }] }),
+  })
+  if (res.code && res.code !== 0) throw new Error("重排排名失败: " + res.code + " " + res.msg)
+  // 统一数据区边框，避免新行（API 写入）与既有行格式不一致
+  const styleRes = await fetchJson(
+    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+    {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [{ ranges: [`${ENV.RANK_SHEET_ID}!A2:K200`], style: { border: { borderAll: { color: "#2b3145", style: "SOLID" } } } }] }),
+    },
+  )
+  if (styleRes.code && styleRes.code !== 0) throw new Error("排名表边框失败: " + styleRes.code + " " + styleRes.msg)
+}
+
+function sendJson(res, code, obj) {
+  const body = JSON.stringify(obj)
+  res.writeHead(code, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,x-access-password",
+  })
+  res.end(body)
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let data = ""
+    req.on("data", (c) => (data += c))
+    req.on("end", () => resolve(data))
+  })
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`)
+  const path = url.pathname
+
+  // CORS 预检
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type,x-access-password",
+    })
+    res.end()
+    return
+  }
+
+  try {
+    if (path === "/api/health") {
+      sendJson(res, 200, { ok: true })
+      return
+    }
+    if (path === "/api/sync-test" && req.method === "POST") {
+      // 测试同步：只校验口令，不改动任何表格数据、不调飞书
+      if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
+      sendJson(res, 200, { ok: true, test: true })
+      return
+    }
+    if (path === "/api/sync" && req.method === "POST") {
+      if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
+      const body = JSON.parse((await readBody(req)) || "{}")
+      if (!body.players || !body.players.length) return sendJson(res, 400, { ok: false, error: "players 不能为空" })
+      const token = await getTenantToken()
+      // 幂等：该 gameId 已在复盘表 = 本局已同步完成，直接成功返回，避免重复累计
+      if (await recordHasGameId(token, body.gameId)) {
+        sendJson(res, 200, { ok: true })
+        return
+      }
+      // 先做排名/法官/重排，复盘表写入放最后作为「提交点」：gameId 落盘 ⇒ 整局已累计完成
+      await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
+      await addJudgeScore(token, body.judge)
+      await reSortRanking(token)
+      await appendRecordBlock(token, body)
+      sendJson(res, 200, { ok: true })
+      return
+    }
+    sendJson(res, 404, { ok: false, error: "not found" })
+  } catch (e) {
+    sendJson(res, 500, { ok: false, error: (e && e.message) || String(e) })
+  }
+})
+
+server.listen(PORT, () => {
+  console.log(`🛰️ 狼人杀飞书同步桥接已启动: http://0.0.0.0:${PORT}`)
+  console.log(`   表格: ${ENV.SPREADSHEET_TOKEN}`)
+})

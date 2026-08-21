@@ -8,6 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "server": "bun run server/index.ts",
+    "sync-members": "bun run scripts/sync-members.ts",
+    "gen-voices": "bun run scripts/gen-voices.ts",
     "test": "bun test"
   },
   "dependencies": {
@@ -15,10 +17,12 @@
     "@larksuite/cli": "^1.0.73",
     "ant-design-vue": "^4.2.6",
     "hono": "^4.4.0",
+    "sortablejs": "^1.15.7",
     "vue": "^3.4.21"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
+    "@types/sortablejs": "^1.15.9",
     "@vitejs/plugin-vue": "^5.0.0",
     "concurrently": "^8.2.2",
     "typescript": "^5.4.0",

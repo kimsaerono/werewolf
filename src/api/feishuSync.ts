@@ -1,0 +1,227 @@
+/** 飞书表格同步（本地桥接方案）
+ * 法官电脑浏览器 → H5 → fetch 本地桥接(localhost:3457) → lark-cli → 飞书表格
+ * - dev 环境走 vite 代理 `/api` → localhost:3457
+ * - 生产环境（GitHub Pages）可配 VITE_SYNC_URL=http://localhost:3457 让本机浏览器可用
+ */
+import { isWolfRole, GOD_LIST, decorateLog, cleanLogLine } from "@/game/logic"
+import type { GameRecord } from "@/composables/useGame"
+
+// dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
+const SYNC_URL = (import.meta.env.VITE_SYNC_URL as string | undefined) || ""
+const SYNC_ENABLED = import.meta.env.DEV || !!SYNC_URL
+
+export { SYNC_ENABLED }
+
+/** 同步口令存储键 */
+const PASSWORD_KEY = "werewolf_sync_password"
+/** 运行时口令：不再内置到 bundle，由法官在设置里输入并持久化到 localStorage（所有同步入口共用） */
+export function getSyncPassword(): string {
+  try {
+    return localStorage.getItem(PASSWORD_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+export function setSyncPassword(v: string): void {
+  try {
+    localStorage.setItem(PASSWORD_KEY, v)
+  } catch {
+    /* ignore */
+  }
+}
+
+export interface SyncPlayerRow {
+  no: number
+  name: string
+  role: string
+  camp: string
+  win: boolean
+  base: number
+  skill: number
+  vote: number
+}
+
+export interface SyncPayload {
+  gameId: string
+  date: string
+  board: string
+  winCamp: string
+  players: SyncPlayerRow[]
+  /** 法官：只计积分、不计场次与胜率 */
+  judge: { name: string; score: number } | null
+  /** ===== 复盘卡片详情字段（旧版部署端会忽略） ===== */
+  /** 胜负文案，如"狼人胜利" */
+  winner: string
+  /** 胜负原因，如"屠边" */
+  reason: string
+  /** 最终板子角色组成，如"狼人×3 预言家×1…" */
+  boardFinal: string
+  /** 法官累计分 */
+  judgeScore: number
+  /** MVP / SVP / 背锅侠（可为空） */
+  mvp: string
+  svp: string
+  beiguo: string
+  /** 已清洗+装饰的对局日志（玩家名→号码(身份)），服务端逐行写入复盘卡片 */
+  logLines: string[]
+}
+
+/** 计算单个玩家的阵营与胜负、拆基础分/技能分（投票分已移除恒为 0） */
+export function buildSyncPayload(record: GameRecord): SyncPayload {
+  const winWolf = record.winner.includes("狼人")
+  const winThird = record.winner.includes("第三方")
+  // 日志清洗（去时间前缀）+ 装饰（玩家名→号码(身份)），与 App 内"复制本局详情"一致
+  const logLines = (record.log || []).map((l) => decorateLog({ players: record.players } as never, cleanLogLine(l)))
+  return {
+    gameId: record.title,
+    date: record.time,
+    board: record.board,
+    winCamp: winWolf ? "wolf" : winThird ? "third" : "good",
+    judge: record.judge ? { name: record.judge, score: 0.5 } : null,
+    winner: record.winner,
+    reason: record.reason,
+    boardFinal: record.boardFinal || "",
+    judgeScore: record.judgeScore || 0,
+    mvp: record.mvp || "",
+    svp: record.svp || "",
+    beiguo: record.beiguo || "",
+    logLines,
+    players: record.players.map((p) => {
+      const wolf = isWolfRole(p.role)
+      const god = GOD_LIST.includes(p.role)
+      const camp = wolf ? "狼人" : god ? "神职" : p.role === "平民" ? "平民" : "第三方"
+      // 第三方胜：丘比特 + 情侣（含人狼恋中的狼恋人/好人恋人）都算胜；否则按阵营胜负
+      const thirdWin = winThird && (p.role === "丘比特" || (record.lovers || []).includes(p.name))
+      const win = thirdWin ? true : winThird ? false : wolf ? winWolf : !winWolf
+      const detail = p.scoreDetail || []
+      let base = 0
+      let skill = 0
+      for (const d of detail) {
+        const num = Number(d.match(/([+-]?\d+(?:\.\d+)?)/)?.[1] ?? 0)
+        if (/胜利|胜利\+/.test(d)) base += num
+        else skill += num
+      }
+      if (base === 0 && detail.length === 0) {
+        if (win) base = wolf ? 3 : god ? 3 : p.role === "平民" ? 2 : 3
+      }
+      // 兜底：本轮分非 0 且明细未完整拆出时，以本轮分(scoreRound)为准，保证正/负分都正确累计/扣减
+      const total = Math.round((base + skill) * 10) / 10
+      const round = Math.round((p.scoreRound || 0) * 10) / 10
+      if (round !== 0 && total !== round) {
+        skill = Math.round((skill + (round - total)) * 10) / 10
+      }
+      return {
+        no: p.no,
+        name: p.name,
+        role: p.role,
+        camp,
+        win,
+        base: Math.round(base * 10) / 10,
+        skill: Math.round(skill * 10) / 10,
+        vote: 0,
+      }
+    }),
+  }
+}
+
+/** 部署端：/api/sync + x-access-password 口令；本地桥接(dev)：/api/sync-feishu（无口令） */
+function syncEndpoint(): string {
+  return SYNC_URL ? `${SYNC_URL}/api/sync` : "/api/sync-feishu"
+}
+function syncHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const pw = getSyncPassword()
+  if (SYNC_URL && pw) headers["x-access-password"] = pw
+  return headers
+}
+
+/** 把本局复盘 + 积分同步到飞书（返回错误信息，成功返回 null）；gameId 可覆盖为按天编号 */
+export async function syncGameToFeishu(record: GameRecord, gameId?: string): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const payload = buildSyncPayload(record)
+  if (gameId) payload.gameId = gameId
+  try {
+    const res = await fetch(syncEndpoint(), {
+      method: "POST",
+      headers: syncHeaders(),
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const t = await res.text()
+      return `同步失败(${res.status})：${t.slice(0, 120)}`
+    }
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (!data.ok) return data.error || "同步失败"
+    return null
+  } catch (e) {
+    return `同步请求异常：${(e as Error).message}（请确认本地桥接已启动：bun run server）`
+  }
+}
+
+/** 测试飞书同步连接（只校验口令与可达性，不改动任何表格数据）；成功返回 null */
+export async function testSyncConnection(): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const endpoint = SYNC_URL ? `${SYNC_URL}/api/sync-test` : "/api/sync-test"
+  try {
+    const res = await fetch(endpoint, { method: "POST", headers: syncHeaders(), body: "{}" })
+    if (res.status === 401) return "鉴权失败：同步口令不正确（请先在同步设置里填写口令）"
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (data.ok) return null
+    return data.error || `同步测试失败(${res.status})`
+  } catch (e) {
+    return `无法连接同步服务：${(e as Error).message}`
+  }
+}
+
+/** 测试同步：模拟一个新玩家同步（排名表积分列末尾追加一行测试玩家、复盘表追加一条记录），便于直观验证效果 */
+export async function simulateSyncNewPlayer(): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const d = new Date()
+  const tag = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}${String(d.getSeconds()).padStart(2, "0")}`
+  const payload: SyncPayload = {
+    gameId: `测试同步${tag}`,
+    date: d.toLocaleString(),
+    board: "-",
+    winCamp: "good",
+    judge: null,
+    winner: "好人胜利",
+    reason: "测试",
+    boardFinal: "",
+    judgeScore: 0,
+    mvp: "",
+    svp: "",
+    beiguo: "",
+    logLines: ["✅本局开始：测试同步"],
+    players: [{ no: 1, name: `测试玩家${tag}`, role: "平民", camp: "平民", win: true, base: 1, skill: 0, vote: 0 }],
+  }
+  try {
+    const res = await fetch(syncEndpoint(), {
+      method: "POST",
+      headers: syncHeaders(),
+      body: JSON.stringify(payload),
+    })
+    if (res.status === 401) return "鉴权失败：同步口令不正确（请先在同步设置里填写口令）"
+    if (!res.ok) {
+      const t = await res.text()
+      return `同步失败(${res.status})：${t.slice(0, 120)}`
+    }
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (!data.ok) return data.error || "同步失败"
+    return null
+  } catch (e) {
+    return `同步请求异常：${(e as Error).message}（请确认同步服务可达）`
+  }
+}
+
+/** 拉取积分排名（预留） */
+export async function fetchRanking(): Promise<unknown[]> {
+  if (!SYNC_ENABLED) return []
+  try {
+    const res = await fetch(`${SYNC_URL || ""}/api/sync-feishu`)
+    if (!res.ok) return []
+    const data = (await res.json()) as { rows?: unknown[] }
+    return data.rows || []
+  } catch {
+    return []
+  }
+}

@@ -2,28 +2,51 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { getWerewolfGroupMembers } from "@/api/feishu"
+import SeatBoard from "@/components/SeatBoard.vue"
 import type { Game } from "@/types"
 
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, playerCount, maxNeed, actions, refs, activeTab, judgeScore } = props.game
+const { state, playerCount, maxNeed, actions, refs, activeTab } = props.game
 
 const loading = ref(false)
 const loadStatus = ref("")
 const memberCache = ref<string[]>([])
+/** 手输成员（不在群里的名字），同时出现在法官下拉与玩家池 */
+const customMembers = ref<string[]>([])
 
 const judgePick = ref("")
 const customJudge = ref("")
+const customPlayer = ref("")
 
 const isAdded = (name: string) => state.players.some((p) => p.name === name)
 const isJudge = (name: string) => state.judge === name
 
+/** 全部可选成员：群成员 + 手输成员（去重、法官已除外逻辑在下拉 disabled 处理） */
+const allMembers = computed(() => {
+  const set = new Set<string>([...memberCache.value, ...customMembers.value])
+  return [...set]
+})
+
 /** 名字下拉：不在群（手输名字）放第一项；当前法官选项置灰不可重复选 */
 const nameOptions = computed(() => [
   { value: "__OTHER__", label: "🙋 不在群（手输名字）" },
-  ...memberCache.value.map((n) => ({ value: n, label: n, disabled: n === state.judge })),
+  ...allMembers.value.map((n) => ({ value: n, label: n, disabled: n === state.judge })),
 ])
+
+/** 成员池：法官与玩家互斥，法官不出现在参与玩家选择池中 */
+const poolMembers = computed(() => allMembers.value.filter((n) => n !== state.judge))
+
+/** 手输玩家：加入成员池（同时用于法官下拉与玩家选择） */
+function addCustomPlayer() {
+  const name = customPlayer.value.trim()
+  if (!name) return message.error("请输入玩家名字")
+  if (customMembers.value.includes(name)) return message.warning(`${name} 已在成员列表中`)
+  customMembers.value.push(name)
+  customPlayer.value = ""
+  message.success(`已添加手输成员：${name}（可在上方点选为玩家，或选为法官）`)
+}
 
 function onJudgeSelect(v: string) {
   if (v && v !== "__OTHER__") {
@@ -58,7 +81,7 @@ const boardRoles = () => refs.getBoardRoles(state)
 // 玩家人数与板子人数一致时提示
 const enough = computed(() => playerCount.value > 0 && playerCount.value === boardRoles().length)
 watch(enough, (v, old) => {
-  if (v && !old) message.success(`玩家人数已齐（${playerCount.value} 人），可进入「分配角色」`)
+  if (v && !old) message.success(`玩家人数已齐（${playerCount.value} 人），可进入「对局操作」`)
 })
 
 const roleGroups = computed(() => {
@@ -101,10 +124,6 @@ function resetBoardRoles() {
   message.info("已重置为默认板子配置")
 }
 
-function resetGame() {
-  if (confirm("全部重置：玩家、角色、分数、日志、复盘全部清空？")) actions.resetWholeGame()
-}
-
 async function loadMembers() {
   loading.value = true
   loadStatus.value = ""
@@ -118,22 +137,32 @@ async function loadMembers() {
     loading.value = false
   }
 }
+
+/** 当前板子实际角色组成（含手动加的角色）：角色×数量 */
+const boardSummaryText = computed(() => {
+  const roles = refs.getBoardRoles(state)
+  const counts: Record<string, number> = {}
+  roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
+  return Object.entries(counts)
+    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${role}×${n}`)
+    .join(" ")
+})
 onMounted(loadMembers)
 
-function addAllPool() {
-  const before = playerCount.value
-  const added = actions.importPlayers(memberCache.value.filter((n) => !isAdded(n) && !isJudge(n)))
-  message.success(`已添加全部 ${added} 人（原有 ${before} 人）`)
-}
 function confirmPlayers() {
   if (state.players.length === 0) return message.error("还没有玩家参与")
   const need = refs.getBoardRoles(state).length
   if (state.players.length !== need) {
     return message.error(`板子最终 ${need} 人，当前已选 ${state.players.length} 人，一致后才能进入下一步`)
   }
+  confirmModal.value = true
+}
+const confirmModal = ref(false)
+function doConfirmPlayers() {
+  confirmModal.value = false
   actions.confirmPlayers()
-  message.success(`已确认 ${state.players.length} 名玩家参与，自动进入「分配角色」`)
-  activeTab.value = "assign"
+  message.success(`已确认 ${state.players.length} 名玩家参与，进入「对局操作」发牌开局`)
+  activeTab.value = "game"
 }
 
 // ===== 成员多选：tap 点选 / 长按拖动连选 / 拖动滚动 =====
@@ -226,7 +255,32 @@ function onPoolPointerEnd(e: PointerEvent) {
 
 <template>
   <div class="panel setup-panel">
-    <a-card title="🎲 板子与法官" :bordered="false">
+    <a-card :bordered="false">
+      <template #title>
+        <span class="judge-title-row">
+          🎲 板子与法官
+          <a-select
+            v-model:value="judgePick"
+            style="min-width: 160px"
+            placeholder="选择法官（选中即确认）"
+            :options="nameOptions"
+            allow-clear
+            @change="onJudgeSelect"
+            @clear="onJudgeClear"
+          />
+          <a-input
+            v-if="judgePick === '__OTHER__'"
+            v-model:value="customJudge"
+            placeholder="输入法官名字，回车确认"
+            style="max-width: 180px"
+            @press-enter="onJudgeCustom"
+            @blur="onJudgeCustom"
+          />
+        </span>
+      </template>
+      <div class="mode-select-row">
+        <a-button size="small" @click="actions.setModeChosen(false)">↩️ 切换对局模式</a-button>
+      </div>
       <div class="row" style="margin-top: 0">
         <span class="field-label">板子</span>
         <a-select style="flex: 1; min-width: 220px" :value="state.board" @change="actions.setBoard($event)">
@@ -235,11 +289,19 @@ function onPoolPointerEnd(e: PointerEvent) {
           </a-select-option>
         </a-select>
       </div>
+      <div class="row">
+        <span class="field-label">胜负</span>
+        <a-radio-group :value="state.winMode" @change="(e: any) => actions.setWinMode(e.target.value)">
+          <a-radio value="edge">屠边（神或民任一全灭狼胜，默认）</a-radio>
+          <a-radio value="city">屠城（神与民全灭狼胜）</a-radio>
+        </a-radio-group>
+      </div>
 
       <a-divider style="margin: 12px 0 8px">角色组合（{{ boardRoles().length }} 人，可微调）</a-divider>
       <div class="role-editor">
         <div v-for="g in roleGroups" :key="g.role" class="role-chip">
-          <span class="role-avatar">{{ refs.ROLE_EMOJI[g.role] || "🎭" }}</span>
+          <img v-if="refs.roleAvatar(g.role)" class="role-avatar-img" :src="refs.roleAvatar(g.role)" :alt="g.role" />
+          <span v-else class="role-avatar">{{ refs.ROLE_EMOJI[g.role] || "🎭" }}</span>
           <span class="role-chip-name">{{ g.role }}</span>
           <span class="role-chip-count">×{{ g.count }}</span>
           <a-button size="small" type="primary" shape="circle" :disabled="!g.canAdd" class="role-btn" @click="addRole(g.role)">+</a-button>
@@ -249,27 +311,6 @@ function onPoolPointerEnd(e: PointerEvent) {
           <a-button size="small" type="dashed" @click="addRoleModal = true">＋ 加角色</a-button>
           <a-button size="small" @click="resetBoardRoles">重置默认</a-button>
         </a-space>
-      </div>
-      <a-divider style="margin: 12px 0" />
-      <div class="row">
-        <span class="field-label">法官</span>
-        <a-select
-          v-model:value="judgePick"
-          style="flex: 1; min-width: 160px"
-          placeholder="选择法官（选中即确认）"
-          :options="nameOptions"
-          allow-clear
-          @change="onJudgeSelect"
-          @clear="onJudgeClear"
-        />
-        <a-input
-          v-if="judgePick === '__OTHER__'"
-          v-model:value="customJudge"
-          placeholder="输入法官名字，回车/失焦确认"
-          style="max-width: 180px"
-          @change="onJudgeCustom"
-        />
-        <a-tag v-if="state.judge" color="volcano" closable @close.prevent="onJudgeClear">⚖️ {{ state.judge }}（累计 {{ judgeScore }} 分）</a-tag>
       </div>
     </a-card>
 
@@ -287,9 +328,6 @@ function onPoolPointerEnd(e: PointerEvent) {
         <a-tag v-else color="success" style="margin-left: 8px">✓ 人数一致</a-tag>
       </template>
       <div class="row" style="margin-top: 0">
-        <a-button size="small" @click="addAllPool">全选加入</a-button>
-        <a-button size="small" :loading="loading" @click="loadMembers">重新拉取群成员</a-button>
-        <a-button danger size="small" @click="resetGame">整局重置</a-button>
         <span v-if="loadStatus" class="small">{{ loadStatus }}</span>
       </div>
       <div
@@ -302,14 +340,14 @@ function onPoolPointerEnd(e: PointerEvent) {
         @pointercancel="onPoolPointerEnd"
       >
         <a-row :gutter="[8, 4]">
-          <a-col v-for="n in memberCache" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
+          <a-col v-for="n in poolMembers" :key="n" :xs="12" :sm="8" :md="6" :lg="4" :xl="3">
             <div
               class="member-item"
               :class="{ added: isAdded(n), judge: isJudge(n) }"
               :data-member-name="n"
             >
               <span class="member-check">{{ isAdded(n) ? "✓" : isJudge(n) ? "⚖️" : "" }}</span>
-              {{ n }}<span v-if="isJudge(n)" class="small">（法官）</span>
+              <span class="member-name" :class="{ judge: isJudge(n) }">{{ n }}</span>
             </div>
           </a-col>
         </a-row>
@@ -317,12 +355,16 @@ function onPoolPointerEnd(e: PointerEvent) {
       <p class="small" style="margin: 6px 0">
         轻点 = 加入/移出；长按拖动 = 批量连选；滑动 = 滚动
       </p>
-      <a-divider style="margin: 12px 0">已参与玩家</a-divider>
-      <a-space :wrap="true">
-        <a-tag v-for="p in state.players" :key="p.name" color="green">
-          {{ refs.playerLabel(p) }}
-        </a-tag>
-      </a-space>
+      <a-divider style="margin: 12px 0">已参与玩家（拖动排序）</a-divider>
+      <SeatBoard
+        v-if="state.players.length"
+        :players="state.players"
+        floating
+        draggable
+        :judge="state.judge"
+        @reorder="(names: string[]) => actions.reorderPlayers(names)"
+      />
+      <a-empty v-if="!state.players.length" :image-simple="true" description="暂无玩家" />
       <div class="row" style="margin-top: 12px">
         <a-button type="primary" size="large" @click="confirmPlayers">
           ✅ 确认参与玩家（{{ state.players.length }} 人）
@@ -331,11 +373,39 @@ function onPoolPointerEnd(e: PointerEvent) {
       </div>
     </a-card>
 
+    <!-- 确认参与：最后核对法官 / 板子 / 模式，防止误操作 -->
+    <a-modal v-model:open="confirmModal" title="确认参与玩家？" :footer="null" width="min(480px, 94vw)" :mask-closable="false" centered>
+      <div class="confirm-grid">
+        <div class="confirm-item">
+          <span class="confirm-label">对局模式</span>
+          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">法官</span>
+          <b>{{ state.judge || "未设置（无法官加分）" }}</b>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">板子</span>
+          <b>{{ boardSummaryText }}</b>
+        </div>
+        <div class="confirm-item">
+          <span class="confirm-label">参与玩家</span>
+          <b>{{ state.players.length }} 人</b>
+        </div>
+      </div>
+      <div class="row" style="margin-top: 16px">
+        <a-button size="large" block @click="confirmModal = false">返回修改</a-button>
+        <a-button type="primary" size="large" danger block @click="doConfirmPlayers">✅ 确认，进入对局</a-button>
+      </div>
+    </a-modal>
+
     <a-modal v-model:open="addRoleModal" title="＋ 加角色（选择剩余角色）" :footer="null" width="360px">
       <p class="small">已有角色用上方「+ / −」调整数量</p>
       <div v-if="remainingRoles.length" class="role-remaining">
         <div v-for="r in remainingRoles" :key="r" class="role-remaining-item" @click="addRole(r)">
-          <span>{{ refs.ROLE_EMOJI[r] || "🎭" }} {{ r }}</span>
+          <img v-if="refs.roleAvatar(r)" class="role-avatar-img" :src="refs.roleAvatar(r)" :alt="r" />
+          <span v-else>{{ refs.ROLE_EMOJI[r] || "🎭" }}</span>
+          <span>{{ r }}</span>
           <a-tag color="success">添加</a-tag>
         </div>
       </div>
@@ -345,9 +415,39 @@ function onPoolPointerEnd(e: PointerEvent) {
 </template>
 
 <style scoped>
+.judge-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .field-label {
   color: #888;
   font-size: 13px;
   white-space: nowrap;
+}
+.mode-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.confirm-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.confirm-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.confirm-label {
+  width: 72px;
+  flex: none;
+  color: #999;
+  font-size: 13px;
 }
 </style>

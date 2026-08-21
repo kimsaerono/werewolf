@@ -1,12 +1,30 @@
 <script setup lang="ts">
 import { App as AntApp } from "ant-design-vue"
-import { buildCSV } from "@/game/logic"
+import { decorateLog, cleanLogLine } from "@/game/logic"
 import type { Game } from "@/types"
+import type { GameRecord } from "@/composables/useGame"
 
-const { message } = AntApp.useApp()
+const { message, modal } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, actions, history, sessionNo } = props.game
+const { historyByDay, actions, refs, recordTxtOf, syncStatus, isSyncing, state } = props.game
+
+/** 历史记录日志展示：去时间 + 玩家名转 号码(身份) */
+function fmtLog(h: GameRecord, l: string, i: number): string {
+  return `${i + 1}. ${decorateLog({ players: h.players } as never, cleanLogLine(l))}`
+}
+function timeHM(t: string): string {
+  const s = String(t || "").split(" ")[1] || ""
+  return s.slice(0, 5)
+}
+
+/** 历史对局玩家是否属于人狼恋第三方，返回标注（第三阵营·原角色） */
+function thirdLabel(h: GameRecord, p: { name: string; role: string }): string {
+  const chain = refs.getChainType({ lovers: h.lovers, players: h.players } as never)
+  if (chain !== "WG") return ""
+  if (h.lovers.includes(p.name) || p.role === "丘比特") return `第三阵营·${p.role}`
+  return ""
+}
 
 function download(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime })
@@ -17,86 +35,136 @@ function download(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(a.href)
 }
 
-function gen() {
-  actions.buildRecord()
-  message.success("已生成本局复盘文本")
+/** 复制本局详情（含日志） */
+async function copyGame(h: GameRecord) {
+  try {
+    await navigator.clipboard.writeText(recordTxtOf(h))
+    message.success("已复制本局详情到剪贴板")
+  } catch {
+    message.error("复制失败，请手动复制")
+  }
 }
-function exportCSV() {
-  download(`狼人杀对局_${state.board}.csv`, buildCSV(state), "text/csv;charset=utf-8")
-  message.success("已导出CSV")
+
+/** 导出当天 TXT */
+function exportDayTxt(day: { label: string; games: GameRecord[] }) {
+  const all = day.games.map((h) => recordTxtOf(h)).join("")
+  download(`狼人杀_${day.label}.txt`, "\uFEFF" + all, "text/plain;charset=utf-8")
+  message.success(`已导出 ${day.label} 共 ${day.games.length} 局TXT`)
 }
-function exportTxt() {
-  download("狼人杀复盘.txt", state.recordText, "text/plain")
-  message.success("已导出本局复盘TXT")
+
+/** 单场同步 */
+async function syncOne(h: GameRecord) {
+  const err = await actions.syncRecord(h)
+  if (err) message.error(err)
 }
-function clearRec() {
-  actions.clearRecord()
+
+/** 测试同步：模拟新玩家（会在飞书排名表末尾加一行测试数据） */
+async function onTestSync() {
+  const err = await actions.testSync()
+  if (err) message.error(`测试同步失败：${err}`)
+  else message.success("已模拟新玩家同步，请到飞书排名表末尾查看新增行")
 }
-function exportAll() {
-  const all = history.value
-    .map(
-      (h) =>
-        `====${h.title}====\n时间：${h.time}\n板子：${h.board}\n胜负：${h.winner}（${h.reason}）\n法官：${h.judge || "-"}（累计 ${h.judgeScore}）\n` +
-        h.players
-          .map((p) => `玩家 ${p.no}.${p.name} 身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}`)
-          .join("\n") +
-        `\n\n----对局日志----\n${h.log.join("\n")}\n\n`,
-    )
-    .join("")
-  download("狼人杀历史复盘.txt", all, "text/plain")
-  message.success(`已导出全部 ${history.value.length} 局复盘`)
+
+/** 清空所有历史数据（二次确认） */
+function onClearAll() {
+  modal.confirm({
+    title: "🗑️ 清空所有历史数据？",
+    content: "将清空：历史对局记录、本局玩家/角色/积分/日志、法官累计分（保留板子/法官/胜负模式）。此操作不可撤销！",
+    okText: "确认清空",
+    okButtonProps: { danger: true },
+    cancelText: "取消",
+    onOk() {
+      actions.clearAllData()
+      message.success("已清空所有历史数据")
+    },
+  })
 }
 </script>
 
 <template>
   <div class="panel">
-    <a-card title="📋 本局复盘" :bordered="false">
-      <a-textarea
-        style="margin-bottom: 10px"
-        :value="state.recordText"
-        :rows="8"
-        readonly
-        placeholder="点击下方「生成本局复盘」生成包含全部角色、加减分明细、对局日志的文本..."
-      />
-      <a-space :wrap="true">
-        <a-tag color="gold">{{ history.length ? `下一局：第 ${sessionNo} 局` : "当前第 1 局" }}</a-tag>
-        <a-button type="primary" size="small" @click="gen">生成本局复盘</a-button>
-        <a-button @click="exportTxt">导出本局TXT</a-button>
-        <a-button @click="exportCSV">导出本局CSV</a-button>
-        <a-button danger size="small" @click="clearRec">清空本局文本</a-button>
-      </a-space>
-    </a-card>
-
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
-      <a-empty v-if="!history.length" description="暂无已结束的对局" :image-simple="true" />
-      <a-collapse v-else accordion>
-        <a-collapse-panel
-          v-for="(h, i) in history"
-          :key="i"
-          :header="`${h.title} ｜ ${h.winner}`"
-        >
-          <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.board }}</p>
-          <p class="small">原因：{{ h.reason }} ｜ 法官：{{ h.judge || "-" }}（累计 {{ h.judgeScore }} 分）</p>
-          <a-divider style="margin: 8px 0">积分</a-divider>
-          <a-space :wrap="true">
-            <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'">
-              {{ p.no }}.{{ p.name }}({{ p.role }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
-            </a-tag>
-          </a-space>
-          <a-divider style="margin: 8px 0">对局日志</a-divider>
-          <div class="logbox">
-            <div v-for="(l, j) in h.log" :key="j">{{ l }}</div>
-          </div>
-        </a-collapse-panel>
-      </a-collapse>
-      <a-button v-if="history.length" style="margin-top: 12px" @click="exportAll">
-        导出全部历史复盘TXT
-      </a-button>
+      <template #extra>
+        <a-space :wrap="true">
+          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
+          <a-button v-if="!state.simMode" size="small" @click="onTestSync">🧪 测试同步（模拟新玩家）</a-button>
+          <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
+        </a-space>
+      </template>
+
+      <a-empty v-if="!historyByDay.length" description="暂无已结束的对局" :image-simple="true" />
+      <div v-else v-for="(day, di) in historyByDay" :key="day.key" class="day-group">
+        <div class="day-header">
+          <span class="day-title">📅 {{ day.label }}（{{ day.games.length }}局）</span>
+          <a-button size="small" @click="exportDayTxt(day)">📄 导出当天TXT</a-button>
+        </div>
+        <a-collapse accordion>
+          <a-collapse-panel v-for="(h, i) in day.games" :key="`${di}-${i}`">
+            <template #header>
+              <span class="game-line">
+                <span class="game-title">{{ `第${i + 1}局 · ${h.boardFinal || refs.boardShortName(h.board)} ｜ ${h.winner}` }}</span>
+                <template v-if="!state.simMode">
+                  <span v-if="h.synced" class="game-sync synced">✅已同步</span>
+                  <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
+                </template>
+              </span>
+            </template>
+            <p class="small" style="margin-top: 0">时间：{{ h.time }} ｜ 板子：{{ h.boardFinal || h.board }}</p>
+            <p class="small">原因：{{ h.reason }} ｜ 法官：{{ h.judge || "-" }}</p>
+            <div v-if="h.mvp || h.svp || h.beiguo" class="small" style="color: #ffd666">
+              🏆 {{ [h.mvp ? `MVP：${h.mvp}` : "", h.svp ? `SVP：${h.svp}` : "", h.beiguo ? `背锅侠：${h.beiguo}` : ""].filter(Boolean).join(" ｜ ") }}
+            </div>
+            <a-divider style="margin: 8px 0">积分</a-divider>
+            <a-space :wrap="true">
+              <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'">
+                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) || p.role }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
+              </a-tag>
+            </a-space>
+            <a-divider style="margin: 8px 0">对局日志</a-divider>
+            <div class="logbox">
+              <div v-for="(l, j) in h.log" :key="j">{{ fmtLog(h, l, j) }}</div>
+            </div>
+            <a-button size="small" style="margin-top: 12px" @click="copyGame(h)">📋 复制本局详情</a-button>
+          </a-collapse-panel>
+        </a-collapse>
+      </div>
     </a-card>
   </div>
 </template>
 
 <style scoped>
+.day-group {
+  margin-bottom: 14px;
+}
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.day-title {
+  font-weight: 700;
+  font-size: 14px;
+  color: #eee;
+}
+.sync-status {
+  color: #ffd666;
+  margin-left: 6px;
+}
+.game-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.game-title {
+  font-weight: 600;
+}
+.game-sync {
+  font-size: 12px;
+}
+.game-sync.synced {
+  color: #2ed573;
+}
 .logbox {
   max-height: 200px;
   overflow-y: auto;
