@@ -149,7 +149,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 .fp-overlay {
   position: fixed;
   inset: 0;
-  z-index: 3100;
+  z-index: 99999;
   background: rgba(8, 11, 20, 0.97);
   display: flex;
   flex-direction: column;
