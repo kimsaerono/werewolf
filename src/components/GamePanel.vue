@@ -1646,7 +1646,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </a-collapse>
 
       <!-- 语音配置抽屉（悬浮按钮打开） -->
-      <a-drawer v-model:open="voiceDrawer" title="🔊 语音播报配置" placement="right" width="460">
+      <a-drawer v-model:open="voiceDrawer" title="🔊 语音播报配置" placement="right" :width="460">
         <div class="voice-sec-title">🎤 语音风格</div>
         <a-select
           :value="getVoiceStyle()"

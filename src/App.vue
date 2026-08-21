@@ -585,4 +585,10 @@ body {
     gap: 8px;
   }
 }
+/* 抽屉响应式：小屏占满宽度 */
+@media (max-width: 520px) {
+  .ant-drawer-content-wrapper {
+    width: 100vw !important;
+  }
+}
 </style>
