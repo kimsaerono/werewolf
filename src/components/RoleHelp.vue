@@ -168,6 +168,11 @@ const shownRoles = computed(() => {
 .rh-fab {
   width: 48px;
   height: 48px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 .rh-panel {

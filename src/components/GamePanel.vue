@@ -1679,7 +1679,7 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         </a-row>
       </a-drawer>
 
-      <!-- 悬浮按钮：自爆 + 警徽流 + 警徽移交 + 骑士决斗 + 回退一步 + 重播当前步 + 语音配置 -->
+      <!-- 悬浮按钮（右侧）：技能类操作 -->
       <div class="floating-actions">
         <!-- 狼人自爆：警上(竞选警长)与白天发言期可自爆，投票/退水期禁自爆 -->
         <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）">
@@ -1691,16 +1691,18 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <a-tooltip v-if="hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）">
           <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️</a-button>
         </a-tooltip>
-        <a-tooltip title="回退上一步">
-          <a-button class="fab" type="primary" danger shape="circle" size="large" :disabled="!canUndo" @click="doUndo">↩️</a-button>
+        <a-tooltip v-if="canUndo" title="回退上一步">
+          <a-button class="fab" type="primary" danger shape="circle" size="large" @click="doUndo">↩️</a-button>
         </a-tooltip>
         <a-tooltip title="重复播报当前步（防止对应玩家没睁眼）">
           <a-button class="fab" type="primary" shape="circle" size="large" @click="playStepVoice">🔊</a-button>
         </a-tooltip>
-        <a-tooltip title="语音播报配置">
-          <a-button class="fab" type="default" shape="circle" size="large" @click="voiceDrawer = true">⚙️</a-button>
-        </a-tooltip>
       </div>
+
+      <!-- 悬浮按钮（左侧）：配置类操作 -->
+      <a-tooltip title="语音播报配置">
+        <a-button class="fab fab-settings" type="default" shape="circle" size="large" @click="voiceDrawer = true">⚙️</a-button>
+      </a-tooltip>
 
       <!-- 弹窗：警徽设置（移交警徽） -->
       <a-modal v-model:open="jinghuiModal" title="👑 警徽设置" :footer="null" width="400px" :mask-closable="false">
@@ -2179,10 +2181,29 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   object-fit: contain;
   pointer-events: none;
 }
+/* 语音配置：左侧配置区，紧挨重置按钮上方 */
+.fab-settings {
+  position: fixed;
+  left: 16px;
+  bottom: 148px;
+  z-index: 600;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
 @media (max-width: 720px) {
   .floating-actions {
     right: 10px;
     bottom: 14px;
+  }
+  .fab-settings {
+    left: 10px;
+    bottom: 148px;
   }
 }
 

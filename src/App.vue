@@ -326,11 +326,16 @@ body {
 /* 整局重置悬浮按钮：左下，位于角色玩法悬浮钮上方、钥匙下方 */
 .reset-fab {
   position: fixed;
-  left: 16px;
+  left: 11px;
   bottom: 84px;
   z-index: 600;
   width: 48px;
   height: 48px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 77, 79, 0.6);
 }

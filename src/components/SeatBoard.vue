@@ -133,6 +133,35 @@ function vibrate(ms: number) {
     }
   }
 }
+
+/** 角色 → 座位卡片背景色 */
+const ROLE_BG: Record<string, string> = {
+  白痴: "#fff",
+  白狼王: "#F7F7F7",
+  狼人: "#2C2C34",
+  狼王: "#222228",
+  猎人: "#B97846",
+  女巫: "#D8B8E4",
+  平民: "#FFC860",
+  骑士: "#B2DD98",
+  守卫: "#94B8E0",
+  预言家: "linear-gradient(135deg, #4088E8, #B868E0)",
+  丘比特: "#F7B8D8",
+}
+
+/** 深色背景的文字需要改成浅色 */
+const DARK_BG = new Set(["狼人", "狼王"])
+
+function cardBg(p: Player): Record<string, string> | undefined {
+  if (!p.alive || !p.role || !ROLE_BG[p.role]) return undefined
+  const bg = ROLE_BG[p.role]
+  const style: Record<string, string> = { background: bg }
+  if (DARK_BG.has(p.role)) {
+    style.color = "#f0f0f0"
+    style.borderColor = "rgba(255,255,255,0.15)"
+  }
+  return style
+}
 </script>
 
 <template>
@@ -146,6 +175,7 @@ function vibrate(ms: number) {
             class="seat-card"
             :data-name="p.name"
             :class="{ dead: !p.alive }"
+            :style="cardBg(p)"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
@@ -171,6 +201,7 @@ function vibrate(ms: number) {
             class="seat-card"
             :data-name="p.name"
             :class="{ dead: !p.alive }"
+            :style="cardBg(p)"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
@@ -196,6 +227,7 @@ function vibrate(ms: number) {
           class="seat-card"
           :data-name="p.name"
           :class="{ dead: !p.alive }"
+          :style="cardBg(p)"
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
           <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />

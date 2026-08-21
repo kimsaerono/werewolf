@@ -55,10 +55,15 @@ async function onTest() {
 .sync-fab {
   position: fixed;
   left: 16px;
-  bottom: 148px;
+  bottom: 212px;
   z-index: 500;
   width: 48px;
   height: 48px;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 </style>
