@@ -1729,20 +1729,22 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </a-modal>
 
       <!-- 通用玩家选择（全屏卡片式：单选点选即确认；多选选满N个后确认） -->
-      <FullscreenPicker
-        :open="!!picker"
-        :title="picker?.title || ''"
-        :options="picker?.options || []"
-        :multi="!!picker?.multi"
-        :min="picker?.min ?? 1"
-        :max="picker?.max ?? 0"
-        :initial="picker?.initial || []"
-        :blocked-values="picker?.blockedValues || []"
-        :blocked-msg="picker?.blockedMsg || '不能选择该玩家'"
-        @confirm-single="onPickerSingle"
-        @confirm-multi="onPickerMulti"
-        @cancel="picker = null"
-      />
+      <Teleport to="body">
+        <FullscreenPicker
+          :open="!!picker"
+          :title="picker?.title || ''"
+          :options="picker?.options || []"
+          :multi="!!picker?.multi"
+          :min="picker?.min ?? 1"
+          :max="picker?.max ?? 0"
+          :initial="picker?.initial || []"
+          :blocked-values="picker?.blockedValues || []"
+          :blocked-msg="picker?.blockedMsg || '不能选择该玩家'"
+          @confirm-single="onPickerSingle"
+          @confirm-multi="onPickerMulti"
+          @cancel="picker = null"
+        />
+      </Teleport>
 
       <!-- 弹窗：警长出局，警徽去留 -->
       <a-modal v-model:open="sheriffDeathModal" title="👑 警长出局" :footer="null" width="420px" :mask-closable="false">
