@@ -164,9 +164,10 @@ app.post("/api/sync-feishu", async (c) => {
     const body = (await c.req.json()) as SyncPayload
     if (!body.players?.length) return c.json({ error: "players 不能为空" }, 400)
 
-    // 1. 追加复盘卡片块：从最后数据行的下一行开始（A 列局次保留，兼容部署端 gameId 幂等去重）
+    // 1. 追加复盘卡片块：从最后数据行的下两行开始（留一个空行作卡片间距；A 列局次保留，兼容部署端 gameId 幂等去重）
     const recordRows = await readSheet(RECORD_SHEET_ID)
-    const nextRow = lastDataRow(recordRows) + 1
+    const lastData = lastDataRow(recordRows)
+    const nextRow = lastData <= 1 ? 2 : lastData + 2
     const block = buildRecordBlock(body, nextRow)
     const appendRec = await runLark([
       "sheets",
