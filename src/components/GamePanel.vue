@@ -95,6 +95,7 @@ const jinghuiModal = ref(false)
 const jinghuiPk = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
+const rightActionsOpen = ref(true)
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35
@@ -1144,6 +1145,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   if (overlayTimer) clearTimeout(overlayTimer)
   overlayTimer = setTimeout(() => (overlay.value = null), 2200)
 }
+
+defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 </script>
 
 <template>
@@ -1680,7 +1683,9 @@ function effect(type: string, sfx?: SfxName, result?: string) {
       </a-drawer>
 
       <!-- 悬浮按钮（右侧）：技能类操作 -->
-      <div class="floating-actions">
+      <div class="floating-actions" :class="{ collapsed: !rightActionsOpen }">
+        <a-button class="fab fab-toggle" shape="circle" size="large" @click="rightActionsOpen = !rightActionsOpen">{{ rightActionsOpen ? '◀' : '▶' }}</a-button>
+        <template v-if="rightActionsOpen">
         <!-- 狼人自爆：警上(竞选警长)与白天发言期可自爆，投票/退水期禁自爆 -->
         <a-tooltip v-if="!state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）">
           <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
@@ -1697,12 +1702,8 @@ function effect(type: string, sfx?: SfxName, result?: string) {
         <a-tooltip title="重复播报当前步（防止对应玩家没睁眼）">
           <a-button class="fab" type="primary" shape="circle" size="large" @click="playStepVoice">🔊</a-button>
         </a-tooltip>
+        </template>
       </div>
-
-      <!-- 悬浮按钮（左侧）：配置类操作 -->
-      <a-tooltip title="语音播报配置">
-        <a-button class="fab fab-settings" type="default" shape="circle" size="large" @click="voiceDrawer = true">⚙️</a-button>
-      </a-tooltip>
 
       <!-- 弹窗：警徽设置（移交警徽） -->
       <a-modal v-model:open="jinghuiModal" title="👑 警徽设置" :footer="null" width="400px" :mask-closable="false">
@@ -2164,7 +2165,20 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   z-index: 500;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+}
+.floating-actions.collapsed {
+  gap: 0;
+}
+.fab-toggle {
+  background: rgba(30, 35, 50, 0.85) !important;
+  color: #ccc !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  font-size: 12px;
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px;
+  min-height: 32px;
 }
 .fab {
   width: 48px;
@@ -2181,29 +2195,10 @@ function effect(type: string, sfx?: SfxName, result?: string) {
   object-fit: contain;
   pointer-events: none;
 }
-/* 语音配置：左侧配置区，紧挨重置按钮上方 */
-.fab-settings {
-  position: fixed;
-  left: 16px;
-  bottom: 148px;
-  z-index: 600;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-}
 @media (max-width: 720px) {
   .floating-actions {
     right: 10px;
     bottom: 14px;
-  }
-  .fab-settings {
-    left: 10px;
-    bottom: 148px;
   }
 }
 

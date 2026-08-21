@@ -29,7 +29,7 @@ async function onTest() {
 
 <template>
   <a-tooltip title="同步设置（口令）" placement="right">
-    <a-button class="sync-fab" type="default" shape="circle" size="large" @click="open = true">🔑</a-button>
+    <a-button class="fab" type="default" shape="circle" size="large" @click="open = true">🔑</a-button>
   </a-tooltip>
 
   <a-drawer v-model:open="open" title="🔑 同步设置" placement="right" width="400">
@@ -52,11 +52,7 @@ async function onTest() {
 </template>
 
 <style scoped>
-.sync-fab {
-  position: fixed;
-  left: 16px;
-  bottom: 212px;
-  z-index: 500;
+.fab {
   width: 48px;
   height: 48px;
   padding: 0;

@@ -64,6 +64,8 @@ const boardNeed = computed(() => refs.getBoardRoles(state).length)
 const countMatch = computed(() => state.players.length === boardNeed.value && state.players.length > 0)
 const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
+const gamePanelRef = ref<InstanceType<typeof GamePanel> | null>(null)
+const leftActionsOpen = ref(true)
 
 function onTabChange(key: string) {
   if (key === "game" && !gameReady.value) {
@@ -101,7 +103,7 @@ function onTabChange(key: string) {
 
       <div class="page" :class="{ 'page-full': activeTab === 'score' || activeTab === 'record' }">
         <BoardSignupPanel v-show="activeTab === 'board'" :game="game" />
-        <GamePanel v-show="activeTab === 'game'" :game="game" />
+        <GamePanel v-show="activeTab === 'game'" ref="gamePanelRef" :game="game" />
         <ScorePanel v-show="activeTab === 'score'" :game="game" />
         <RecordPanel v-show="activeTab === 'record'" :game="game" />
       </div>
@@ -110,13 +112,19 @@ function onTabChange(key: string) {
       <!-- 左下悬浮：角色玩法 + 计分速查（所有 tab 可见） -->
       <RoleHelp :roles="refs.getBoardRoles(state)" />
 
-      <!-- 左下悬浮：整局重置 -->
-      <a-tooltip title="整局重置" placement="right">
-        <a-button class="reset-fab" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
-      </a-tooltip>
-
-      <!-- 左下悬浮：同步口令设置（真实模式才需要） -->
-      <SyncSettings v-if="!state.simMode" />
+      <!-- 左下悬浮：配置类操作（展开/收起） -->
+      <div class="left-actions" :class="{ collapsed: !leftActionsOpen }">
+        <a-button class="fab fab-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">{{ leftActionsOpen ? '▶' : '◀' }}</a-button>
+        <template v-if="leftActionsOpen">
+          <a-tooltip title="语音播报配置">
+            <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">⚙️</a-button>
+          </a-tooltip>
+          <a-tooltip title="整局重置" placement="right">
+            <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
+          </a-tooltip>
+          <SyncSettings v-if="!state.simMode" />
+        </template>
+      </div>
 
       <!-- 胜负弹窗 -->
       <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
@@ -323,21 +331,32 @@ body {
 .ant-card + .ant-card {
   margin-top: 12px;
 }
-/* 整局重置悬浮按钮：左下，位于角色玩法悬浮钮上方、钥匙下方 */
-.reset-fab {
+/* 左侧配置类悬浮按钮组 */
+.left-actions {
   position: fixed;
   left: 11px;
-  bottom: 84px;
+  bottom: 76px;
   z-index: 600;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  line-height: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 77, 79, 0.6);
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.left-actions.collapsed {
+  gap: 0;
+}
+.fab-reset {
+  border: 1px solid rgba(255, 77, 79, 0.6) !important;
+}
+.fab-toggle {
+  background: rgba(30, 35, 50, 0.85) !important;
+  color: #ccc !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  font-size: 12px;
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px;
+  min-height: 32px;
 }
 /* 文案尽量不换行、不省略：缩小字号适配 */
 .ant-card-head-title {
