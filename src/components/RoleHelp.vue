@@ -156,14 +156,9 @@ const shownRoles = computed(() => {
 
 <style scoped>
 .role-help {
-  position: fixed;
-  left: 16px;
-  bottom: 20px;
-  z-index: 500;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
 }
 .rh-fab {
   width: 48px;

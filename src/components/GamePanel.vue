@@ -95,7 +95,7 @@ const jinghuiModal = ref(false)
 const jinghuiPk = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
-const rightActionsOpen = ref(true)
+const rightActionsOpen = ref(false)
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35

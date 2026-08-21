@@ -65,7 +65,7 @@ const countMatch = computed(() => state.players.length === boardNeed.value && st
 const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
 const gamePanelRef = ref<InstanceType<typeof GamePanel> | null>(null)
-const leftActionsOpen = ref(true)
+const leftActionsOpen = ref(false)
 
 function onTabChange(key: string) {
   if (key === "game" && !gameReady.value) {
@@ -109,13 +109,11 @@ function onTabChange(key: string) {
       </div>
       </div>
 
-      <!-- 左下悬浮：角色玩法 + 计分速查（所有 tab 可见） -->
-      <RoleHelp :roles="refs.getBoardRoles(state)" />
-
       <!-- 左下悬浮：配置类操作（展开/收起） -->
       <div class="left-actions" :class="{ collapsed: !leftActionsOpen }">
-        <a-button class="fab fab-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">{{ leftActionsOpen ? '▶' : '◀' }}</a-button>
+        <a-button class="fab fab-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">{{ leftActionsOpen ? '▼' : '▲' }}</a-button>
         <template v-if="leftActionsOpen">
+          <RoleHelp :roles="refs.getBoardRoles(state)" />
           <a-tooltip title="语音播报配置">
             <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">⚙️</a-button>
           </a-tooltip>
@@ -335,7 +333,7 @@ body {
 .left-actions {
   position: fixed;
   left: 11px;
-  bottom: 76px;
+  bottom: 20px;
   z-index: 600;
   display: flex;
   flex-direction: column;
