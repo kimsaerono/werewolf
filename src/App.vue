@@ -109,20 +109,19 @@ function onTabChange(key: string) {
       </div>
       </div>
 
-      <!-- 左下悬浮：配置类操作 -->
-      <div class="left-actions">
-        <TransitionGroup name="fab-pop-left">
-          <RoleHelp v-if="leftActionsOpen" :roles="refs.getBoardRoles(state)" key="rolehelp" />
-          <a-tooltip v-if="leftActionsOpen" title="语音播报配置" key="voice">
-            <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">🎙️</a-button>
-          </a-tooltip>
-          <a-tooltip v-if="leftActionsOpen" title="整局重置" placement="right" key="reset">
-            <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
-          </a-tooltip>
-          <SyncSettings v-if="leftActionsOpen && !state.simMode" key="sync" />
-        </TransitionGroup>
-        <a-button class="fab fab-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">⚙️</a-button>
-      </div>
+      <!-- 左下悬浮：展开的功能项 -->
+      <TransitionGroup name="fab-pop-left" tag="div" class="left-actions-items">
+        <RoleHelp v-if="leftActionsOpen" :roles="refs.getBoardRoles(state)" key="rolehelp" />
+        <a-tooltip v-if="leftActionsOpen" title="语音播报配置" key="voice">
+          <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">🎙️</a-button>
+        </a-tooltip>
+        <a-tooltip v-if="leftActionsOpen" title="整局重置" placement="right" key="reset">
+          <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
+        </a-tooltip>
+        <SyncSettings v-if="leftActionsOpen && !state.simMode" key="sync" />
+      </TransitionGroup>
+      <!-- 左下悬浮：固定在底部的 toggle -->
+      <a-button class="fab fab-toggle left-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">⚙️</a-button>
 
       <!-- 胜负弹窗 -->
       <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
@@ -329,16 +328,23 @@ body {
 .ant-card + .ant-card {
   margin-top: 12px;
 }
-/* 左侧配置类悬浮按钮组 */
-.left-actions {
+/* 左侧：toggle 固定底部 */
+.left-toggle {
   position: fixed;
   left: 16px;
   bottom: 16px;
+  z-index: 601;
+}
+/* 左侧：功能项在 toggle 上方 */
+.left-actions-items {
+  position: fixed;
+  left: 16px;
+  bottom: 72px;
   z-index: 600;
   display: flex;
   flex-direction: column-reverse;
-  align-items: center;
   gap: 0;
+  align-items: center;
 }
 .fab-reset {
   border: 1px solid rgba(255, 77, 79, 0.6) !important;
@@ -354,7 +360,7 @@ body {
   transform: scale(0.92);
 }
 
-/* 展开/收起动画：从 toggle 位置向上弹出 */
+/* 展开/收起动画 */
 .fab-pop-left-enter-active {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
