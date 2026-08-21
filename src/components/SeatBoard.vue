@@ -155,16 +155,15 @@ const DARK_BG = new Set(["狼人", "狼王"])
 function cardBg(p: Player): Record<string, string> | undefined {
   if (!p.alive || !p.role) return undefined
   const style: Record<string, string> = {}
+  if (ROLE_BG[p.role]) {
+    style.backgroundColor = ROLE_BG[p.role]
+  }
   const img = roleAvatar(p.role)
   if (img) {
     style.backgroundImage = `url(${img})`
     style.backgroundSize = "cover"
     style.backgroundPosition = "center"
     style.backgroundRepeat = "no-repeat"
-  }
-  if (ROLE_BG[p.role]) {
-    style.background = ROLE_BG[p.role]
-    if (img) style.backgroundImage = `url(${img})`
   }
   if (DARK_BG.has(p.role)) {
     style.color = "#f0f0f0"
