@@ -55,7 +55,7 @@ describe("buildRecordBlock 卡片区块", () => {
     expect(b.rows[4]).toEqual(["", "2. 🌙第1晚：狼人刀了 1.赵妍(女巫)"])
     expect(b.rows[5]).toEqual(["", ""])
     expect(b.rows).toHaveLength(6)
-    expect(b.mergeRanges).toEqual(["B5:N5", "B6:N6", "B7:N7"])
+    expect(b.mergeRanges).toEqual(["B5:N5"])
     expect(b.logStartRow).toBe(8)
     expect(b.logEndRow).toBe(9)
   })
@@ -67,6 +67,26 @@ describe("buildRecordBlock 卡片区块", () => {
     expect(b.rows[0][1]).toContain("-（屠边）")
     expect(b.rows[0][1]).toContain("法官：-")
     expect(b.logEndRow).toBeLessThan(b.logStartRow)
+  })
+
+  it("积分不分段：多人单行溢出显示，仅标题行合并", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      no: i + 1, name: `玩家${i + 1}`, role: "平民", camp: "平民", win: true, base: 1, skill: 0, vote: 0,
+    }))
+    const b = buildRecordBlock(payload({ players: many }), 10)
+    expect(b.rows[2][1]).toMatch(/^积分：1\.玩家1/)
+    expect(b.rows[2][1]).toContain("9.玩家9")
+    expect(b.rows[3]).toEqual(["", "1. ✅本局开始：发牌"])
+    expect(b.mergeRanges).toEqual(["B10:N10"])
+    expect(b.logStartRow).toBe(13)
+    expect(b.logEndRow).toBe(14)
+  })
+
+  it("无玩家时无积分行", () => {
+    const b = buildRecordBlock(payload({ players: [], logLines: [] }), 2)
+    expect(b.rows).toHaveLength(3)
+    expect(b.mergeRanges).toEqual(["B2:N2"])
+    expect(JSON.stringify(b.rows)).not.toContain("积分")
   })
 })
 
@@ -80,27 +100,40 @@ describe("blockToCsv 转义", () => {
 })
 
 describe("buildRecordOps 批量子操作", () => {
-  it("3 合并 + 标题样式 + 信息样式 + 日志样式 + 行高，sheet_id 注入", () => {
+  it("1 合并 + 标题样式(含底边框) + 信息样式 + 日志样式 + 3 行高，sheet_id 注入", () => {
     const b = buildRecordBlock(payload(), 20)
     const ops = buildRecordOps(b, "SHEET_X")
     const shortcuts = ops.map((o) => o.shortcut)
-    expect(shortcuts.filter((s) => s === "+cells-merge")).toHaveLength(3)
+    expect(shortcuts.filter((s) => s === "+cells-merge")).toHaveLength(1)
     expect(shortcuts.filter((s) => s === "+cells-set-style")).toHaveLength(3)
-    expect(shortcuts).toContain("+rows-resize")
+    expect(shortcuts.filter((s) => s === "+rows-resize")).toHaveLength(3)
     for (const o of ops) expect(o.input.sheet_id).toBe("SHEET_X")
     const titleStyle = ops.find((o) => o.shortcut === "+cells-set-style")!
     expect(titleStyle.input.range).toBe("A20:N20")
     expect(titleStyle.input.background_color).toBe("#1668dc")
+    expect(titleStyle.input.border_type).toBe("BOTTOM_BORDER")
     const logStyle = ops.filter((o) => o.shortcut === "+cells-set-style")[2]
     expect(logStyle.input.range).toBe(`B${b.logStartRow}:B${b.logEndRow}`)
-    const resize = ops.find((o) => o.shortcut === "+rows-resize")!
-    expect(resize.input.range).toBe("20:20")
+    const titleResize = ops.find((o) => o.shortcut === "+rows-resize")!
+    expect(titleResize.input.range).toBe("20:20")
   })
 
   it("无日志时只有 2 个样式操作", () => {
     const b = buildRecordBlock(payload({ logLines: [] }), 2)
     const ops = buildRecordOps(b, "S")
     expect(ops.filter((o) => o.shortcut === "+cells-set-style")).toHaveLength(2)
+  })
+
+  it("行高：标题 30、内容 20、分隔 10", () => {
+    const b = buildRecordBlock(payload(), 20)
+    const ops = buildRecordOps(b, "S")
+    const resizes = ops.filter((o) => o.shortcut === "+rows-resize")
+    expect(resizes).toHaveLength(3)
+    expect(resizes[0].input.height).toBe(30)
+    expect(resizes[1].input.height).toBe(20)
+    const sepRow = 20 + b.rows.length - 1
+    expect(resizes[2].input.range).toBe(`${sepRow}:${sepRow}`)
+    expect(resizes[2].input.height).toBe(10)
   })
 })
 
@@ -114,6 +147,14 @@ describe("部署端 record-block.cjs 与 TS 版一致性", () => {
   it("完整 payload 输出与 TS 版逐字段一致", () => {
     const p = payload()
     expect(cjs.buildRecordBlock(p, 10)).toEqual(buildRecordBlock(p, 10))
+  })
+
+  it("9 人分段 payload 输出与 TS 版一致", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      no: i + 1, name: `玩家${i + 1}`, role: "平民", camp: "平民", win: true, base: 1, skill: 0, vote: 0,
+    }))
+    const p = payload({ players: many })
+    expect(cjs.buildRecordBlock(p, 3)).toEqual(buildRecordBlock(p, 3))
   })
 
   it("缺字段兜底输出与 TS 版一致", () => {

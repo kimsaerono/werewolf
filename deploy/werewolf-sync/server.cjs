@@ -127,16 +127,23 @@ async function decorateRecordBlock(token, block) {
       )
       if (mRes.code && mRes.code !== 0) throw new Error("合并失败: " + mRes.code + " " + mRes.msg)
     }
-    // 标题行深蓝底白字加粗；信息/积分行顶端对齐；日志区灰字小号
+    // 标题行深蓝底白字加粗 + 底边框；信息/积分行中灰；日志区浅灰小字
     // （v2 样式接口不支持 word_wrap；fontSize 必须带行距后缀，如 "11pt/1.5"）
     const styleData = [
       {
         ranges: [`${ENV.RECORD_SHEET_ID}!A${block.titleRow}:N${block.titleRow}`],
-        style: { backColor: "#1668dc", foreColor: "#ffffff", font: { bold: true, fontSize: "11pt/1.5" }, vAlign: 1 },
+        style: {
+          backColor: "#1668dc",
+          foreColor: "#ffffff",
+          font: { bold: true, fontSize: "11pt/1.5" },
+          vAlign: 1,
+          borderType: "BOTTOM_BORDER",
+          borderColor: "#0d4a9e",
+        },
       },
       {
-        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.titleRow + 1}:B${block.titleRow + 2}`],
-        style: { vAlign: 0 },
+        ranges: [`${ENV.RECORD_SHEET_ID}!B${block.titleRow + 1}:B${block.logStartRow - 1}`],
+        style: { foreColor: "#6b7280", vAlign: 0 },
       },
     ]
     if (block.logEndRow >= block.logStartRow) {
@@ -154,7 +161,7 @@ async function decorateRecordBlock(token, block) {
       },
     )
     if (sRes.code && sRes.code !== 0) throw new Error("样式失败: " + sRes.code + " " + sRes.msg)
-    // 标题行行高 30px
+    // 标题行行高 30px；内容行 20px
     const dRes = await fetchJson(
       `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
       {
@@ -167,6 +174,36 @@ async function decorateRecordBlock(token, block) {
       },
     )
     if (dRes.code && dRes.code !== 0) throw new Error("行高失败: " + dRes.code + " " + dRes.msg)
+    const contentStart = block.titleRow + 1
+    const contentEnd = block.titleRow + block.rows.length - 2
+    if (contentEnd >= contentStart) {
+      const dRes2 = await fetchJson(
+        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+        {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: contentStart, endIndex: contentEnd },
+            dimensionProperties: { fixedSize: 20 },
+          }),
+        },
+      )
+      if (dRes2.code && dRes2.code !== 0) throw new Error("内容行高失败: " + dRes2.code + " " + dRes2.msg)
+    }
+    // 块尾分隔行压矮到 10px，形成卡片间距
+    const sepRow = block.titleRow + block.rows.length - 1
+    const sRes2 = await fetchJson(
+      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+      {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dimension: { sheetId: ENV.RECORD_SHEET_ID, majorDimension: "ROWS", startIndex: sepRow, endIndex: sepRow },
+          dimensionProperties: { fixedSize: 10 },
+        }),
+      },
+    )
+    if (sRes2.code && sRes2.code !== 0) throw new Error("分隔行行高失败: " + sRes2.code + " " + sRes2.msg)
   } catch (e) {
     console.error("[warn] 复盘卡片装饰失败（数据不受影响）:", (e && e.message) || e)
   }
@@ -179,15 +216,13 @@ async function appendRecordBlock(token, body) {
   const readRes = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (readRes.code && readRes.code !== 0) throw new Error("读复盘失败: " + readRes.code)
   const existing = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
-  let firstEmpty = existing.length + 1
+  // 从最后一个非空行的下两行开始写：中间留一个空行作为卡片间距
+  let lastNonEmpty = 1
   for (let i = 0; i < existing.length; i++) {
     const v = existing[i]
-    const hasData = v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")
-    if (!hasData) {
-      firstEmpty = i + 1
-      break
-    }
+    if (v && v.some((x) => x !== null && x !== undefined && String(x).trim() !== "")) lastNonEmpty = i + 1
   }
+  const firstEmpty = lastNonEmpty <= 1 ? 2 : lastNonEmpty + 2
   const block = buildRecordBlock(body, firstEmpty)
   const lastRow = firstEmpty + block.rows.length - 1
   if (lastRow > RECORD_READ_LIMIT) throw new Error(`复盘表已写满（${RECORD_READ_LIMIT} 行），请扩容或归档后重试`)

@@ -4,9 +4,9 @@
  *
  * 每局一个卡片区块（列 A..N，共 14 列）：
  *   行R    │ A: 局次(gameId) │ B:N 合并: 🎮 板子 ｜ 胜负（原因）｜ 法官：xx   ← 深蓝底白字加粗
- *   行R+1  │                 │ B:N 合并: ⏰ 时间：… ｜ 🏆 MVP：… ｜ SVP：… ｜ 背锅侠：…
- *   行R+2  │                 │ B:N 合并: 积分：1.赵妍(女巫) -0.5　2.武战峰(狼人) +3.5 …
- *   行R+3~ │                 │ B 列逐行: 1.日志… / 2.日志…（灰字）
+ *   行R+1  │                 │ B 列: ⏰ 时间：… ｜ 🏆 MVP：… ｜ SVP：… ｜ 背锅侠：…（中灰）
+ *   行R+2  │                 │ B 列: 积分：1.赵妍(女巫) -0.5　2.武战峰(狼人) +3.5 …（溢出显示）
+ *   行R+3~ │                 │ B 列逐行: 1.日志… / 2.日志…（浅灰小字）
  *   行末   │ 空行分隔（与下一局卡片隔开）
  */
 "use strict"
@@ -35,30 +35,29 @@ function buildRecordBlock(payload, startRow) {
     payload.beiguo ? `背锅侠：${payload.beiguo}` : "",
   ].filter(Boolean)
   if (honors.length) infoParts.push(honors.join(" ｜ "))
-  const scoreLine =
-    `积分：` +
-    (payload.players || [])
-      .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
-      .join("　")
+  const scoreLine = (payload.players || []).length
+    ? `积分：` +
+      (payload.players || [])
+        .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
+        .join("　")
+    : ""
   const lines = payload.logLines || []
 
   const rows = [
     [String(payload.gameId || ""), title],
     ["", infoParts.join(" ｜ ")],
-    ["", scoreLine],
+    ...(scoreLine ? [["", scoreLine]] : []),
     ...lines.map((l, i) => ["", `${i + 1}. ${l}`]),
     ["", ""],
   ]
+  // 仅标题行合并 B:N（其余行不合并，靠文字溢出到 C..N 空白列自然展示，避免裁剪）
+  const logStart = startRow + (scoreLine ? 3 : 2)
   return {
     rows,
-    mergeRanges: [
-      `B${startRow}:N${startRow}`,
-      `B${startRow + 1}:N${startRow + 1}`,
-      `B${startRow + 2}:N${startRow + 2}`,
-    ],
+    mergeRanges: [`B${startRow}:N${startRow}`],
     titleRow: startRow,
-    logStartRow: startRow + 3,
-    logEndRow: startRow + 2 + lines.length,
+    logStartRow: logStart,
+    logEndRow: logStart - 1 + lines.length,
   }
 }
 

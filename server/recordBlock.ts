@@ -38,25 +38,29 @@ export function buildRecordBlock(payload: SyncPayload, startRow: number): Record
   const honors = [payload.mvp ? `🏆 MVP：${payload.mvp}` : "", payload.svp ? `SVP：${payload.svp}` : "", payload.beiguo ? `背锅侠：${payload.beiguo}` : ""].filter(Boolean)
   if (honors.length) infoParts.push(honors.join(" ｜ "))
   const scoreLine =
-    `积分：` +
-    (payload.players || [])
-      .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
-      .join("　")
+    (payload.players || []).length
+      ? `积分：` +
+        (payload.players || [])
+          .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
+          .join("　")
+      : ""
   const lines = payload.logLines || []
 
   const rows: string[][] = [
     [payload.gameId, title],
     ["", infoParts.join(" ｜ ")],
-    ["", scoreLine],
+    ...(scoreLine ? [["", scoreLine] as [string, string]] : []),
     ...lines.map((l, i) => ["", `${i + 1}. ${l}`]),
     ["", ""],
   ]
+  // 仅标题行合并 B:N（其余行不合并，靠文字溢出到 C..N 空白列自然展示，避免裁剪）
+  const logStart = startRow + (scoreLine ? 3 : 2)
   return {
     rows,
-    mergeRanges: [`B${startRow}:N${startRow}`, `B${startRow + 1}:N${startRow + 1}`, `B${startRow + 2}:N${startRow + 2}`],
+    mergeRanges: [`B${startRow}:N${startRow}`],
     titleRow: startRow,
-    logStartRow: startRow + 3,
-    logEndRow: startRow + 2 + lines.length,
+    logStartRow: logStart,
+    logEndRow: logStart - 1 + lines.length,
   }
 }
 
@@ -73,10 +77,9 @@ export function blockToCsv(block: RecordBlock): string {
 /** 区块 → +batch-update 子操作列表（合并单元格 + 卡片样式 + 标题行高），原子提交 */
 export function buildRecordOps(block: RecordBlock, sheetId: string): { shortcut: string; input: Record<string, unknown> }[] {
   const ops: { shortcut: string; input: Record<string, unknown> }[] = []
-  for (const range of block.mergeRanges) {
-    ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range } })
-  }
-  // 标题行：深蓝底白字加粗（整行 A:N 拉通色条）
+  // 仅标题行合并 B:N
+  ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range: block.mergeRanges[0] } })
+  // 标题行：深蓝底白字加粗（整行 A:N 拉通色条）+ 底边框
   ops.push({
     shortcut: "+cells-set-style",
     input: {
@@ -87,19 +90,22 @@ export function buildRecordOps(block: RecordBlock, sheetId: string): { shortcut:
       font_weight: "bold",
       font_size: 11,
       vertical_alignment: "middle",
+      border_type: "BOTTOM_BORDER",
+      border_color: "#0d4a9e",
     },
   })
-  // 信息/积分行：自动换行、顶端对齐
+  // 信息行 + 积分行：中灰 #6b7280、顶端对齐、自动换行（B 列溢出显示到 C..N）
   ops.push({
     shortcut: "+cells-set-style",
     input: {
       sheet_id: sheetId,
-      range: `B${block.titleRow + 1}:B${block.titleRow + 2}`,
-      word_wrap: "auto-wrap",
+      range: `B${block.titleRow + 1}:B${block.logStartRow - 1}`,
+      font_color: "#6b7280",
       vertical_alignment: "top",
+      word_wrap: "auto-wrap",
     },
   })
-  // 日志区：灰字小号
+  // 日志区：浅灰小号
   if (block.logEndRow >= block.logStartRow) {
     ops.push({
       shortcut: "+cells-set-style",
@@ -108,12 +114,15 @@ export function buildRecordOps(block: RecordBlock, sheetId: string): { shortcut:
         range: `B${block.logStartRow}:B${block.logEndRow}`,
         font_color: "#8a8f99",
         font_size: 10,
-        word_wrap: "auto-wrap",
         vertical_alignment: "top",
+        word_wrap: "auto-wrap",
       },
     })
   }
-  // 标题行行高
+  // 行高：标题 30、内容行 20、分隔行 10
+  const sepRow = block.titleRow + block.rows.length - 1
   ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `${block.titleRow}:${block.titleRow}`, height: 30 } })
+  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `B${block.titleRow + 1}:B${sepRow - 1}`, height: 20 } })
+  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `${sepRow}:${sepRow}`, height: 10 } })
   return ops
 }
