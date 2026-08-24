@@ -382,6 +382,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
 .seat-card.sheriff {
   border-color: #ffd666;
   box-shadow: 0 0 10px rgba(255, 214, 102, 0.35);
+  animation: sheriff-glow 1.6s ease-in-out infinite alternate;
 }
 .seat-board.floating .seat-card.sheriff {
   border-color: #ffd666;
@@ -393,16 +394,18 @@ function cardBg(p: Player): Record<string, string> | undefined {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    padding: 2px;
+    padding: 3px;
     background: conic-gradient(
       from var(--sheriff-angle, 0deg),
-      #ffd666 0%,
-      #fff6d8 18%,
-      #ffb300 36%,
-      #fff6d8 54%,
-      #ffd666 72%,
-      #fff6d8 90%,
-      #ffd666 100%
+      #fffef0 0%,
+      #ffd666 12%,
+      #8a5a00 26%,
+      #241a04 40%,
+      #8a5a00 54%,
+      #ffd666 68%,
+      #fffef0 82%,
+      #ffd666 92%,
+      #fffef0 100%
     );
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
@@ -410,7 +413,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
     mask-composite: exclude;
     pointer-events: none;
     z-index: 1;
-    animation: sheriff-flow 2.5s linear infinite;
+    animation: sheriff-flow 2s linear infinite;
   }
 }
 .seat-card.sheriff.dead::after {
@@ -419,10 +422,20 @@ function cardBg(p: Player): Record<string, string> | undefined {
 .seat-card.sheriff.dead {
   border-color: #2b3145;
   box-shadow: none;
+  /* 动画优先级高于静态声明，必须显式关掉呼吸辉光 */
+  animation: none;
 }
 @keyframes sheriff-flow {
   to {
     --sheriff-angle: 360deg;
+  }
+}
+@keyframes sheriff-glow {
+  from {
+    box-shadow: 0 0 5px rgba(255, 214, 102, 0.25);
+  }
+  to {
+    box-shadow: 0 0 14px 2px rgba(255, 180, 40, 0.55);
   }
 }
 .seat-card.dead .seat-name {
