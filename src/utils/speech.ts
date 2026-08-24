@@ -106,6 +106,9 @@ function pump(): void {
 
 function enqueue(text: string, style?: VoiceStyleKey): void {
   if (!text || !("speechSynthesis" in window)) return
+  // 允许被打断：新的播报立即打断当前与排队中的内容
+  const interrupted = playing || queue.length > 0
+  if (interrupted) stopSpeak()
   ensureVoices()
   const u = new SpeechSynthesisUtterance(text)
   u.lang = "zh-CN"
@@ -115,7 +118,9 @@ function enqueue(text: string, style?: VoiceStyleKey): void {
   u.pitch = s.pitch
   u.rate = s.rate
   queue.push(u)
-  pump()
+  // 打断后稍作延迟再播：规避 cancel() 后立即 speak() 被部分浏览器吞掉的已知问题
+  if (interrupted) setTimeout(pump, 30)
+  else pump()
 }
 
 function enqueueAudio(url: string, fallbackText?: string, style?: VoiceStyleKey): void {
@@ -135,12 +140,12 @@ function stripEmoji(text: string): string {
   return text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\uFE0F\u20E3]/gu, "").replace(/\s{2,}/g, " ").trim()
 }
 
-/** 播报一段文字（中文语音）；若正在播报则排队，播完再播，保证完整不吞字 */
+/** 播报一段文字（中文语音）；若正在播报则立即打断，改播本条 */
 export function speak(text: string, style?: VoiceStyleKey): void {
   enqueue(stripEmoji(text), style)
 }
 
-/** 逐条排队播报：一条播完再播下一条 */
+/** 逐条排队播报：后一条会打断前一条（只保留最后一条） */
 export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
   for (const t of texts) enqueue(stripEmoji(t), style)
 }

@@ -3,7 +3,7 @@ import * as g from "@/game/logic"
 import type { GameState, Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
-import { syncGameToFeishu, simulateSyncNewPlayer } from "@/api/feishuSync"
+import { syncGameToFeishu } from "@/api/feishuSync"
 
 const STORAGE_KEY = "werewolf_judge_v8"
 const HISTORY_KEY = "werewolf_history"
@@ -618,17 +618,6 @@ export function useGame() {
       history.value = []
       saveHistory()
       persist()
-    },
-    /** 测试同步：模拟新玩家（排名表/复盘表各加一行测试数据） */
-    async testSync(): Promise<string | null> {
-      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
-      syncStatus.value = "testing"
-      const err = await simulateSyncNewPlayer()
-      syncStatus.value = err ? `⚠️ 测试同步失败：${err}` : "✅ 已模拟新玩家同步（排名表积分列末尾新增一行）"
-      setTimeout(() => {
-        syncStatus.value = ""
-      }, 6000)
-      return err
     },
   }
 

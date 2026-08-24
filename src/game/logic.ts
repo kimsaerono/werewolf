@@ -40,6 +40,26 @@ export const ROLE_EMOJI: Record<string, string> = {
   丘比特: "💘",
 }
 
+/** 角色简写（标签/紧凑场景展示用，完整名保留在 title/详情里） */
+export const ROLE_SHORT: Record<string, string> = {
+  狼人: "狼",
+  白狼王: "白狼",
+  狼王: "狼王",
+  预言家: "预",
+  女巫: "巫",
+  猎人: "猎",
+  守卫: "守",
+  骑士: "骑",
+  白痴: "痴",
+  平民: "民",
+  丘比特: "丘",
+}
+
+/** 角色简写；未收录时回退为完整名 */
+export function roleShort(role?: string): string {
+  return (role && ROLE_SHORT[role]) || role || ""
+}
+
 export const boardLabels: Record<string, string> = {
   "6a": "6人竞技｜2狼+预言家+猎人+2平民",
   "6b": "6人娱乐｜2狼+预言家+女巫+2平民",

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
+import { roleShort } from "@/game/logic"
 
 const props = withDefaults(
   defineProps<{
@@ -130,7 +131,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
           <div class="fp-name">{{ opt.name || opt.label }}</div>
-          <div class="fp-role" :style="{ color: roleColor(opt.role) }">{{ ROLE_EMOJI[opt.role || ""] || "" }}{{ opt.role || "" }}</div>
+          <div class="fp-role" :style="{ color: roleColor(opt.role) }" :title="opt.role || ''">{{ ROLE_EMOJI[opt.role || ""] || "" }}{{ roleShort(opt.role) }}</div>
           <div v-if="isBlocked(opt.value)" class="fp-blocked-badge">{{ blockedMsg }}</div>
         </template>
         <template v-else>

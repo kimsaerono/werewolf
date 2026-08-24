@@ -46,6 +46,7 @@ import {
   applyHonor,
   suggestHonor,
   resetRoundScore,
+  roleShort,
   type GameState,
   type Player,
 } from "./logic"
@@ -1169,5 +1170,27 @@ describe("scoreTotal 跨局保留", () => {
     expect(p0new.scoreTotal).toBe(13) // 10 + 3
     const p1new = newPlayers.find((p) => p.name === "P1")!
     expect(p1new.scoreTotal).toBe(8.5) // 5.5 + 3
+  })
+})
+
+describe("roleShort 角色简写", () => {
+  it("常见角色简写", () => {
+    expect(roleShort("预言家")).toBe("预")
+    expect(roleShort("狼人")).toBe("狼")
+    expect(roleShort("猎人")).toBe("猎")
+    expect(roleShort("女巫")).toBe("巫")
+    expect(roleShort("平民")).toBe("民")
+  })
+
+  it("白狼王与狼王简写区分", () => {
+    expect(roleShort("白狼王")).toBe("白狼")
+    expect(roleShort("狼王")).toBe("狼王")
+    expect(roleShort("白狼王")).not.toBe(roleShort("狼王"))
+  })
+
+  it("未收录角色回退完整名", () => {
+    expect(roleShort("僵尸")).toBe("僵尸")
+    expect(roleShort(undefined)).toBe("")
+    expect(roleShort("")).toBe("")
   })
 })

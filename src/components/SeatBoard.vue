@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import Sortable from "sortablejs"
-import { ROLE_EMOJI } from "@/game/logic"
+import { ROLE_EMOJI, roleShort } from "@/game/logic"
 import type { Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import cupidThirdIcon from "@/assets/roles/第三阵营邱比特.png"
@@ -183,7 +183,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="{ dead: !p.alive }"
+            :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
             :style="cardBg(p)"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
@@ -208,7 +208,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="{ dead: !p.alive }"
+            :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
             :style="cardBg(p)"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
@@ -233,7 +233,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           :key="p.name"
           class="seat-card"
           :data-name="p.name"
-          :class="{ dead: !p.alive }"
+          :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
           :style="cardBg(p)"
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
@@ -246,13 +246,13 @@ function cardBg(p: Player): Record<string, string> | undefined {
               <img v-if="p.name === jingHui" :src="sheriffIcon" alt="警长" class="seat-sheriff-inline" />
               {{ p.name }}
             </div>
-            <div class="seat-role">
-              <template v-if="showRole && p.role">{{ ROLE_EMOJI[p.role] || "" }}{{ p.role }}</template>
+            <div class="seat-role" :title="p.role">
+              <template v-if="showRole && p.role">{{ ROLE_EMOJI[p.role] || "" }}{{ roleShort(p.role) }}</template>
               <template v-else>—</template>
             </div>
           </div>
           <div class="seat-right">
-            <span v-if="showAlive" class="seat-alive" :class="{ dead: !p.alive }">{{ p.alive ? "✅" : "❌" }}</span>
+            <span v-if="showAlive" class="seat-alive" :class="{ dead: !p.alive, sheriff: p.name === jingHui }">{{ p.alive ? "✅" : "❌" }}</span>
             <span class="seat-no">{{ p.no || idx + 1 }}</span>
           </div>
             <span
@@ -372,6 +372,58 @@ function cardBg(p: Player): Record<string, string> | undefined {
   opacity: 0.6;
   background: #161a26; /* 出局：原深色底 */
   border-color: #2b3145;
+}
+/* ===== 警长流光边框 ===== */
+@property --sheriff-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.seat-card.sheriff {
+  border-color: #ffd666;
+  box-shadow: 0 0 10px rgba(255, 214, 102, 0.35);
+}
+.seat-board.floating .seat-card.sheriff {
+  border-color: #ffd666;
+}
+/* 仅支持 mask 时才叠加流光环；不支持时退化为静态金边，避免整块渐变盖住卡片 */
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .seat-card.sheriff::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--sheriff-angle, 0deg),
+      #ffd666 0%,
+      #fff6d8 18%,
+      #ffb300 36%,
+      #fff6d8 54%,
+      #ffd666 72%,
+      #fff6d8 90%,
+      #ffd666 100%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
+    animation: sheriff-flow 2.5s linear infinite;
+  }
+}
+.seat-card.sheriff.dead::after {
+  display: none;
+}
+.seat-card.sheriff.dead {
+  border-color: #2b3145;
+  box-shadow: none;
+}
+@keyframes sheriff-flow {
+  to {
+    --sheriff-angle: 360deg;
+  }
 }
 .seat-card.dead .seat-name {
   color: #aaa;

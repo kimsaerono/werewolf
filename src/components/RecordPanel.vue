@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { App as AntApp } from "ant-design-vue"
-import { decorateLog, cleanLogLine } from "@/game/logic"
+import { decorateLog, cleanLogLine, roleShort } from "@/game/logic"
 import type { Game } from "@/types"
 import type { GameRecord } from "@/composables/useGame"
 
@@ -58,13 +58,6 @@ async function syncOne(h: GameRecord) {
   if (err) message.error(err)
 }
 
-/** 测试同步：模拟新玩家（会在飞书排名表末尾加一行测试数据） */
-async function onTestSync() {
-  const err = await actions.testSync()
-  if (err) message.error(`测试同步失败：${err}`)
-  else message.success("已模拟新玩家同步，请到飞书排名表末尾查看新增行")
-}
-
 /** 清空所有历史数据（二次确认） */
 function onClearAll() {
   modal.confirm({
@@ -87,7 +80,6 @@ function onClearAll() {
       <template #extra>
         <a-space :wrap="true">
           <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
-          <a-button v-if="!state.simMode" size="small" @click="onTestSync">🧪 测试同步（模拟新玩家）</a-button>
           <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
         </a-space>
       </template>
@@ -116,8 +108,8 @@ function onClearAll() {
             </div>
             <a-divider style="margin: 8px 0">积分</a-divider>
             <a-space :wrap="true">
-              <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'">
-                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) || p.role }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
+              <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'" :title="thirdLabel(h, p) || p.role">
+                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) || roleShort(p.role) }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
               </a-tag>
             </a-space>
             <a-divider style="margin: 8px 0">对局日志</a-divider>

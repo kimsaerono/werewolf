@@ -2,6 +2,7 @@
 import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
+import { roleShort } from "@/game/logic"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -1501,7 +1502,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <div v-for="p in aliveList" :key="p.name" class="fs-card" @click="doProphetCheck(p.name)">
               <div class="fs-no">{{ p.no }}</div>
               <div class="fs-name">{{ p.name }}</div>
-              <div class="fs-role" :style="{ color: roleColor(p.role) }">{{ refs.ROLE_EMOJI[p.role] || "" }}{{ p.role }}</div>
+              <div class="fs-role" :style="{ color: roleColor(p.role) }" :title="p.role">{{ refs.ROLE_EMOJI[p.role] || "" }}{{ roleShort(p.role) }}</div>
             </div>
           </div>
           <a-button size="large" @click="doProphetCheck(refs.NO_CHECK)">🙅 不验</a-button>
