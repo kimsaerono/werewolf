@@ -355,6 +355,13 @@ export function playerLabel(p: Player, idx?: number): string {
   return `${no}.${p.name}${role}`
 }
 
+/** UI 紧凑变体：角色用简写，如 3.张三(🐺狼)；日志/飞书同步仍用 playerLabel 全名 */
+export function playerLabelShort(p: Player, idx?: number): string {
+  const no = p.no || (idx ?? 0) + 1
+  const role = p.role ? `(${ROLE_EMOJI[p.role] || ""}${roleShort(p.role)})` : ""
+  return `${no}.${p.name}${role}`
+}
+
 /** 当前板子的角色列表：优先使用自定义 boardRoles，否则用默认配置 */
 export function getBoardRoles(state: GameState): string[] {
   return state.boardRoles ?? boardConfig[state.board]

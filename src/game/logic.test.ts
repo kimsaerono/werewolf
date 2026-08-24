@@ -47,6 +47,8 @@ import {
   suggestHonor,
   resetRoundScore,
   roleShort,
+  playerLabel,
+  playerLabelShort,
   type GameState,
   type Player,
 } from "./logic"
@@ -1192,5 +1194,27 @@ describe("roleShort 角色简写", () => {
     expect(roleShort("僵尸")).toBe("僵尸")
     expect(roleShort(undefined)).toBe("")
     expect(roleShort("")).toBe("")
+  })
+})
+
+describe("playerLabelShort 紧凑标签", () => {
+  it("角色用简写", () => {
+    const p = newPlayer("张三")
+    p.no = 3
+    p.role = "预言家"
+    expect(playerLabelShort(p)).toBe("3.张三(🔮预)")
+  })
+
+  it("无角色时不带括号，编号兜底 idx+1", () => {
+    const p = newPlayer("李四")
+    expect(playerLabelShort(p, 4)).toBe("5.李四")
+  })
+
+  it("与 playerLabel 全名并存不互相影响", () => {
+    const p = newPlayer("王五")
+    p.no = 2
+    p.role = "白狼王"
+    expect(playerLabel(p)).toBe("2.王五(❄️🐺白狼王)")
+    expect(playerLabelShort(p)).toBe("2.王五(❄️🐺白狼)")
   })
 })

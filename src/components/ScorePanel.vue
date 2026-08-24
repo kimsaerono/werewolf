@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, ref, h } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
+import { roleShort } from "@/game/logic"
 
 const { message } = AntApp.useApp()
 
@@ -16,8 +17,8 @@ const columns = [
     dataIndex: "role",
     key: "role",
     customRender: ({ record }: { record: { role: string } }) => {
-      const label = refs.thirdCampLabel(state, record as never)
-      return label || record.role
+      const label = refs.thirdCampLabel(state, record as never) || roleShort(record.role)
+      return h("span", { title: record.role }, label)
     },
   },
   {

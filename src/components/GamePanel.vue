@@ -2,7 +2,7 @@
 import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
-import { roleShort } from "@/game/logic"
+import { roleShort, playerLabelShort } from "@/game/logic"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -1196,7 +1196,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
           <template v-else>
             <p class="small" style="text-align: center">
-              丘比特：{{ cupidObj ? refs.playerLabel(cupidObj) : "-" }}
+              丘比特：{{ cupidObj ? playerLabelShort(cupidObj) : "-" }}
               <template v-if="state.lovers.length">｜已连：{{ loversLabel }}<template v-if="chainText"> ｜ 链型：<b style="color:#fff">{{ chainText }}</b></template><template v-else> ｜ 链型待狼人确认</template></template>
             </p>
             <a-button v-if="state.lovers.length < 2" type="primary" size="large" @click="openCupidConnect">💘 选择两位情侣（必须连两人）</a-button>
@@ -1231,7 +1231,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             </template>
             <template v-else>
             <p class="small" style="text-align: center">
-              守卫：{{ guardObj ? refs.playerLabel(guardObj) : "-" }}
+              守卫：{{ guardObj ? playerLabelShort(guardObj) : "-" }}
               <template v-if="state.guardLastTarget">｜上局守护 {{ labelOf(state.guardLastTarget) }}（不能同守）</template>
             </p>
             <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardOptions, (v) => doGuard(v), state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: '上局守护，本局不能守护' } : undefined)">🛡️ 确认守人</a-button>
@@ -1254,7 +1254,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', aliveOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
             <div v-else class="prophet-result">
               <div class="prophet-result-main">
-                🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? refs.playerLabel(v) : state.nightWolfKill })() }}
+                🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? playerLabelShort(v) : state.nightWolfKill })() }}
               </div>
               <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
             </div>
@@ -1390,7 +1390,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div v-else-if="currentStep === 'hunter'" class="step-body">
           <div class="step-emoji">🔫</div>
           <h3 class="step-title">猎人开枪</h3>
-          <p class="small" style="text-align: center">本局猎人：{{ hunterObj ? refs.playerLabel(hunterObj) : "-" }}</p>
+          <p class="small" style="text-align: center">本局猎人：{{ hunterObj ? playerLabelShort(hunterObj) : "-" }}</p>
           <a-tag v-if="hunterStatus" :color="state.hunterShotPending ? 'error' : 'default'" size="large">
             状态：{{ hunterStatus }}
           </a-tag>
@@ -1402,7 +1402,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div v-else-if="currentStep === 'wolfkingShot'" class="step-body">
           <div class="step-emoji">🔫</div>
           <h3 class="step-title">狼王开枪</h3>
-          <p class="small" style="text-align: center">本局狼王：{{ wolfKingObj ? refs.playerLabel(wolfKingObj) : "-" }}</p>
+          <p class="small" style="text-align: center">本局狼王：{{ wolfKingObj ? playerLabelShort(wolfKingObj) : "-" }}</p>
           <a-tag v-if="wolfKingStatus" :color="state.wolfKingShotPending ? 'error' : 'default'" size="large">
             状态：{{ wolfKingStatus }}
           </a-tag>
@@ -1556,7 +1556,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div class="fs-title">🔫 猎人可开枪</div>
         <div class="fs-death" style="border-color: #ffa940">
           <div class="fs-death-label">本局猎人</div>
-          <div class="fs-death-name" style="color: #ffa940">{{ hunterObj ? refs.playerLabel(hunterObj) : "-" }}</div>
+          <div class="fs-death-name" style="color: #ffa940">{{ hunterObj ? playerLabelShort(hunterObj) : "-" }}</div>
         </div>
         <div class="fs-actions">
           <a-button type="primary" size="large" @click="openPicker('选择带走目标', aliveOptions, (v) => doHunterShoot(v))">🔫 确认开枪带走</a-button>
