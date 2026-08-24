@@ -1108,6 +1108,67 @@ describe("警徽系统", () => {
     loseJingHui(st)
     expect(st.jingHui).toBe("")
   })
+
+  it("警长夜晚被刀：夜晚结算不改警徽，随后手动移交/流失由UI触发", () => {
+    const st = setup()
+    started(st)
+    nextNight(st)
+    setJingHui(st, "P5", false) // 猎人当警长
+    wolfKill(st, "P5")
+    resolveNightDeath(st)
+    expect(g(st, "P5").alive).toBe(false)
+    // 夜晚结算后警徽仍挂在死者名下（UI 再决定移交/流失）
+    expect(st.jingHui).toBe("P5")
+    autoTransferJingHui(st)
+    expect(st.jingHui).toBe("")
+  })
+
+  it("警长夜晚被毒：夜晚结算不改警徽，随后流失", () => {
+    const st = setup()
+    started(st)
+    nextNight(st)
+    setJingHui(st, "P4", false)
+    const w = byRole(st, "女巫")!
+    w.alive = true
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P4"
+    st.nightSteps.witch = true
+    wolfKill(st, "P0")
+    resolveNightDeath(st)
+    expect(g(st, "P4").alive).toBe(false)
+    expect(st.jingHui).toBe("P4")
+    autoTransferJingHui(st)
+    expect(st.jingHui).toBe("")
+  })
+
+  it("警长死亡后警徽可移交给存活玩家（移交日志）", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    g(st, "P4").alive = false
+    setJingHui(st, "P8", false)
+    expect(st.jingHui).toBe("P8")
+    expect(st.globalLog.some((l) => l.includes("警徽移交"))).toBe(true)
+  })
+
+  it("白狼王自爆吞警徽：白狼王是警长 → 警徽流失", () => {
+    const st = setup()
+    const wwk = st.players[0]
+    wwk.role = "白狼王"
+    st.jingHui = wwk.name
+    wolfKingBaoZha(st, wwk.name, "P5")
+    expect(st.jingHui).toBe("")
+  })
+
+  it("非警长出局时 autoTransferJingHui 不动作", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    g(st, "P8").alive = false // 普通玩家死亡，非警长
+    autoTransferJingHui(st)
+    expect(st.jingHui).toBe("P4")
+  })
 })
 
 describe("板子校验（isWolfRole）", () => {

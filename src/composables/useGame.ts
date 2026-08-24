@@ -5,8 +5,12 @@ import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
 import { syncGameToFeishu } from "@/api/feishuSync"
 
-const STORAGE_KEY = "werewolf_judge_v8"
-const HISTORY_KEY = "werewolf_history"
+/** 重构版存储键：与线上稳定版(stable-v1.0 读写的 v8/无后缀键)完全隔离，
+ *  保证任意时刻回退线上版本时法官数据零损失。旧键只读迁移、绝不回写。 */
+const LEGACY_STORAGE_KEY = "werewolf_judge_v8"
+const STORAGE_KEY = "werewolf_judge_v9"
+const LEGACY_HISTORY_KEY = "werewolf_history"
+const HISTORY_KEY = "werewolf_history_v2"
 
 export interface GameRecord {
   title: string
@@ -45,6 +49,9 @@ function load(): GameState {
   try {
     const s = localStorage.getItem(STORAGE_KEY)
     if (s) return g.normalizeState(JSON.parse(s))
+    // 一次性从旧版本键只读迁移（旧键保留给线上稳定版，绝不回写）
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (legacy) return g.normalizeState(JSON.parse(legacy))
   } catch {
     /* ignore */
   }
@@ -53,7 +60,7 @@ function load(): GameState {
 
 function loadHistory(): GameRecord[] {
   try {
-    const s = localStorage.getItem(HISTORY_KEY)
+    const s = localStorage.getItem(HISTORY_KEY) ?? localStorage.getItem(LEGACY_HISTORY_KEY)
     if (s) {
       return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false, boardFinal: r.boardFinal ?? "", mvp: r.mvp ?? "", svp: r.svp ?? "", beiguo: r.beiguo ?? "" }))
     }
