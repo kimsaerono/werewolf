@@ -86,8 +86,6 @@ const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const idiotFlip = ref(false)
 const lastDawnDeaths = ref<string[]>([])
-/** 天亮结算前 globalLog 长度快照，用于区分天亮前后的殉情日志 */
-const dawnLogSnapshot = ref(0)
 /** 殉情全局提示 */
 const loverDeathMsg = ref("")
 
@@ -577,21 +575,17 @@ watch(
     if (v) promptHunterShot()
   },
 )
-// 殉情：新日志出现"殉情" → 仅白天弹全局提示 + 播报（夜晚殉情由天亮死亡播报统一展示）
+// 殉情：新增出局且死因=lover 的玩家 → 仅白天弹全局提示 + 播报（夜晚殉情由天亮死亡播报统一展示）
+const announcedLoverDeaths = new Set<string>()
 watch(
-  () => state.globalLog.length,
-  (len, old) => {
-    if (len <= old) return
+  () => state.players.map((p) => `${p.name}:${p.deathReason ?? ""}:${p.alive}`).join(","),
+  () => {
     if (state.phase !== "day") return
-    const added = state.globalLog.slice(Math.max(old, dawnLogSnapshot.value))
-    const names = added
-      .map((l) => {
-        const m = l.match(/💔(.+?)因情侣殉情出局/)
-        return m ? m[1] : ""
-      })
-      .filter(Boolean)
-    if (names.length) {
-      const nos = names.map((n) => noOf(n))
+    const newLovers = state.players
+      .filter((p) => !p.alive && p.deathReason === "lover" && !announcedLoverDeaths.has(p.name))
+    if (newLovers.length) {
+      newLovers.forEach((p) => announcedLoverDeaths.add(p.name))
+      const nos = newLovers.map((p) => noOf(p.name))
       const txt = `${nos.join("、")}对象没了，跟着殉情了，爱情的力量就是这么无情`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
@@ -1068,7 +1062,6 @@ function doDawn() {
   snapshot()
   const before = aliveList.value.map((p) => p.name)
   const err = actions.dawnSettle()
-  dawnLogSnapshot.value = state.globalLog.length
   if (err) return message.error(err)
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))

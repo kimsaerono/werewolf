@@ -33,6 +33,7 @@ import {
   NO_CHECK,
   cupidConnect,
   applyLoverDeaths,
+  killPlayer,
   getChainType,
   isLover,
   knightDuel,
@@ -664,6 +665,41 @@ describe("丘比特 / 情侣", () => {
     })
     return st
   }
+
+  it("killPlayer 记录死因 + 殉情级联给对手标 lover", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // 人狼恋
+    killPlayer(st, "P0", "wolfKill")
+    expect(g(st, "P0").alive).toBe(false)
+    expect(g(st, "P0").deathReason).toBe("wolfKill")
+    // 殉情：对手 P8 一并出局，死因为 lover
+    expect(g(st, "P8").alive).toBe(false)
+    expect(g(st, "P8").deathReason).toBe("lover")
+    // 已死玩家再次 killPlayer 不重复出局、不重复殉情
+    const ret = killPlayer(st, "P0", "poison")
+    expect(ret).toEqual([])
+    expect(st.globalLog.filter((l) => l.includes("殉情")).length).toBe(1)
+  })
+
+  it("killPlayer 不死玩家返回空、invoke已死亡不动作", () => {
+    const st = setupQ()
+    expect(killPlayer(st, "不存在的玩家", "other")).toEqual([])
+  })
+
+  it("夜晚被毒者死因为 poison、被刀者死因为 wolfKill", () => {
+    const st = setup()
+    nextNight(st)
+    wolfKill(st, "P5") // 猎人
+    const w = byRole(st, "女巫")!
+    w.alive = true
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P8"
+    st.nightSteps.witch = true
+    resolveNightDeath(st)
+    expect(g(st, "P5").deathReason).toBe("wolfKill")
+    expect(g(st, "P8").deathReason).toBe("poison")
+  })
 
   it("丘比特连人：成功/重复/数量错误/自连(允许)", () => {
     const st = setupQ()

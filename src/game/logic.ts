@@ -1,4 +1,5 @@
 import { roleIds, getRole } from "./roles/registry"
+import type { DieReason } from "./roles/types"
 
 export const NO_CHECK = "__NOCHECK__"
 
@@ -106,6 +107,8 @@ export interface Player {
   star: string
   scoreDetail: string[]
   mark: Mark
+  /** 出局原因（""=未出局/旧存档）：vote/poison/wolfKill/selfBomb/duel/shot/lover 等 */
+  deathReason?: DieReason | ""
 }
 
 export type WinCamp = "wolf" | "god" | "civil" | "third" | "draw" | null
@@ -295,6 +298,7 @@ export function normalizeState(s: GameState): GameState {
     if (p.scoreTotal === undefined) p.scoreTotal = 0
     if (p.star === undefined) p.star = "-"
     if (!p.scoreDetail) p.scoreDetail = []
+    if (p.deathReason === undefined) p.deathReason = ""
     if (p.no === undefined) p.no = 0
     // 旧数据：guardHit 布尔 → guardHitCount 计数（守中过即算 1 次）
     const legacyGuardHit = (p.mark as unknown as { guardHit?: boolean }).guardHit
@@ -326,6 +330,7 @@ export function newPlayer(name: string): Player {
     star: "-",
     scoreDetail: [],
     mark: defaultMark(),
+    deathReason: "",
   }
 }
 
@@ -619,6 +624,7 @@ export function applyLoverDeaths(state: GameState): string[] {
     const partner = state.players.find((x) => x.name === partnerName)
     if (partner && partner.alive) {
       partner.alive = false
+      partner.deathReason = "lover"
       killed.push(partnerName)
     }
   }
@@ -633,6 +639,24 @@ export function applyLoverDeaths(state: GameState): string[] {
   }
   return killed
 }
+
+/**
+ * 唯一死亡入口：玩家出局统一走这里。
+ * 职责：翻转存活 + 记录死因 + 殉情级联（+ 后续版本的角色死亡钩子/警徽处理在此派发）。
+ * 返回本次实际新增出局的名字（含殉情对手），供调用方汇总播报/计数。
+ * 注意：拿枪类标记（猎人/狼王能否开枪）取决于是否被毒，属于调用点上下文，仍由各调用点设置，
+ * 不在本入口处理，以免破坏被毒吞枪语义。
+ */
+export function killPlayer(state: GameState, name: string, reason: DieReason): string[] {
+  const p = state.players.find((x) => x.name === name)
+  if (!p || !p.alive) return []
+  p.alive = false
+  p.deathReason = reason
+  const killed = [name]
+  killed.push(...applyLoverDeaths(state))
+  return killed
+}
+
 
 // ===================== 操作函数（纯逻辑，返回错误信息或 null）=====================
 
@@ -928,12 +952,11 @@ export function hunterShootConfirm(state: GameState, tarName: string): string | 
   if (!tarName) return "请选择被带走目标"
   const target = state.players.find((p) => p.name === tarName)
   if (!target) return "未找到目标玩家"
-  target.alive = false
+  killPlayer(state, tarName, "shot")
   if (isWolfRole(target.role)) hunter.mark.hunterKillWolf = true
   else hunter.mark.hunterKillGood = true
   state.hunterShotPending = false
   state.hunterShotDone = true
-  applyLoverDeaths(state)
   pushNightLog(state, `🔫猎人${hunter.name}开枪带走${tarName}`)
   pushGlobalLog(state, `🔫猎人${hunter.name}开枪带走：${tarName}`)
   pushFlow(state, "猎人开枪", tarName)
@@ -962,7 +985,7 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   if (!tarName) return "请选择被带走目标"
   const target = state.players.find((p) => p.name === tarName)
   if (!target) return "未找到目标玩家"
-  target.alive = false
+  killPlayer(state, tarName, "shot")
   if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
   else wk.mark.wolfKingShotGood = true
   // 狼枪带走猎人：猎人依然可开枪（非被毒）
@@ -972,7 +995,6 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   }
   state.wolfKingShotPending = false
   state.wolfKingShotDone = true
-  applyLoverDeaths(state)
   pushNightLog(state, `🔫狼王${wk.name}开枪带走${tarName}`)
   pushGlobalLog(state, `🔫狼王${wk.name}开枪带走：${tarName}`)
   pushFlow(state, "狼王开枪", tarName)
@@ -1004,16 +1026,14 @@ export function knightDuel(state: GameState, tar: string): string | null {
   if (t.name === knight.name) return "不能和自己决斗"
   state.knightDuelUsed = true
   if (isWolfRole(t.role)) {
-    t.alive = false
+    killPlayer(state, tar, "duel")
     knight.mark.hunterKillWolf = true
-    applyLoverDeaths(state)
     pushGlobalLog(state, `⚔️骑士${knight.name}决斗戳中狼人${tar}，狼人出局`)
     pushNightLog(state, `⚔️骑士决斗：${tar}是狼，被戳出局`)
     pushFlow(state, "骑士决斗", tar, "戳中狼")
   } else {
-    knight.alive = false
+    killPlayer(state, knight.name, "duel")
     knight.mark.hunterKillGood = true
-    applyLoverDeaths(state)
     pushGlobalLog(state, `⚔️骑士${knight.name}决斗戳错好人${tar}，骑士自己出局`)
     pushNightLog(state, `⚔️骑士决斗戳错，骑士出局`)
     pushFlow(state, "骑士决斗", tar, "戳错")
@@ -1074,8 +1094,7 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
     pushFlow(state, "放逐", outName, "白痴翻牌")
   } else {
-    outP.alive = false
-    applyLoverDeaths(state)
+    killPlayer(state, outName, "vote")
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
     if (outP.role === "猎人" && !outP.mark.hunterIsPoisoned) {
@@ -1096,9 +1115,8 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   if (!p) return "未找到该玩家"
   if (!p.alive) return "该玩家已出局"
   if (!isWolfRole(p.role)) return "只能选择狼人/白狼王自爆"
-  p.alive = false
+  killPlayer(state, sel, "selfBomb")
   state.skipVote = true
-  applyLoverDeaths(state)
   // 自爆直接吞警徽：自爆者是警长则警徽流失
   if (state.jingHui === sel) {
     state.jingHui = ""
@@ -1122,10 +1140,9 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   if (!t) return "未找到目标玩家"
   if (!t.alive) return "目标已出局"
   if (t.name === p.name) return "不能带走自己"
-  p.alive = false
-  t.alive = false
+  killPlayer(state, sel, "selfBomb")
+  killPlayer(state, tar, "other")
   state.skipVote = true
-  applyLoverDeaths(state)
   // 白狼王自爆带走：被带走的猎人/狼王不开枪；若白狼王是警长则警徽流失
   if (state.jingHui === sel) {
     state.jingHui = ""
@@ -1169,7 +1186,9 @@ export function resolveNightDeath(state: GameState): string | null {
   ;[...new Set(deathList)].forEach((name) => {
     const p = state.players.find((x) => x.name === name)
     if (p && p.alive) {
-      p.alive = false
+      // 统一走死亡入口（含殉情级联），并收集本次新增出局名单（含殉情对手）并入死亡名单
+      const reason: DieReason = poisonTarget === name ? "poison" : "wolfKill"
+      deathList.push(...killPlayer(state, name, reason))
       if (p.role === "猎人" && poisonTarget === name) {
         p.mark.hunterIsPoisoned = true
         pushNightLog(state, `⚠️猎人${name}被毒，本出局无法开枪`)
@@ -1188,9 +1207,6 @@ export function resolveNightDeath(state: GameState): string | null {
       }
     }
   })
-
-  // 殉情：情侣一方出局则另一方立刻同死（不开枪），并入天亮死亡名单
-  deathList.push(...applyLoverDeaths(state))
 
   state.guardLastTarget = state.nightGuardTarget
   state.skipVote = false

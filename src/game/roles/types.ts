@@ -1,9 +1,20 @@
 export type Camp = "wolf" | "god" | "villager" | "third"
 
-/** 角色死亡事件（Phase 2 起在死亡管线中派发） */
+/** 出局原因（killPlayer 唯一死亡入口会记录在 Player.deathReason） */
+export type DieReason =
+  | "vote"
+  | "wolfKill"
+  | "poison"
+  | "selfBomb"
+  | "duel"
+  | "shot"
+  | "lover"
+  | "other"
+
+/** 角色死亡事件（死亡管线中派发） */
 export interface DieEvent {
   name: string
-  reason: "vote" | "wolfKill" | "poison" | "selfBomb" | "duel" | "shot" | "lover" | "other"
+  reason: DieReason
 }
 
 /** 夜晚结算产出（Phase 4a 统一结算用） */
