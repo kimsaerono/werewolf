@@ -49,9 +49,16 @@ import {
   roleShort,
   playerLabel,
   playerLabelShort,
+  isWolfRole,
+  ALL_ROLE_OPT,
+  GOD_LIST,
+  UNIQUE_ROLES,
+  ROLE_EMOJI,
+  ROLE_SHORT,
   type GameState,
   type Player,
 } from "./logic"
+import { registerRole, unregisterRole, isRegistered, getRole } from "./roles/registry"
 
 function makePlayers(roles: string[]): Player[] {
   return roles.map((r, i) => {
@@ -1277,5 +1284,49 @@ describe("playerLabelShort 紧凑标签", () => {
     p.role = "白狼王"
     expect(playerLabel(p)).toBe("2.王五(❄️🐺白狼王)")
     expect(playerLabelShort(p)).toBe("2.王五(❄️🐺白狼)")
+  })
+})
+
+describe("角色注册表派生常量", () => {
+  it("内置角色全量派生到 ALL_ROLE_OPT，顺序与注册一致", () => {
+    expect(ALL_ROLE_OPT).toEqual(["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"])
+  })
+
+  it("GOD_LIST 来自 camp===god，丘比特不入列", () => {
+    expect(GOD_LIST.sort()).toEqual(["守卫", "女巫", "白痴", "猎人", "预言家", "骑士"].sort())
+    expect(GOD_LIST).not.toContain("丘比特")
+  })
+
+  it("isWolfRole 覆盖狼人/白狼王/狼王，不含其它", () => {
+    expect(["狼人", "白狼王", "狼王"].map(isWolfRole)).toEqual([true, true, true])
+    expect(["预言家", "女巫", "平民", "丘比特"].map(isWolfRole)).toEqual([false, false, false, false])
+  })
+
+  it("UNIQUE_ROLES 来自 unique===true", () => {
+    const expected = ["白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "丘比特"]
+    expect(UNIQUE_ROLES.sort()).toEqual(expected.sort())
+  })
+
+  it("ROLE_EMOJI / ROLE_SHORT 由注册表派生", () => {
+    expect(ROLE_EMOJI["预言家"]).toBe("🔮")
+    expect(ROLE_EMOJI["丘比特"]).toBe("💘")
+    expect(ROLE_SHORT["白狼王"]).toBe("白狼")
+    expect(ROLE_SHORT["狼王"]).toBe("狼王")
+  })
+
+  it("动态注册角色：注册表查询与派生函数实时生效", () => {
+    registerRole({ id: "僵尸", camp: "wolf", unique: true, emoji: "🧟", short: "僵" })
+    try {
+      expect(isRegistered("僵尸")).toBe(true)
+      expect(getRole("僵尸")?.camp).toBe("wolf")
+      expect(getRole("僵尸")?.short).toBe("僵")
+      expect(isWolfRole("僵尸")).toBe(true)
+      expect(roleShort("僵尸")).toBe("僵")
+    } finally {
+      unregisterRole("僵尸")
+    }
+    expect(isRegistered("僵尸")).toBe(false)
+    expect(isWolfRole("僵尸")).toBe(false)
+    expect(roleShort("僵尸")).toBe("僵尸")
   })
 })

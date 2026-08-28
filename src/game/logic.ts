@@ -1,3 +1,5 @@
+import { roleIds, getRole } from "./roles/registry"
+
 export const NO_CHECK = "__NOCHECK__"
 
 export const boardConfig: Record<string, string[]> = {
@@ -16,48 +18,34 @@ export const boardConfig: Record<string, string[]> = {
   "12q": ["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "丘比特", "平民", "平民", "平民", "平民"],
   "13w": ["白狼王", "狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "白痴", "平民", "平民", "平民", "平民", "平民"],
 }
-export const ALL_ROLE_OPT = ["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"]
-/** 神职列表（丘比特独立特殊好人牌，不计神/民，不入此列） */
-export const GOD_LIST = ["预言家", "女巫", "猎人", "白痴", "守卫", "骑士"]
-/** 狼人阵营（含白狼王、狼王） */
+
+/** 全部可选角色 id（由注册表派生，新增角色自动纳入） */
+export const ALL_ROLE_OPT = roleIds()
+/** 神职列表：注册表 camp==="god" 的角色（丘比特为第三方，不计神/民） */
+export const GOD_LIST = roleIds().filter((id) => getRole(id)?.camp === "god")
+/** 狼人阵营：注册表 camp==="wolf" 的角色（含白狼王、狼王） */
 export function isWolfRole(role: string): boolean {
-  return role === "狼人" || role === "白狼王" || role === "狼王"
+  return getRole(role)?.camp === "wolf"
 }
-/** 唯一性角色：每个最多 1 个，不能重复加 */
-export const UNIQUE_ROLES = ["预言家", "女巫", "猎人", "守卫", "白痴", "骑士", "白狼王", "狼王", "丘比特"]
-/** 角色头像表情，一眼认出 */
-export const ROLE_EMOJI: Record<string, string> = {
-  狼人: "🐺",
-  白狼王: "❄️🐺",
-  狼王: "🔫🐺",
-  预言家: "🔮",
-  女巫: "🧙",
-  猎人: "🔫",
-  守卫: "🛡️",
-  骑士: "⚔️",
-  白痴: "🙊",
-  平民: "👤",
-  丘比特: "💘",
-}
-
+/** 唯一性角色：注册表 unique===true 的角色（每局至多 1 个） */
+export const UNIQUE_ROLES = roleIds().filter((id) => getRole(id)?.unique)
+/** 角色头像表情，一眼认出（由注册表派生） */
+export const ROLE_EMOJI: Record<string, string> = Object.fromEntries(
+  roleIds().map((id) => [id, getRole(id)?.emoji ?? ""]),
+)
 /** 角色简写（标签/紧凑场景展示用，完整名保留在 title/详情里） */
-export const ROLE_SHORT: Record<string, string> = {
-  狼人: "狼",
-  白狼王: "白狼",
-  狼王: "狼王",
-  预言家: "预",
-  女巫: "巫",
-  猎人: "猎",
-  守卫: "守",
-  骑士: "骑",
-  白痴: "痴",
-  平民: "民",
-  丘比特: "丘",
-}
+export const ROLE_SHORT: Record<string, string> = Object.fromEntries(
+  roleIds().map((id) => [id, getRole(id)?.short ?? id]),
+)
 
-/** 角色简写；未收录时回退为完整名 */
+/** 角色简写；未收录时回退为完整名（实时查注册表，动态注册的角色同样生效） */
 export function roleShort(role?: string): string {
-  return (role && ROLE_SHORT[role]) || role || ""
+  if (role) {
+    const def = getRole(role)
+    if (def) return def.short
+    return role
+  }
+  return ""
 }
 
 export const boardLabels: Record<string, string> = {
