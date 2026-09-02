@@ -3,6 +3,7 @@ import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { roleShort, playerLabelShort } from "@/game/logic"
+import { getRoleInstance } from "@/game/roles/builtin"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -86,6 +87,8 @@ const sheriffDeathModal = ref(false)
 const deadSheriff = ref("")
 const idiotFlip = ref(false)
 const lastDawnDeaths = ref<string[]>([])
+/** 天亮结算前 globalLog 长度快照，用于区分天亮前后的殉情日志 */
+const dawnLogSnapshot = ref(0)
 /** 殉情全局提示 */
 const loverDeathMsg = ref("")
 
@@ -210,20 +213,29 @@ function doUndo() {
   })
 }
 
-const hasRole = (r: string) => computed(() => state.players.some((p) => p.role === r))
-const hasProphet = hasRole("预言家")
-const hasWitch = hasRole("女巫")
-const hasGuard = hasRole("守卫")
-const hasHunter = hasRole("猎人")
-const hasKnight = hasRole("骑士")
-const hasIdiot = hasRole("白痴")
-const hasCupid = hasRole("丘比特")
-const hunterObj = computed(() => state.players.find((p) => p.role === "猎人"))
-const guardObj = computed(() => state.players.find((p) => p.role === "守卫"))
-const witchObj = computed(() => state.players.find((p) => p.role === "女巫"))
+// 使用角色系统查找玩家
+const findPlayerByRoleId = (roleId: string) => computed(() => state.players.find((p) => {
+  const role = getRoleInstance(p.role)
+  return role && role.def.id === roleId
+}))
+const hasRoleId = (roleId: string) => computed(() => state.players.some((p) => {
+  const role = getRoleInstance(p.role)
+  return role && role.def.id === roleId
+}))
+
+const hasProphet = hasRoleId("预言家")
+const hasWitch = hasRoleId("女巫")
+const hasGuard = hasRoleId("守卫")
+const hasHunter = hasRoleId("猎人")
+const hasKnight = hasRoleId("骑士")
+const hasIdiot = hasRoleId("白痴")
+const hasCupid = hasRoleId("丘比特")
+const hunterObj = findPlayerByRoleId("猎人")
+const guardObj = findPlayerByRoleId("守卫")
+const witchObj = findPlayerByRoleId("女巫")
 const witchIsKillTarget = computed(() => !!witchObj.value && state.nightWolfKill === witchObj.value.name)
 const witchCanSelfSave = computed(() => state.round <= 1 || !witchIsKillTarget.value)
-const prophetObj = computed(() => state.players.find((p) => p.role === "预言家"))
+const prophetObj = findPlayerByRoleId("预言家")
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
 const jingHuiLabel = computed(() =>
   jingHuiObj.value ? refs.playerLabel(jingHuiObj.value) : state.jingHui,
@@ -245,7 +257,7 @@ const hunterStatus = computed(() => {
   if (!h.alive) return "❌ 已出局"
   return "🔫 正常可开枪"
 })
-const wolfKingObj = computed(() => state.players.find((p) => p.role === "狼王"))
+const wolfKingObj = findPlayerByRoleId("狼王")
 const wolfKingStatus = computed(() => {
   const wk = wolfKingObj.value
   if (!wk) return ""
@@ -332,7 +344,10 @@ const aliveOptions = computed(() => aliveList.value.map((p) => playerOption(p)))
 /** 放逐投票选项：排除已翻牌白痴（不可被放逐） */
 const voteOptions = computed(() =>
   aliveList.value
-    .filter((p) => !(p.role === "白痴" && p.mark.idiotFlipped))
+    .filter((p) => {
+      const role = getRoleInstance(p.role)
+      return !(role && role.def.id === "白痴" && p.mark.idiotFlipped)
+    })
     .map((p) => playerOption(p)),
 )
 /** 女巫毒药目标：排除女巫自己（不能对自己用毒） */
@@ -382,7 +397,7 @@ const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 /** 未确认身份且存活的玩家（用于睁眼认人） */
 const unassignedAliveOptions = computed(() => aliveList.value.filter((p) => !p.role).map((p) => playerOption(p)))
 /** 白狼王自爆带走目标：白狼王本人除外 */
-const wwkObj = computed(() => state.players.find((p) => p.role === "白狼王"))
+const wwkObj = findPlayerByRoleId("白狼王")
 const wwkBoomTarOptions = computed(() =>
   aliveList.value.filter((p) => p.name !== wwkObj.value?.name).map((p) => playerOption(p)),
 )
@@ -575,17 +590,31 @@ watch(
     if (v) promptHunterShot()
   },
 )
-// 殉情：新增出局且死因=lover 的玩家 → 仅白天弹全局提示 + 播报（夜晚殉情由天亮死亡播报统一展示）
-const announcedLoverDeaths = new Set<string>()
+// 警长出局：killPlayer 统一置 state.badgePending，这里集中弹窗决策移交/流失（不再散落调用点）
 watch(
-  () => state.players.map((p) => `${p.name}:${p.deathReason ?? ""}:${p.alive}`).join(","),
-  () => {
+  () => state.badgePending,
+  (v) => {
+    if (v && !state.finished) {
+      deadSheriff.value = v
+      sheriffDeathModal.value = true
+    }
+  },
+)
+// 殉情：新日志出现"殉情" → 仅白天弹全局提示 + 播报（夜晚殉情由天亮死亡播报统一展示）
+watch(
+  () => state.globalLog.length,
+  (len, old) => {
+    if (len <= old) return
     if (state.phase !== "day") return
-    const newLovers = state.players
-      .filter((p) => !p.alive && p.deathReason === "lover" && !announcedLoverDeaths.has(p.name))
-    if (newLovers.length) {
-      newLovers.forEach((p) => announcedLoverDeaths.add(p.name))
-      const nos = newLovers.map((p) => noOf(p.name))
+    const added = state.globalLog.slice(Math.max(old, dawnLogSnapshot.value))
+    const names = added
+      .map((l) => {
+        const m = l.match(/💔(.+?)因情侣殉情出局/)
+        return m ? m[1] : ""
+      })
+      .filter(Boolean)
+    if (names.length) {
+      const nos = names.map((n) => noOf(n))
       const txt = `${nos.join("、")}对象没了，跟着殉情了，爱情的力量就是这么无情`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
@@ -670,7 +699,7 @@ function confirmRoleWithCheck(role: string, v: string) {
 function openWolfConfirm() {
   openMultiPicker(
     "🐺 确认狼人（睁眼认人，勾选" + wolfNeed.value + "个）",
-    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => playerOption(p)),
+    aliveList.value.filter((x) => !x.role || refs.isWolfRole(x.role)).map((p) => playerOption(p)),
     (sel) => {
       if (sel.length !== wolfNeed.value) {
         message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${sel.length} 个`)
@@ -683,12 +712,12 @@ function openWolfConfirm() {
     },
     wolfNeed.value,
     wolfNeed.value,
-    state.players.filter((p) => p.role === "狼人").map((p) => p.name),
+    state.players.filter((p) => refs.isWolfRole(p.role)).map((p) => p.name),
   )
 }
 
 // ===== 丘比特连人 =====
-const cupidObj = computed(() => state.players.find((p) => p.role === "丘比特"))
+const cupidObj = findPlayerByRoleId("丘比特")
 /** 链型是否公开：狼人身份确认后（狼人步骤确认完）才体现 GG/WW/WG */
 const chainRevealed = computed(() => wolfAllConfirmed.value)
 const chainText = computed(() => {
@@ -741,7 +770,10 @@ const thirdActive = computed(() => chainRevealed.value && refs.getChainType(stat
 /** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标） */
 const thirdMembersList = computed(() =>
   thirdActive.value
-    ? state.players.filter((p) => p.role === "丘比特" || state.lovers.includes(p.name)).map((p) => p.name)
+    ? state.players.filter((p) => {
+        const role = getRoleInstance(p.role)
+        return (role && role.def.id === "丘比特") || state.lovers.includes(p.name)
+      }).map((p) => p.name)
     : [],
 )
 /** 情侣标签 tooltip 说明 */
@@ -873,7 +905,6 @@ function doHunterShoot(v: string) {
   const err = actions.hunterShoot(v)
   if (err) return message.error(err)
   effect("hunter", "gunshot")
-  checkSheriffDeath()
 }
 function doHunterGiveUp() {
   modal.confirm({
@@ -893,7 +924,6 @@ function doWolfKingShoot(v: string) {
   const err = actions.wolfKingShoot(v)
   if (err) return message.error(err)
   effect("hunter", "gunshot")
-  checkSheriffDeath()
 }
 function doWolfKingGiveUp() {
   modal.confirm({
@@ -956,14 +986,6 @@ function finishJinghuiSetup() {
     message.success("警徽设置已保存")
   }
 }
-function checkSheriffDeath() {
-  if (state.finished || !state.jingHui) return
-  const holder = state.players.find((p) => p.name === state.jingHui)
-  if (holder && !holder.alive) {
-    deadSheriff.value = holder.name
-    sheriffDeathModal.value = true
-  }
-}
 /** 猎人可开枪时语音提示法官（唯一播报源，防重复）：pending 置真后延迟播一次 */
 let hunterPromptTimer: ReturnType<typeof setTimeout> | null = null
 function promptHunterShot() {
@@ -993,7 +1015,8 @@ function doFinishVote(v: string) {
   const outP = state.players.find((p) => p.name === v)
   if (!outP) return message.error("请选择放逐出局对象")
   snapshot()
-  if (outP.role === "白痴" && !outP.mark.idiotFlipped) {
+  const outRole = getRoleInstance(outP.role)
+  if (outRole && outRole.def.id === "白痴" && !outP.mark.idiotFlipped) {
     // 白痴被放逐 → 直接翻牌免死（失去投票权，保留在场上）
     const err = actions.finishVote(outP.name, true)
     if (err) return message.error(err)
@@ -1005,15 +1028,15 @@ function doFinishVote(v: string) {
   const err = actions.finishVote(v, false)
   if (err) return message.error(err)
   markDone("vote")
-  checkSheriffDeath()
   // 放逐玩家有遗言，弹计时
   lastWordsName.value = v
   lastWordsShow.value = true
 }
 function doWolfBaoZha(v: string) {
   const p = state.players.find((x) => x.name === v)
+  const pRole = p ? getRoleInstance(p.role) : null
   // 白狼王：弹第二层选择带走目标
-  if (p?.role === "白狼王") {
+  if (pRole && pRole.def.id === "白狼王") {
     openPicker("选择白狼王带走目标", wwkBoomTarOptions.value, (tar) => {
       snapshot()
       stopSpeech()
@@ -1022,7 +1045,6 @@ function doWolfBaoZha(v: string) {
       message.success("白狼王自爆带人，直接进入黑夜")
       effect("explode", "explode")
       playVoice("wwk_boom")
-      checkSheriffDeath()
     })
     return
   }
@@ -1033,7 +1055,6 @@ function doWolfBaoZha(v: string) {
   message.success("狼人自爆，直接进入黑夜")
   effect("explode", "explode")
   playVoice("explode")
-  checkSheriffDeath()
 }
 function doKnightDuel(v: string) {
   snapshot()
@@ -1046,7 +1067,6 @@ function doKnightDuel(v: string) {
   message.success(`骑士决斗：${lbl}${isWolf ? " 戳中狼人" : " 戳错，骑士出局"}`)
   effect("knight", "sword", `决斗对象：${lbl}`)
   playVoice(isWolf ? "knight_duel_wolf" : "knight_duel_good")
-  checkSheriffDeath()
   if (isWolf && !state.finished) {
     state.skipVote = true
     lastWordsShow.value = false
@@ -1062,6 +1082,7 @@ function doDawn() {
   snapshot()
   const before = aliveList.value.map((p) => p.name)
   const err = actions.dawnSettle()
+  dawnLogSnapshot.value = state.globalLog.length
   if (err) return message.error(err)
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))
@@ -1100,7 +1121,6 @@ function doDawn() {
         : `昨夜${nos.length === 2 ? "双死" : `${nos.length}死`}，${nos.join("、")}号玩家出局，bye-bye，下局见！`)
     if (state.voiceEnabled) speakQueue([txt])
   }
-  checkSheriffDeath()
 }
 function doFlow() {
   const enteringNight = state.phase !== "night"

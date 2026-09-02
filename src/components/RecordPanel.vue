@@ -3,6 +3,7 @@ import { App as AntApp } from "ant-design-vue"
 import { decorateLog, cleanLogLine, roleShort } from "@/game/logic"
 import type { Game } from "@/types"
 import type { GameRecord } from "@/composables/useGame"
+import { getRoleInstance } from "@/game/roles/builtin"
 
 const { message, modal } = AntApp.useApp()
 
@@ -22,7 +23,8 @@ function timeHM(t: string): string {
 function thirdLabel(h: GameRecord, p: { name: string; role: string }): string {
   const chain = refs.getChainType({ lovers: h.lovers, players: h.players } as never)
   if (chain !== "WG") return ""
-  if (h.lovers.includes(p.name) || p.role === "丘比特") return `第三阵营·${p.role}`
+  const role = getRoleInstance(p.role)
+  if (h.lovers.includes(p.name) || (role && role.def.id === "丘比特")) return `第三阵营·${p.role}`
   return ""
 }
 

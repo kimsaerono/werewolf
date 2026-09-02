@@ -1,5 +1,15 @@
 import { roleIds, getRole } from "./roles/registry"
 import type { DieReason } from "./roles/types"
+export {
+  setJingHui,
+  autoTransferJingHui,
+  loseJingHui,
+  transferBadge,
+  loseBadge,
+  handleSheriffDeath,
+  resolveBadgePending,
+} from "./badge"
+import { loseBadge } from "./badge"
 
 export const NO_CHECK = "__NOCHECK__"
 
@@ -77,6 +87,8 @@ export function boardShortName(board: string): string {
 
 export interface Mark {
   prophetFirstDayWolf: boolean
+  prophetCheckWolf: boolean
+  prophetCheckGood: boolean
   prophetNoCheckCount: number
   witchSaveGood: boolean
   witchPoWolf: boolean
@@ -192,6 +204,8 @@ export interface GameState {
   recordText: string
   winCamp: WinCamp
   jingHui: string
+  /** 待处理警长的名字（警长出局且未被移交/流失时由 BadgeService 置入，UI 消费） */
+  badgePending: string
   wolfSelfKill: boolean
   knightDuelUsed: boolean
   winMode: "edge" | "city"
@@ -211,6 +225,8 @@ export interface GameState {
 export function defaultMark(): Mark {
   return {
     prophetFirstDayWolf: false,
+    prophetCheckWolf: false,
+    prophetCheckGood: false,
     prophetNoCheckCount: 0,
     witchSaveGood: false,
     witchPoWolf: false,
@@ -266,6 +282,7 @@ export function defaultState(): GameState {
     recordText: "",
     winCamp: null,
     jingHui: "",
+    badgePending: "",
     wolfSelfKill: false,
     knightDuelUsed: false,
     winMode: "edge",
@@ -292,6 +309,7 @@ export function normalizeState(s: GameState): GameState {
   if (typeof st.wolfKingShotDone !== "boolean") st.wolfKingShotDone = false
   if (typeof st.prophetReport !== "string") st.prophetReport = ""
   if (st.winMode !== "city") st.winMode = "edge"
+  if (typeof st.badgePending !== "string") st.badgePending = ""
   st.players.forEach((p) => {
     p.mark = Object.assign(defaultMark(), p.mark || {})
     if (p.scoreRound === undefined) p.scoreRound = 0
@@ -448,17 +466,22 @@ export function setRole(state: GameState, idx: number, role: string): string | n
 /** 所有非平民角色确认完时，把剩余未分配玩家自动填为平民；返回新填充人数 */
 export function autoFillCivilians(state: GameState): number {
   const quota = roleQuota(state)
-  const nonCivil = Object.keys(quota).filter((r) => r !== "平民")
+  // 使用角色系统判断平民角色
+  const civilRoleId = Object.keys(quota).find((r) => {
+    const role = getRoleInstance(r)
+    return role && role.def.camp === "villager"
+  }) || "平民"
+  const nonCivil = Object.keys(quota).filter((r) => r !== civilRoleId)
   const allDone = nonCivil.every((r) => state.players.filter((p) => p.role === r).length === quota[r])
   if (!allDone) return 0
-  const civilQuota = quota["平民"] || 0
-  const civilNow = state.players.filter((p) => p.role === "平民").length
+  const civilQuota = quota[civilRoleId] || 0
+  const civilNow = state.players.filter((p) => p.role === civilRoleId).length
   if (civilNow >= civilQuota) return 0
   let added = 0
   for (const p of state.players) {
     if (civilNow + added >= civilQuota) break
     if (p.role) continue
-    p.role = "平民"
+    p.role = civilRoleId
     added++
   }
   return added
@@ -481,15 +504,20 @@ export function confirmRole(state: GameState, name: string, role: string): strin
 
 /** 批量确认狼人（狼人睁眼时由法官一次确认） */
 export function confirmWolves(state: GameState, names: string[]): string | null {
-  const need = roleQuota(state)["狼人"] || 0
-  const now = state.players.filter((p) => p.role === "狼人").length
+  // 使用角色系统查找狼人角色ID
+  const wolfRoleId = Object.keys(roleQuota(state)).find((r) => {
+    const role = getRoleInstance(r)
+    return role && role.def.camp === "wolf"
+  }) || "狼人"
+  const need = roleQuota(state)[wolfRoleId] || 0
+  const now = state.players.filter((p) => p.role === wolfRoleId).length
   const unassigned = [...new Set(names)].filter(
     (n) => n && !state.players.find((p) => p.name === n)?.role,
   )
   if (now + unassigned.length > need) {
     return `狼人已确认 ${now} 个，本板子需要 ${need} 个，最多还能确认 ${need - now} 个`
   }
-  for (const n of unassigned) confirmRole(state, n, "狼人")
+  for (const n of unassigned) confirmRole(state, n, wolfRoleId)
   return null
 }
 
@@ -595,8 +623,12 @@ export function getChainType(state: GameState): "GG" | "WW" | "WG" | "" {
 
 /** 丘比特首夜连人：连接两名玩家为情侣（顺序无关；可连自己，自己也是链中一环） */
 export function cupidConnect(state: GameState, names: string[]): string | null {
-  const cupid = state.players.find((p) => p.role === "丘比特")
-  if (!cupid) return "本局没有丘比特"
+  // 使用角色系统查找丘比特角色
+  const cupidRole = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "丘比特"
+  })
+  if (!cupidRole) return "本局没有丘比特"
   const list = [...new Set(names.filter(Boolean))]
   if (list.length !== 2) return "请选择两位玩家作为情侣"
   for (const n of list) {
@@ -640,6 +672,30 @@ export function applyLoverDeaths(state: GameState): string[] {
   return killed
 }
 
+/** 全局死亡前钩子（供角色系统扩展，如白痴翻牌免死） */
+const beforeDeathHooks: Array<(state: GameState, evt: { name: string; reason: DieReason }) => boolean> = []
+
+/** 注册死亡前钩子（返回 true 则拦截死亡） */
+export function onBeforeDeath(hook: (state: GameState, evt: { name: string; reason: DieReason }) => boolean): () => void {
+  beforeDeathHooks.push(hook)
+  return () => {
+    const idx = beforeDeathHooks.indexOf(hook)
+    if (idx >= 0) beforeDeathHooks.splice(idx, 1)
+  }
+}
+
+/** 全局死亡后钩子 */
+const afterDeathHooks: Array<(state: GameState, evt: { name: string; reason: DieReason; killed: string[] }) => void> = []
+
+/** 注册死亡后钩子 */
+export function onAfterDeath(hook: (state: GameState, evt: { name: string; reason: DieReason; killed: string[] }) => void): () => void {
+  afterDeathHooks.push(hook)
+  return () => {
+    const idx = afterDeathHooks.indexOf(hook)
+    if (idx >= 0) afterDeathHooks.splice(idx, 1)
+  }
+}
+
 /**
  * 唯一死亡入口：玩家出局统一走这里。
  * 职责：翻转存活 + 记录死因 + 殉情级联（+ 后续版本的角色死亡钩子/警徽处理在此派发）。
@@ -650,10 +706,36 @@ export function applyLoverDeaths(state: GameState): string[] {
 export function killPlayer(state: GameState, name: string, reason: DieReason): string[] {
   const p = state.players.find((x) => x.name === name)
   if (!p || !p.alive) return []
+
+  // 触发死亡前钩子（角色可拦截死亡，如白痴翻牌）
+  const evt = { name, reason }
+  for (const hook of beforeDeathHooks) {
+    if (hook(state, evt)) {
+      // 被拦截：不执行死亡
+      return []
+    }
+  }
+
   p.alive = false
   p.deathReason = reason
   const killed = [name]
   killed.push(...applyLoverDeaths(state))
+  // 警长出局 → 置待处理标记，由 BadgeService/UI 决策移交或流失
+  // （自爆自吞警徽在 wolfBaoZha/wolfKingBaoZha 里由 loseBadge 直接处理，不走 pending）
+  if (reason !== "selfBomb" && state.jingHui === name) {
+    state.badgePending = name
+  }
+
+  // 触发死亡后钩子
+  const afterEvt = { name, reason, killed }
+  for (const hook of afterDeathHooks) {
+    try {
+      hook(state, afterEvt)
+    } catch (e) {
+      console.error(`[killPlayer] afterDeath hook error:`, e)
+    }
+  }
+
   return killed
 }
 
@@ -844,7 +926,11 @@ export function wolfKill(state: GameState, sel: string): string | null {
 
 export function prophetCheck(state: GameState, sel: string): string | { name: string; isWolf: boolean } | null {
   if (!sel) return "请选择查验对象"
-  const prophet = state.players.find((p) => p.role === "预言家")
+  // 使用角色系统查找预言家
+  const prophet = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "预言家"
+  })
   if (prophet && !prophet.alive) return "预言家已出局，本晚不能查验"
   if (sel === NO_CHECK) {
     return prophetNoCheck(state)
@@ -857,16 +943,24 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
   pushNightLog(state, `🔮预言家查验${lbl}，结果：${isWolf ? "狼人" : "好人"}`)
   pushGlobalLog(state, `🔮预言家查验：${lbl} → ${isWolf ? "狼人" : "好人"}`)
   pushFlow(state, "预言家验人", sel, isWolf ? "狼" : "好")
-  // 预言家出局后仅流程性验人，不产生技能分
+  // 记录验人结果用于记分（预言家存活时才记分）
+  if (prophet && prophet.alive) {
+    if (isWolf) prophet.mark.prophetCheckWolf = true
+    else prophet.mark.prophetCheckGood = true
+  }
+  // 首夜验狼额外加分
   if (state.round === 1 && isWolf) {
-    const prop = state.players.find((p) => p.role === "预言家")
-    if (prop && prop.alive) prop.mark.prophetFirstDayWolf = true
+    if (prophet && prophet.alive) prophet.mark.prophetFirstDayWolf = true
   }
   return { name: sel, isWolf }
 }
 
 export function prophetNoCheck(state: GameState): string | null {
-  const prop = state.players.find((p) => p.role === "预言家")
+  // 使用角色系统查找预言家
+  const prop = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "预言家"
+  })
   if (!prop) return "本局没有预言家"
   // 预言家出局后仅流程性跳过，不扣分
   if (prop.alive) prop.mark.prophetNoCheckCount = (prop.mark.prophetNoCheckCount || 0) + 1
@@ -879,7 +973,11 @@ export function prophetNoCheck(state: GameState): string | null {
 
 export function guardDo(state: GameState, sel: string, flagSame: boolean): string | null {
   if (!sel) return "请选择守护对象"
-  const guard = state.players.find((p) => p.role === "守卫")
+  // 使用角色系统查找守卫
+  const guard = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "守卫"
+  })
   if (!guard) return "本局没有守卫"
   if (!guard.alive) return "守卫已出局，本晚不能守人"
   if (state.guardLastTarget && sel === state.guardLastTarget) {
@@ -900,7 +998,11 @@ export function witchSave(state: GameState): string | null {
   if (!target) return "本晚还没有狼人刀人记录，无法使用解药"
   if (state.witchSaveUsed) return "解药已经全部使用过"
   if (state.nightUsedDrug !== null) return "本晚女巫已经使用过一瓶药，同一夜晚不能同时使用解药和毒药"
-  const witch = state.players.find((p) => p.role === "女巫")
+  // 使用角色系统查找女巫
+  const witch = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "女巫"
+  })
   if (!witch) return "本局没有女巫"
   if (!witch.alive) return "女巫已出局，本晚不能用药"
   if (target === witch.name && state.round > 1) return "女巫只有首夜可以自救，之后夜晚不能自救"
@@ -923,7 +1025,11 @@ export function witchPoison(state: GameState, sel: string): string | null {
   if (!sel) return "请选择毒杀目标"
   if (state.witchPoisonUsed) return "毒药已经全部使用过"
   if (state.nightUsedDrug !== null) return "本晚女巫已经使用过一瓶药，同一夜晚不能同时使用解药和毒药"
-  const witch = state.players.find((p) => p.role === "女巫")
+  // 使用角色系统查找女巫
+  const witch = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "女巫"
+  })
   if (!witch) return "本局没有女巫"
   if (!witch.alive) return "女巫已出局，本晚不能用药"
   if (sel === witch.name) return "女巫不能对自己用毒"
@@ -935,8 +1041,14 @@ export function witchPoison(state: GameState, sel: string): string | null {
   if (tar && isWolfRole(tar.role)) witch.mark.witchPoWolf = true
   else if (tar) witch.mark.witchPoGood = true
   // 毒到猎/狼王：立即标记吞枪（猎人睁眼在女巫之后，需在睁眼时即告知枪已哑火）
-  if (tar?.role === "猎人") tar.mark.hunterIsPoisoned = true
-  if (tar?.role === "狼王") tar.mark.wolfKingIsPoisoned = true
+  // 使用角色系统判断目标角色
+  if (tar) {
+    const tarRole = getRoleInstance(tar.role)
+    if (tarRole) {
+      if (tarRole.def.id === "猎人") tar.mark.hunterIsPoisoned = true
+      if (tarRole.def.id === "狼王") tar.mark.wolfKingIsPoisoned = true
+    }
+  }
   pushNightLog(state, `🧪女巫撒毒${sel}`)
   pushGlobalLog(state, `🧪女巫毒药毒杀：${sel}`)
   pushFlow(state, "女巫毒药", sel)
@@ -944,7 +1056,11 @@ export function witchPoison(state: GameState, sel: string): string | null {
 }
 
 export function hunterShootConfirm(state: GameState, tarName: string): string | null {
-  const hunter = state.players.find((p) => p.role === "猎人")
+  // 使用角色系统查找猎人
+  const hunter = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "猎人"
+  })
   if (!hunter) return "本局没有猎人"
   if (!state.hunterShotPending) return "当前没有开枪时机（需猎人被刀或被放逐后才能开枪）"
   if (hunter.alive) return "猎人尚存活，未出局不能开枪！"
@@ -964,7 +1080,11 @@ export function hunterShootConfirm(state: GameState, tarName: string): string | 
 }
 
 export function hunterGiveUpShot(state: GameState): string | null {
-  const hunter = state.players.find((p) => p.role === "猎人")
+  // 使用角色系统查找猎人
+  const hunter = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "猎人"
+  })
   if (!hunter) return "本局没有猎人"
   if (!state.hunterShotPending) return "当前没有开枪时机"
   state.hunterShotPending = false
@@ -977,7 +1097,11 @@ export function hunterGiveUpShot(state: GameState): string | null {
 
 /** 狼王开枪（狼枪）：狼王出局后（被刀/放逐/带走，非被毒）可开枪带走一人 */
 export function wolfKingShootConfirm(state: GameState, tarName: string): string | null {
-  const wk = state.players.find((p) => p.role === "狼王")
+  // 使用角色系统查找狼王
+  const wk = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "狼王"
+  })
   if (!wk) return "本局没有狼王"
   if (!state.wolfKingShotPending) return "当前没有开枪时机（需狼王被刀或被放逐后才能开枪）"
   if (wk.alive) return "狼王尚存活，未出局不能开枪！"
@@ -989,7 +1113,9 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
   else wk.mark.wolfKingShotGood = true
   // 狼枪带走猎人：猎人依然可开枪（非被毒）
-  if (target.role === "猎人" && !target.mark.hunterIsPoisoned) {
+  // 使用角色系统判断目标是否为猎人
+  const targetRole = getRoleInstance(target.role)
+  if (targetRole && targetRole.def.id === "猎人" && !target.mark.hunterIsPoisoned) {
     state.hunterShotPending = true
     pushGlobalLog(state, `🔫猎人${tarName}被狼王带走，可开枪`)
   }
@@ -1002,7 +1128,11 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
 }
 
 export function wolfKingGiveUpShot(state: GameState): string | null {
-  const wk = state.players.find((p) => p.role === "狼王")
+  // 使用角色系统查找狼王
+  const wk = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "狼王"
+  })
   if (!wk) return "本局没有狼王"
   if (!state.wolfKingShotPending) return "当前没有开枪时机"
   state.wolfKingShotPending = false
@@ -1015,7 +1145,11 @@ export function wolfKingGiveUpShot(state: GameState): string | null {
 
 /** 骑士决斗（白天，每局一次）：戳狼则狼死，戳好人则骑士自己出局 */
 export function knightDuel(state: GameState, tar: string): string | null {
-  const knight = state.players.find((p) => p.role === "骑士")
+  // 使用角色系统查找骑士
+  const knight = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "骑士"
+  })
   if (!knight) return "本局没有骑士"
   if (state.knightDuelUsed) return "骑士的决斗之剑已用过，本局不能再决斗"
   if (!knight.alive) return "骑士已出局，无法决斗"
@@ -1041,54 +1175,20 @@ export function knightDuel(state: GameState, tar: string): string | null {
   return null
 }
 
-export function setJingHui(state: GameState, owner: string, isWolfHanTiao: boolean): void {
-  const prev = state.jingHui
-  state.jingHui = owner
-  const ow = owner ? state.players.find((p) => p.name === owner) : null
-  // 自动判定悍跳：持有者为狼人阵营即记为悍跳
-  const hanTiao = isWolfHanTiao || (!!ow && isWolfRole(ow.role))
-  if (ow && hanTiao && isWolfRole(ow.role)) ow.mark.wolfHanTiaoJinghui = true
-  const prevP = prev ? state.players.find((p) => p.name === prev) : null
-  if (prev && prev !== owner && prevP && !prevP.alive) {
-    pushGlobalLog(state, `📢警长${prev}已死亡，警徽移交：${owner || "无警徽"}`)
-  } else {
-    pushGlobalLog(state, `📢警徽持有者：${owner || "无"}${hanTiao ? "（狼人悍跳拿到警徽）" : ""}`)
-  }
-  pushFlow(state, "警徽", owner, hanTiao ? "悍跳" : "")
-}
-
-/** 警长出局：警徽流失（无自动移交逻辑） */
-export function autoTransferJingHui(state: GameState): string | null {
-  if (!state.jingHui) return null
-  const holder = state.players.find((p) => p.name === state.jingHui)
-  if (!holder || holder.alive) return null
-  const prev = state.jingHui
-  state.jingHui = ""
-  pushGlobalLog(state, `📢警长${prev}出局，警徽流失`)
-  pushFlow(state, "警徽流失", prev)
-  return null
-}
-
-/** 警长出局：警徽直接作废（流失） */
-export function loseJingHui(state: GameState): void {
-  const prev = state.jingHui
-  if (!prev) return
-  state.jingHui = ""
-  pushGlobalLog(state, `📢警长${prev}出局，警徽流失`)
-  pushFlow(state, "警徽流失", prev)
-}
-
 export function finishVote(state: GameState, outName: string, idiotFlip: boolean): string | null {
   if (state.skipVote) return "本日已因狼人自爆跳过投票，请进入夜晚开始新的一轮"
   if (!outName) return "请选择放逐出局对象"
   const outP = state.players.find((p) => p.name === outName)
   if (!outP) return "未找到该玩家"
   if (!outP.alive) return `${outName}已出局，无需放逐`
+  // 使用角色系统判断是否为白痴
+  const outRole = getRoleInstance(outP.role)
+  const isIdiot = outRole && outRole.def.id === "白痴"
   // 白痴翻牌后不可被放逐
-  if (outP.role === "白痴" && outP.mark.idiotFlipped) {
+  if (isIdiot && outP.mark.idiotFlipped) {
     return "白痴已翻牌，无法被放逐出局"
   }
-  if (outP.role === "白痴" && !outP.mark.idiotFlipped && idiotFlip) {
+  if (isIdiot && !outP.mark.idiotFlipped && idiotFlip) {
     outP.mark.idiotFlipped = true
     outP.alive = true
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
@@ -1097,11 +1197,12 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     killPlayer(state, outName, "vote")
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
-    if (outP.role === "猎人" && !outP.mark.hunterIsPoisoned) {
+    // 使用角色系统判断是否为猎人/狼王
+    if (outRole && outRole.def.id === "猎人" && !outP.mark.hunterIsPoisoned) {
       state.hunterShotPending = true
       pushGlobalLog(state, `🔫猎人${outName}被放逐，可开枪（放逐后立即处理）`)
     }
-    if (outP.role === "狼王" && !outP.mark.wolfKingIsPoisoned) {
+    if (outRole && outRole.def.id === "狼王" && !outP.mark.wolfKingIsPoisoned) {
       state.wolfKingShotPending = true
       pushGlobalLog(state, `🔫狼王${outName}被放逐，可开枪`)
     }
@@ -1118,11 +1219,7 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   killPlayer(state, sel, "selfBomb")
   state.skipVote = true
   // 自爆直接吞警徽：自爆者是警长则警徽流失
-  if (state.jingHui === sel) {
-    state.jingHui = ""
-    pushGlobalLog(state, `📢警长${sel}自爆，警徽流失`)
-    pushFlow(state, "警徽流失", sel)
-  }
+  if (state.jingHui === sel) loseBadge(state, sel, "自爆")
   pushGlobalLog(state, `💥狼人自爆：${sel}，本日跳过投票`)
   pushFlow(state, "狼人自爆", sel)
   return null
@@ -1135,7 +1232,8 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   const p = state.players.find((x) => x.name === sel)
   if (!p) return "未找到该玩家"
   if (!p.alive) return "该玩家已出局"
-  if (p.role !== "白狼王") return "只能选择白狼王自爆带人"
+  const pRole = getRoleInstance(p.role)
+  if (!pRole || pRole.def.id !== "白狼王") return "只能选择白狼王自爆带人"
   const t = state.players.find((x) => x.name === tar)
   if (!t) return "未找到目标玩家"
   if (!t.alive) return "目标已出局"
@@ -1144,11 +1242,7 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   killPlayer(state, tar, "other")
   state.skipVote = true
   // 白狼王自爆带走：被带走的猎人/狼王不开枪；若白狼王是警长则警徽流失
-  if (state.jingHui === sel) {
-    state.jingHui = ""
-    pushGlobalLog(state, `📢警长${sel}自爆，警徽流失`)
-    pushFlow(state, "警徽流失", sel)
-  }
+  if (state.jingHui === sel) loseBadge(state, sel, "自爆")
   pushGlobalLog(state, `💥白狼王${sel}自爆，带走${tar}，本日跳过投票`)
   pushFlow(state, "白狼王自爆", tar)
   return null
@@ -1156,75 +1250,12 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
 
 /** 天亮结算：把夜间操作结算成死亡，返回死亡名单 */
 export function resolveNightDeath(state: GameState): string | null {
-  if (state.phase !== "night") return "当前不是夜晚，无法天亮结算"
-  const aliveWolfExists = state.players.some((p) => p.alive && isWolfRole(p.role))
-  if (aliveWolfExists && !state.nightSteps.wolf) {
-    return "狼人刀人步骤未完成，请先确认狼人刀人"
-  }
-  const wolfKillTarget = state.nightWolfKill
-  const guardTarget = state.nightGuardTarget
-  const poisonTarget = state.nightWitchPoison
-  const witchSavedTarget = state.nightUsedDrug === "save" && state.witchSaveUsed ? state.nightWitchSave : ""
-  // 自动判定同守同救：守卫与女巫同时救了被刀者 → 双双无效，被刀者仍死
-  const guardSavesKill = !!wolfKillTarget && wolfKillTarget === guardTarget
-  const witchSavedKill = !!wolfKillTarget && witchSavedTarget === wolfKillTarget
-  const sameSaveKill = (guardSavesKill && witchSavedKill) || state.nightSameSaveKill
-
-  const deathList: string[] = []
-  if (sameSaveKill && wolfKillTarget) {
-    const guard = state.players.find((p) => p.role === "守卫")
-    if (guard) guard.mark.guardSameSaveKill = true
-    deathList.push(wolfKillTarget)
-  } else if (wolfKillTarget && wolfKillTarget === guardTarget) {
-    const guard = state.players.find((p) => p.role === "守卫")
-    if (guard) guard.mark.guardHitCount = (guard.mark.guardHitCount || 0) + 1
-  } else if (wolfKillTarget && wolfKillTarget !== witchSavedTarget) {
-    deathList.push(wolfKillTarget)
-  }
-  if (poisonTarget) deathList.push(poisonTarget)
-
-  ;[...new Set(deathList)].forEach((name) => {
-    const p = state.players.find((x) => x.name === name)
-    if (p && p.alive) {
-      // 统一走死亡入口（含殉情级联），并收集本次新增出局名单（含殉情对手）并入死亡名单
-      const reason: DieReason = poisonTarget === name ? "poison" : "wolfKill"
-      deathList.push(...killPlayer(state, name, reason))
-      if (p.role === "猎人" && poisonTarget === name) {
-        p.mark.hunterIsPoisoned = true
-        pushNightLog(state, `⚠️猎人${name}被毒，本出局无法开枪`)
-      }
-      if (p.role === "猎人" && poisonTarget !== name) {
-        state.hunterShotPending = true
-        pushNightLog(state, `🔫猎人${name}被刀，可开枪`)
-      }
-      if (p.role === "狼王" && poisonTarget === name) {
-        p.mark.wolfKingIsPoisoned = true
-        pushNightLog(state, `⚠️狼王${name}被毒，本出局无法开枪`)
-      }
-      if (p.role === "狼王" && poisonTarget !== name) {
-        state.wolfKingShotPending = true
-        pushNightLog(state, `🔫狼王${name}被刀，可开枪`)
-      }
-    }
-  })
-
-  state.guardLastTarget = state.nightGuardTarget
-  state.skipVote = false
-  state.phase = "day"
-  state.uiDone = {}
-
-  if (deathList.length === 0) {
-    pushGlobalLog(state, `☀️天亮，平安夜`)
-    pushNightLog(state, `☀️天亮，平安夜`)
-    pushFlow(state, "天亮", "", "平安夜")
-  } else {
-    const deaths = [...new Set(deathList)].join("、")
-    pushGlobalLog(state, `☀️天亮，昨夜死亡：${deaths}`)
-    pushNightLog(state, `☀️天亮，昨夜死亡：${deaths}`)
-    pushFlow(state, "天亮", deaths)
-  }
-  return null
+  // Phase 4：使用新的角色驱动夜晚结算器
+  return resolveNightEffects(state)
 }
+
+import { resolveNightEffects } from "./night-resolver"
+import { getRoleInstance } from "./roles/builtin"
 
 // ===================== 实时算分 =====================
 
@@ -1232,91 +1263,23 @@ export function recalcScore(state: GameState): void {
   const win = state.winCamp
   const aliveWolfCount = state.players.filter((x) => x.alive && isWolfRole(x.role)).length
   state.players.forEach((p) => {
-    const m = p.mark
     const detail: string[] = []
     let s = 0
+
+    // Phase 5：使用角色系统的 scoreRules
+    const role = getRoleInstance(p.role)
+    if (role && role.scoreRules) {
+      const entries = role.scoreRules(state, p as unknown as { name: string; role: string; mark: Record<string, unknown> })
+      for (const entry of entries) {
+        s += entry.delta
+        detail.push(`${entry.reason}${entry.delta >= 0 ? "+" : ""}${entry.delta}`)
+      }
+    }
+
     // 人狼恋第三方成员（丘比特/恋人）：第三方存在时，好人/狼胜均不计入对应阵营分
-    const isWGCamp = getChainType(state) === "WG" && (p.role === "丘比特" || isLover(state, p.name))
-    if (p.role === "预言家") {
-      if (state.jingHui === p.name) {
-        s += 0.5
-        detail.push("拿警徽+0.5")
-      }
-      if (m.prophetFirstDayWolf) {
-        s += 0.5
-        detail.push("首夜验狼+0.5")
-      }
-      const nc = m.prophetNoCheckCount || 0
-      if (nc > 0) {
-        s -= 0.5 * nc
-        detail.push(`未验人${nc}晚-${(0.5 * nc).toFixed(1)}`)
-      }
-    }
-    if (p.role === "女巫") {
-      if (m.witchPoWolf) {
-        s += 1
-        detail.push("毒狼+1")
-      }
-      if (m.witchPoGood) {
-        s -= 1
-        detail.push("毒好人-1")
-      }
-      if (m.witchSaveGood) {
-        s += 0.5
-        detail.push("救对好人+0.5")
-      }
-    }
-    if (p.role === "猎人") {
-      if (m.hunterKillWolf) {
-        s += 1
-        detail.push("带狼+1")
-      }
-      if (m.hunterKillGood) {
-        s -= 1
-        detail.push("带好人-1")
-      }
-    }
-    if (p.role === "骑士") {
-      if (m.hunterKillWolf) {
-        s += 1
-        detail.push("决斗戳狼+1")
-      }
-      if (m.hunterKillGood) {
-        s -= 1
-        detail.push("决斗戳错-1")
-      }
-    }
-    if (p.role === "狼王") {
-      if (m.wolfKingShotGood) {
-        s += 1
-        detail.push("枪带好人+1")
-      }
-      if (m.wolfKingShotWolf) {
-        s -= 1
-        detail.push("枪带狼人-1")
-      }
-    }
-    if (p.role === "守卫") {
-      const hits = m.guardHitCount || 0
-      if (hits > 0) {
-        s += 0.5 * hits
-        detail.push(`守中+${0.5 * hits}`)
-      }
-      if (m.guardSameSaveKill) {
-        s -= 0.5
-        detail.push("同守同救-0.5")
-      }
-    }
-    if (isWolfRole(p.role)) {
-      if (m.wolfHanTiaoJinghui) {
-        s += 0.5
-        detail.push("悍跳拿警徽+0.5")
-      }
-      if (m.wolfSelfKillCheat) {
-        s += 0.5
-        detail.push("自刀骗解药+0.5")
-      }
-    }
+    const isWGCamp = getChainType(state) === "WG" && isThirdMember(state, p)
+
+    // MVP/SVP/背锅侠
     if (state.mvp === p.name) {
       s += 1
       detail.push("MVP+1")
@@ -1329,6 +1292,8 @@ export function recalcScore(state: GameState): void {
       s -= 0.5
       detail.push("背锅侠-0.5")
     }
+
+    // 阵营胜利分（保留在 logic.ts 中，因为涉及全局胜负逻辑）
     // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分；人狼恋狼恋人属第三方不计狼胜）
     if (win === "wolf" && isWolfRole(p.role) && !isWGCamp) {
       s += 3
@@ -1348,19 +1313,22 @@ export function recalcScore(state: GameState): void {
       s += 3
       detail.push("神职胜利+3")
     }
-    if ((win === "god" || win === "civil") && p.role === "平民" && !isWGCamp) {
+    // 使用角色系统判断平民角色
+    const pRole = getRoleInstance(p.role)
+    if ((win === "god" || win === "civil") && pRole && pRole.def.camp === "villager" && !isWGCamp) {
       s += 2
       detail.push("平民胜利+2")
     }
-    if (win === "third" && (p.role === "丘比特" || isLover(state, p.name))) {
+    if (win === "third" && isThirdMember(state, p)) {
       s += 3
       detail.push("第三方胜利+3")
     }
     // 丘比特：人人/狼狼恋(无第三方)属好人，好人胜+3；人狼恋属第三方，第三方胜+3、好人/狼胜不加分
-    if ((win === "god" || win === "civil") && p.role === "丘比特" && getChainType(state) !== "WG") {
+    if ((win === "god" || win === "civil") && pRole && pRole.def.id === "丘比特" && getChainType(state) !== "WG") {
       s += 3
       detail.push("好人胜利·丘比特+3")
     }
+
     p.scoreRound = Math.round(s * 10) / 10
     p.scoreDetail = detail
   })
@@ -1376,7 +1344,9 @@ export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", strin
 
 /** 第三方成员：丘比特 + 两位恋人（人狼恋时三人一体） */
 function isThirdMember(state: GameState, p: Player): boolean {
-  return p.role === "丘比特" || isLover(state, p.name)
+  // 使用角色系统判断是否为丘比特
+  const role = getRoleInstance(p.role)
+  return (role && role.def.id === "丘比特") || isLover(state, p.name)
 }
 
 /** 若该玩家属于人狼恋第三方，返回"第三阵营·原角色"标注，否则返回空串 */
@@ -1388,73 +1358,11 @@ export function thirdCampLabel(state: GameState, p: Player): string {
 
 /** 自动判定胜负；返回是否"本次刚判出胜负"、胜负文案及原因（用于弹窗） */
 export function checkWin(state: GameState): { ended: boolean; text: string; reason: string } {
-  const aliveWolf = state.players.filter((p) => p.alive && isWolfRole(p.role))
-  const aliveGod = state.players.filter(
-    (p) => p.alive && GOD_LIST.includes(p.role) && !(p.role === "白痴" && p.mark.idiotFlipped),
-  )
-  const aliveCivil = state.players.filter((p) => p.alive && p.role === "平民")
-  const allAssigned = state.players.length > 0 && state.players.every((p) => p.role)
-  const started = allAssigned && (state.phase !== "idle" || state.round > 0)
-  // 人狼恋第三方：一旦建立（丘比特连出人狼恋）就一直存在，直到所有第三方成员（丘比特+恋人）全部出局才解散。
-  // 狼恋人属第三方，不计入狼阵营；好人恋人属第三方，不计入好人阵营。
-  const chain = getChainType(state)
-  const thirdAlive = state.players.some((p) => p.alive && isThirdMember(state, p))
-  const thirdActive = started && chain === "WG" && thirdAlive
-  let wc: WinCamp = null
-  if (started) {
-    if (thirdActive) {
-      // ① 第三方胜：存活玩家全部是第三方成员（丘比特/恋人）——丘比特存活时第三方保留
-      const aliveAll = state.players.filter((p) => p.alive)
-      if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
-        wc = "third"
-      }
-      // ② 平局：狼全灭 + 剩余全是平民，且平民投票无法放逐第三方（票数不足/平票 → 僵局）。
-      //    平民票数 > 第三方存活数时仍可投出第三方 → 游戏继续，好人可胜，不判平局。
-      else if (aliveWolf.length === 0) {
-        const aliveNonThird = aliveAll.filter((p) => !isThirdMember(state, p))
-        const onlyCivil = aliveNonThird.every((p) => p.role === "平民")
-        const thirdAliveCount = aliveAll.filter((p) => isThirdMember(state, p)).length
-        if (onlyCivil && aliveNonThird.length <= thirdAliveCount) {
-          wc = "draw"
-        }
-      }
-      // 否则：情侣未死前，好/狼一律不判胜（第三方保留）
-    } else if (aliveWolf.length > 0) {
-      // 屠边：神或民任一全灭；屠城：神与民全灭
-      const goodGone = state.winMode === "city" ? aliveGod.length === 0 && aliveCivil.length === 0 : aliveGod.length === 0 || aliveCivil.length === 0
-      if (goodGone) wc = "wolf"
-    } else {
-      wc = aliveGod.length > 0 ? "god" : "civil"
-    }
-  }
-  let reason = ""
-  if (wc === "draw") {
-    reason = "第三方与平民票数持平僵持，无法继续放逐，平局"
-  } else if (wc === "third") {
-    reason = "场上只剩丘比特与人狼情侣，第三方存活到最后"
-  } else if (wc === "wolf") {
-    const goneGod = aliveGod.length === 0
-    const goneCivil = aliveCivil.length === 0
-    reason =
-      thirdActive
-        ? "狼人屠边且第三方情侣已出局"
-        : goneGod && goneCivil
-          ? "狼人存活，神职与平民全灭"
-          : state.winMode === "city"
-            ? "屠城：狼人存活，神职与平民尚未全灭"
-            : goneGod
-              ? "屠边：神职全灭"
-              : "屠边：平民全灭"
-  } else if (wc === "god") {
-    reason = thirdActive ? "所有狼人与第三方均已出局，好人胜利" : "所有狼人已出局，好人胜利"
-  } else if (wc === "civil") {
-    reason = thirdActive ? "所有狼人与第三方均已出局，好人胜利" : "所有狼人已出局，好人胜利"
-  }
-  const prev = state.winCamp
-  state.winCamp = wc
-  const ended = prev !== wc && wc !== null
-  return { ended, text: ended ? WIN_TEXT[wc as "wolf" | "god" | "civil" | "third"] : "", reason }
+  // Phase 5：使用角色驱动的胜负判定
+  return checkWinRoleDriven(state)
 }
+
+import { checkWin as checkWinRoleDriven } from "./win-checker"
 
 // ===================== 荣誉 / 结算 / 导出 =====================
 
@@ -1476,16 +1384,16 @@ export function suggestHonor(state: GameState): { mvp: string; svp: string } {
   const losers = state.players
     .filter((p) => (winnerIsWolf ? !isWolfRole(p.role) : isWolfRole(p.role)))
     .sort((a, b) => b.scoreRound - a.scoreRound)
+
+  // Phase 6：使用角色系统的 highlight
   const highlight = (p: Player): boolean => {
-    const m = p.mark
-    if (p.role === "女巫") return m.witchPoWolf || m.witchSaveGood
-    if (p.role === "守卫") return (m.guardHitCount || 0) > 0
-    if (p.role === "预言家") return m.prophetFirstDayWolf
-    if (p.role === "猎人" || p.role === "骑士") return m.hunterKillWolf
-    if (p.role === "狼王") return m.wolfKingShotGood
-    if (isWolfRole(p.role)) return m.wolfHanTiaoJinghui || m.wolfSelfKillCheat
+    const role = getRoleInstance(p.role)
+    if (role && role.highlight) {
+      return role.highlight(p as unknown as { name: string; role: string; mark: Record<string, unknown> })
+    }
     return false
   }
+
   const pick = (arr: Player[]): string => {
     if (arr.length < 2) return ""
     return arr[0].scoreRound - arr[1].scoreRound >= 2 && highlight(arr[0]) ? arr[0].name : ""
@@ -1541,12 +1449,21 @@ export function buildAutoRecord(state: GameState, title?: string): string {
 export function campBreakdown(state: GameState): string {
   const wolves = state.players.filter((p) => isWolfRole(p.role))
   const gods = state.players.filter((p) => GOD_LIST.includes(p.role))
-  const civils = state.players.filter((p) => p.role === "平民")
-  const cupid = state.players.find((p) => p.role === "丘比特")
+  const civils = state.players.filter((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.camp === "villager"
+  })
+  const cupid = state.players.find((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.id === "丘比特"
+  })
   const fmt = (arr: Player[]) => (arr.length ? arr.map((p) => `${p.no || 0}.${p.name}(${p.role})`).join("、") : "无")
   let txt = `🐺狼人阵营：${fmt(wolves)}\n🔮神职阵营：${fmt(gods)}\n👤平民阵营：${fmt(civils)}`
   if (cupid || state.lovers.length) {
-    const thirdMembers = state.players.filter((p) => p.role === "丘比特" || isLover(state, p.name))
+    const thirdMembers = state.players.filter((p) => {
+      const role = getRoleInstance(p.role)
+      return (role && role.def.id === "丘比特") || isLover(state, p.name)
+    })
     txt += `\n💘情侣阵营：${fmt(thirdMembers)}${getChainType(state) === "WG" ? "（人狼恋·第三方）" : "（丘比特属好人）"}`
   }
   return txt
@@ -1562,3 +1479,8 @@ export function buildCSV(state: GameState): string {
   rows.push(["胜利阵营", state.winCamp ? campMap[state.winCamp] : "未结束", "", "", "", ""])
   return "\uFEFF" + rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n")
 }
+
+// ===================== 角色系统初始化 =====================
+
+import { ensureBuiltinRoles } from "./roles/builtin"
+ensureBuiltinRoles()

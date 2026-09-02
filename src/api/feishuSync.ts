@@ -5,6 +5,7 @@
  */
 import { isWolfRole, GOD_LIST, decorateLog, cleanLogLine } from "@/game/logic"
 import type { GameRecord } from "@/composables/useGame"
+import { getRoleInstance } from "@/game/roles/builtin"
 
 // dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
 const SYNC_URL = (import.meta.env.VITE_SYNC_URL as string | undefined) || ""
@@ -89,9 +90,12 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
     players: record.players.map((p) => {
       const wolf = isWolfRole(p.role)
       const god = GOD_LIST.includes(p.role)
-      const camp = wolf ? "狼人" : god ? "神职" : p.role === "平民" ? "平民" : "第三方"
+      const role = getRoleInstance(p.role)
+      const isCivil = role && role.def.camp === "villager"
+      const camp = wolf ? "狼人" : god ? "神职" : isCivil ? "平民" : "第三方"
       // 第三方胜：丘比特 + 情侣（含人狼恋中的狼恋人/好人恋人）都算胜；否则按阵营胜负
-      const thirdWin = winThird && (p.role === "丘比特" || (record.lovers || []).includes(p.name))
+      const isCupid = role && role.def.id === "丘比特"
+      const thirdWin = winThird && (isCupid || (record.lovers || []).includes(p.name))
       const win = thirdWin ? true : winThird ? false : wolf ? winWolf : !winWolf
       const detail = p.scoreDetail || []
       let base = 0
@@ -102,7 +106,7 @@ export function buildSyncPayload(record: GameRecord): SyncPayload {
         else skill += num
       }
       if (base === 0 && detail.length === 0) {
-        if (win) base = wolf ? 3 : god ? 3 : p.role === "平民" ? 2 : 3
+        if (win) base = wolf ? 3 : god ? 3 : isCivil ? 2 : 3
       }
       // 兜底：本轮分非 0 且明细未完整拆出时，以本轮分(scoreRound)为准，保证正/负分都正确累计/扣减
       const total = Math.round((base + skill) * 10) / 10

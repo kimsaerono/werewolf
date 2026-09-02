@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import Sortable from "sortablejs"
 import { ROLE_EMOJI, roleShort } from "@/game/logic"
 import type { Player } from "@/game/logic"
+import { getRoleInstance } from "@/game/roles/builtin"
 import { roleAvatar } from "@/assets/roles"
 import cupidThirdIcon from "@/assets/roles/第三阵营邱比特.png"
 import sheriffIcon from "@/assets/roles/警长.png"
@@ -115,12 +116,19 @@ onMounted(mountSortables)
 onBeforeUnmount(destroySortables)
 
 function badgeText(p: Player): string {
-  if (p.role === "丘比特") return "👑❤️"
+  const role = getRoleInstance(p.role)
+  if (role && role.def.id === "丘比特") return "👑❤️"
   if (props.thirdMembers.includes(p.name)) return "❤️"
   return "💔"
 }
 function badgeClass(p: Player): string {
   return props.thirdMembers.includes(p.name) ? "third" : ""
+}
+
+/** 判断是否为丘比特角色 */
+function isCupidRole(p: Player): boolean {
+  const role = getRoleInstance(p.role)
+  return !!(role && role.def.id === "丘比特")
 }
 
 /** 震动反馈：移动端支持 navigator.vibrate，桌面端忽略 */
@@ -192,11 +200,11 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || idx + 1 }}</span>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
               class="seat-lover"
               :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-            <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
           </div>
@@ -217,11 +225,11 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
               class="seat-lover"
               :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-            <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
           </div>
@@ -256,11 +264,11 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span class="seat-no">{{ p.no || idx + 1 }}</span>
           </div>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && p.role === '丘比特')"
+              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
               class="seat-lover"
               :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-          <span v-if="thirdMembers.includes(p.name) && p.role === '丘比特'" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+          <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
           <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
         </div>
       </template>

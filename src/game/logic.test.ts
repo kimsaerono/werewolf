@@ -1212,6 +1212,57 @@ describe("警徽系统", () => {
     autoTransferJingHui(st)
     expect(st.jingHui).toBe("P4")
   })
+
+  it("警长出局经 killPlayer 置 badgePending（集中弹窗触发源）", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    killPlayer(st, "P4", "poison")
+    expect(st.badgePending).toBe("P4")
+    // 非警长死亡不置 pending
+    const st2 = setup()
+    started(st2)
+    setJingHui(st2, "P4", false)
+    killPlayer(st2, "P8", "wolfKill")
+    expect(st2.badgePending).toBe("")
+  })
+
+  it("自爆吞警徽不置 badgePending（引擎直接流失）", () => {
+    const st = setup()
+    st.jingHui = "P0"
+    wolfBaoZha(st, "P0")
+    expect(st.jingHui).toBe("")
+    expect(st.badgePending).toBe("")
+    const st2 = setup()
+    const wwk = st2.players[0]
+    wwk.role = "白狼王"
+    st2.jingHui = wwk.name
+    wolfKingBaoZha(st2, wwk.name, "P5")
+    expect(st2.jingHui).toBe("")
+    expect(st2.badgePending).toBe("")
+  })
+
+  it("流失(loseJingHui)清空 jingHui 与 badgePending", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    killPlayer(st, "P4", "vote")
+    expect(st.badgePending).toBe("P4")
+    loseJingHui(st)
+    expect(st.jingHui).toBe("")
+    expect(st.badgePending).toBe("")
+  })
+
+  it("移交(setJingHui)清空 badgePending 并转移警徽", () => {
+    const st = setup()
+    started(st)
+    setJingHui(st, "P4", false)
+    killPlayer(st, "P4", "vote")
+    expect(st.badgePending).toBe("P4")
+    setJingHui(st, "P8", false)
+    expect(st.jingHui).toBe("P8")
+    expect(st.badgePending).toBe("")
+  })
 })
 
 describe("板子校验（isWolfRole）", () => {
