@@ -370,11 +370,12 @@ export function useGame() {
       const winMode = state.winMode
       const simMode = state.simMode
       const modeChosen = state.modeChosen
-      // 保留上一局参与玩家（号码、姓名、累计分），清空角色/状态/本轮分数
+      // 保留上一局参与玩家（号码、姓名、累计分、头像），清空角色/状态/本轮分数
       const players = state.players.map((p) => {
         const np = g.newPlayer(p.name)
         np.no = p.no
         np.scoreTotal = p.scoreTotal
+        np.avatar = p.avatar
         return np
       })
       const s = g.defaultState()

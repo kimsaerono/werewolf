@@ -158,11 +158,12 @@ const shownRoles = computed(() => {
 .role-help {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  position: relative;
 }
 .rh-fab {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   padding: 0;
   line-height: 1;
   display: flex;
@@ -171,6 +172,10 @@ const shownRoles = computed(() => {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 .rh-panel {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 700;
   width: min(320px, calc(100vw - 32px));
   max-height: 62vh;
   overflow-y: auto;
@@ -262,11 +267,5 @@ const shownRoles = computed(() => {
   font-size: 11px;
   line-height: 1.5;
   color: #7ad6a0;
-}
-@media (max-width: 720px) {
-  .role-help {
-    left: 10px;
-    bottom: 14px;
-  }
 }
 </style>

@@ -161,23 +161,39 @@ const ROLE_BG: Record<string, string> = {
 const DARK_BG = new Set(["狼人", "狼王"])
 
 function cardBg(p: Player): Record<string, string> | undefined {
-  if (!p.alive || !p.role) return undefined
   const style: Record<string, string> = {}
-  if (ROLE_BG[p.role]) {
-    style.backgroundColor = ROLE_BG[p.role]
-  }
-  const img = roleAvatar(p.role)
-  if (img) {
-    style.backgroundImage = `url(${img})`
+  if (p.role) {
+    if (ROLE_BG[p.role]) {
+      style.backgroundColor = ROLE_BG[p.role]
+    }
+    const img = roleAvatar(p.role)
+    if (img) {
+      style.backgroundImage = `url(${img})`
+      style.backgroundSize = "cover"
+      style.backgroundPosition = "center"
+      style.backgroundRepeat = "no-repeat"
+    } else if (p.avatar) {
+      // 已分配角色但没有对应 PNG 时，回退显示默认 SVG 头像
+      style.backgroundImage = `url(${p.avatar})`
+      style.backgroundSize = "cover"
+      style.backgroundPosition = "center"
+      style.backgroundRepeat = "no-repeat"
+    }
+    if (DARK_BG.has(p.role)) {
+      style.color = "#f0f0f0"
+      style.borderColor = "rgba(255,255,255,0.15)"
+    }
+  } else if (p.avatar) {
+    // 未分配角色时显示默认头像
+    style.backgroundImage = `url(${p.avatar})`
     style.backgroundSize = "cover"
     style.backgroundPosition = "center"
     style.backgroundRepeat = "no-repeat"
   }
-  if (DARK_BG.has(p.role)) {
-    style.color = "#f0f0f0"
-    style.borderColor = "rgba(255,255,255,0.15)"
+  if (!p.alive) {
+    return undefined
   }
-  return style
+  return Object.keys(style).length ? style : undefined
 }
 </script>
 
@@ -196,7 +212,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
-            <span v-if="!p.role || !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || idx + 1 }}</span>
             <span
@@ -221,7 +237,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
             <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
-            <span v-if="!p.role || !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+            <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
             <span
@@ -245,8 +261,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           :style="cardBg(p)"
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
-          <img v-if="p.role && roleAvatar(p.role)" class="seat-avatar" :src="roleAvatar(p.role)" :alt="p.role" draggable="false" />
-          <span v-else class="seat-avatar seat-avatar-emoji">{{ p.role ? ROLE_EMOJI[p.role] || "🎭" : "🙋" }}</span>
+          <span v-else-if="p.role && !roleAvatar(p.role)" class="seat-avatar seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
           <span v-if="!p.alive" class="seat-dead-x">✕</span>
           <div class="seat-info">
             <div class="seat-name">
@@ -351,6 +366,9 @@ function cardBg(p: Player): Record<string, string> | undefined {
   cursor: grab;
   overflow: hidden;
   min-height: 60px;
+  /* SVG 背景图抗锯齿优化 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 .seat-board.floating .seat-card:active {
   cursor: grabbing;
@@ -375,6 +393,9 @@ function cardBg(p: Player): Record<string, string> | undefined {
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
+  /* SVG 背景图抗锯齿优化 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
 .seat-card.dead {
   opacity: 0.6;

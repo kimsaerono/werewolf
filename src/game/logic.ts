@@ -10,6 +10,7 @@ export {
   resolveBadgePending,
 } from "./badge"
 import { loseBadge } from "./badge"
+import { randomDefaultAvatar } from "@/assets/roles"
 
 export const NO_CHECK = "__NOCHECK__"
 
@@ -121,6 +122,8 @@ export interface Player {
   mark: Mark
   /** 出局原因（""=未出局/旧存档）：vote/poison/wolfKill/selfBomb/duel/shot/lover 等 */
   deathReason?: DieReason | ""
+  /** 默认头像（未分配角色时随机分配的 SVG 头像） */
+  avatar?: string
 }
 
 export type WinCamp = "wolf" | "god" | "civil" | "third" | "draw" | null
@@ -321,6 +324,8 @@ export function normalizeState(s: GameState): GameState {
     // 旧数据：guardHit 布尔 → guardHitCount 计数（守中过即算 1 次）
     const legacyGuardHit = (p.mark as unknown as { guardHit?: boolean }).guardHit
     if (legacyGuardHit && !(p.mark.guardHitCount || 0)) p.mark.guardHitCount = 1
+    // 旧数据：无 avatar 时随机分配一个默认头像
+    if (!p.avatar) p.avatar = randomDefaultAvatar()
   })
   if (!st.judgeScores || typeof st.judgeScores !== "object") st.judgeScores = {}
   if (!st.uiDone || typeof st.uiDone !== "object") st.uiDone = {}
@@ -763,6 +768,7 @@ export function addPlayer(state: GameState, nick: string, no?: number): string |
   }
   const p = newPlayer(name)
   p.no = n
+  p.avatar = randomDefaultAvatar()
   state.players.push(p)
   return null
 }
