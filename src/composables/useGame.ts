@@ -161,8 +161,11 @@ function recordTxtOf(h: GameRecord): string {
   const logTxt = h.log
     .map((l, i) => `${i + 1}. ${g.decorateLog({ players: h.players } as never, g.cleanLogLine(l))}`)
     .join("\n")
+  const honors = [h.mvp ? `MVP：${h.mvp}` : "", h.svp ? `SVP：${h.svp}` : "", h.beiguo ? `背锅侠：${h.beiguo}` : ""].filter(Boolean).join(" ｜ ")
   return (
-    `====${gameIdFor(h)}====\n时间：${h.time}\n板子：${h.board}（${g.boardShortName(h.board)}）\n胜负：${h.winner}（${h.reason}）\n法官：${h.judge || "-"}（累计 ${h.judgeScore}）\n` +
+    `====${gameIdFor(h)}====\n时间：${h.time}\n板子：${h.board}（${g.boardShortName(h.board)}）\n胜负：${h.winner}（${h.reason}）\n法官：${h.judge || "-"}（累计 ${h.judgeScore}）` +
+    (honors ? `\n荣誉：${honors}` : "") +
+    `\n` +
     h.players
       .map((p) => `玩家 ${p.no}.${p.name} 身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}`)
       .join("\n") +
