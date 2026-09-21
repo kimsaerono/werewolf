@@ -11,6 +11,9 @@
  *   标题行：蓝底、左对齐、36px；内容：日期 第N局 🧑‍⚖️ 法官：xxx 胜负
  *   内容行：左对齐、自动换行、最低 400px
  *   首行无表头，数据从第 1 行开始
+ *
+ * 兼容层（旧 14 列卡片布局 LEGACY）：
+ *   供本地桥接 server/index.ts 使用，结构与旧版一致（14 列 A..N 卡片式）
  */
 import type { SyncPayload } from "../src/api/feishuSync"
 
@@ -73,9 +76,9 @@ export function monthTabTitle(date: string): string {
   return m ? `${m}复盘` : "未知月复盘"
 }
 
-/** 表头行（合并格值落在起始格） */
-export function headerRow(layoutName: string): string[] {
-  const L = layoutFor(layoutName)
+/** 表头行（合并格值落在起始格）— 支持可选 layoutName，默认 DEFAULT_LAYOUT */
+export function headerRow(layoutName?: string): string[] {
+  const L = layoutFor(layoutName ?? DEFAULT_LAYOUT)
   const row = new Array<string>(L.cols).fill("")
   for (const [k, v] of Object.entries(L.labels)) row[L.slots[k]] = v
   return row
@@ -273,12 +276,146 @@ export function buildGameRowOps(sheetId: string, titleRow: number, bodyRow: numb
   return ops
 }
 
-/** CSV 单元格转义（RFC 4180：整格引号包裹、内部引号翻倍） */
-export function csvCell(v: string): string {
-  return `"${String(v ?? "").replace(/"/g, '""')}"`
+/* ============================================================
+ * 兼容层：旧 14 列卡片布局（LEGACY）
+ * 结构：A 局次 | B 时间 | C 板子 | D 胜负 | E 原因 | F 法官 | G 荣誉 | H:I 玩家积分 | J:N 对局日志
+ * 卡片式：每局 4-6 行，标题行合并 B:N，信息行、积分行、日志行各占一行，末尾空行分隔
+ * 供本地桥接 server/index.ts 使用，保持与旧版行为一致
+ * ============================================================ */
+
+export const RECORD_COLS = 14
+
+/** 旧版表头行（14 列；合并格 H/I、J:N 的值分别落在 H、J） */
+export function legacyHeaderRow(): string[] {
+  const row: string[] = new Array<string>(RECORD_COLS).fill("")
+  row[0] = "局次"
+  row[1] = "时间"
+  row[2] = "板子"
+  row[3] = "胜负"
+  row[4] = "原因"
+  row[5] = "法官"
+  row[6] = "荣誉"
+  row[7] = "玩家积分"
+  row[9] = "对局日志"
+  return row
 }
 
-/** 单行 → CSV 文本 */
-export function rowToCsv(row: string[]): string {
-  return row.map(csvCell).join(",")
+/** 旧版单局卡片区块构建器 */
+export function buildRecordBlock(payload: SyncPayload, startRow: number) {
+  const board = payload.boardFinal || payload.board || "-"
+  const title = `🎮 ${board}板 ｜ ${payload.winner || "-"}${payload.reason ? `（${payload.reason}）` : ""} ｜ 法官：${(payload.judge && payload.judge.name) || "-"}`
+  const infoParts = [`⏰ 时间：${payload.date || "-"}`]
+  const honors = [
+    payload.mvp ? `🏆 MVP：${payload.mvp}` : "",
+    payload.svp ? `SVP：${payload.svp}` : "",
+    payload.beiguo ? `背锅侠：${payload.beiguo}` : "",
+  ].filter(Boolean)
+  if (honors.length) infoParts.push(honors.join(" ｜ "))
+  const scoreLine = (payload.players || []).length
+    ? `积分：` +
+      (payload.players || [])
+        .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
+        .join("　")
+    : ""
+  const lines = payload.logLines || []
+
+  const rows = [
+    [String(payload.gameId || ""), title],
+    ["", infoParts.join(" ｜ ")],
+    ...(scoreLine ? [["", scoreLine]] : []),
+    ...lines.map((l, i) => ["", `${i + 1}. ${l}`]),
+    ["", ""],
+  ]
+  const logStart = startRow + (scoreLine ? 3 : 2)
+  return {
+    rows,
+    mergeRanges: [`B${startRow}:N${startRow}`],
+    titleRow: startRow,
+    logStartRow: logStart,
+    logEndRow: logStart - 1 + lines.length,
+  }
+}
+
+/** 旧版卡片区块 ops：合并/样式/行高 */
+export function buildRecordOps(block: ReturnType<typeof buildRecordBlock>, sheetId: string) {
+  const ops: { shortcut: string; input: Record<string, unknown> }[] = []
+  for (const range of block.mergeRanges) {
+    ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range } })
+  }
+  const styleData = [
+    {
+      ranges: [`${sheetId}!A${block.titleRow}:N${block.titleRow}`],
+      style: {
+        backColor: "#1668dc",
+        foreColor: "#ffffff",
+        font: { bold: true, fontSize: "11pt/1.5" },
+        vAlign: 1,
+        borderType: "BOTTOM_BORDER",
+        borderColor: "#0d4a9e",
+      },
+    },
+    {
+      ranges: [`${sheetId}!B${block.titleRow + 1}:B${block.logStartRow - 1}`],
+      style: { foreColor: "#6b7280", vAlign: 0 },
+    },
+  ]
+  if (block.logEndRow >= block.logStartRow) {
+    styleData.push({
+      ranges: [`${sheetId}!B${block.logStartRow}:B${block.logEndRow}`],
+      style: { foreColor: "#8a8f99", vAlign: 0 },
+    })
+  }
+  ops.push({
+    shortcut: "+cells-set-style",
+    input: { data: styleData },
+  })
+  ops.push({
+    shortcut: "+rows-resize",
+    input: { range: `${block.titleRow}:${block.titleRow}`, height: 30 },
+  })
+  if (block.logEndRow >= block.logStartRow) {
+    ops.push({
+      shortcut: "+rows-resize",
+      input: { range: `${block.logStartRow}:${block.logEndRow}`, height: 20 },
+    })
+  }
+  ops.push({
+    shortcut: "+rows-resize",
+    input: { range: `${block.titleRow + block.rows.length - 1}:${block.titleRow + block.rows.length - 1}`, height: 10 },
+  })
+  return ops
+}
+
+/** 旧版：块转 CSV（仅取 B 列内容，A 列只在首行有 gameId） */
+export function blockToCsv(block: ReturnType<typeof buildRecordBlock>): string {
+  return block.rows.map((r) => r.map(csvCell).join(",")).join("\n")
+}
+
+/** 旧版月度 tab 初始化 ops（表头合并/样式/列宽/冻结） */
+export function legacyBuildMonthInitOps(sheetId: string): { shortcut: string; input: Record<string, unknown> }[] {
+  const ops: { shortcut: string; input: Record<string, unknown> }[] = []
+  // 表头合并 B1:N1
+  ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range: "B1:N1" } })
+  // 表头样式：深蓝底白字加粗居中
+  ops.push({
+    shortcut: "+cells-set-style",
+    input: {
+      sheet_id: sheetId,
+      range: "A1:N1",
+      background_color: "#1668dc",
+      font_color: "#ffffff",
+      font_weight: "bold",
+      font_size: 11,
+      horizontal_alignment: "center",
+      vertical_alignment: "middle",
+    },
+  })
+  // 列宽：A=150 B=150 C=170 D=100 E=100 F=100 G=150 H:I=200 J:N=400
+  ops.push({
+    shortcut: "+cols-resize",
+    input: { sheet_id: sheetId, widths: JSON.stringify({ A: 150, B: 150, C: 170, D: 100, E: 100, F: 100, G: 150, "H:I": 200, "J:N": 400 }) },
+  })
+  ops.push({ shortcut: "+rows-resize", input: { range: "1:1", height: 30 } })
+  ops.push({ shortcut: "+dim-freeze", input: { sheet_id: sheetId, dimension: "row", count: 1 } })
+  return ops
 }
