@@ -10,6 +10,7 @@ export {
   resolveBadgePending,
 } from "./badge"
 import { loseBadge } from "./badge"
+export { getRoleInstance } from "./roles/builtin"
 import { randomDefaultAvatar } from "@/assets/roles"
 
 export const NO_CHECK = "__NOCHECK__"

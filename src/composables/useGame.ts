@@ -1,5 +1,6 @@
 import { computed, reactive, ref } from "vue"
 import * as g from "@/game/logic"
+import { predictWinRate, checkForcedWin } from "@/game/win-predictor"
 import type { GameState, Player } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
@@ -289,6 +290,11 @@ export function useGame() {
   const aliveList = computed(() => state.players.filter((p) => p.alive))
   const judgeScore = computed(() => g.judgeTotal(state))
 
+  // ===== 胜率预测与必然结局检测 =====
+  const winPrediction = computed(() => predictWinRate(state))
+  const forcedWin = computed(() => checkForcedWin(state))
+  const isJudge = computed(() => state.judge && state.players.some(p => p.name === state.judge)) // 简化判断，实际可能需要更精确的判断
+
   const actions = {
     setBoard(b: string) {
       g.applyBoard(state, b)
@@ -549,6 +555,17 @@ export function useGame() {
       return err
     },
 
+    /** 提前结束对局（仅在检测到必然结局时可用） */
+    finishGameEarly(): string | null {
+      const forced = checkForcedWin(state)
+      if (!forced?.detected) {
+        return "当前局势未达成必然结局条件，无法提前结束"
+      }
+      const err = g.finishGameAuto(state)
+      refresh()
+      return err
+    },
+
     buildRecord(): string {
       state.recordText = g.buildAutoRecord(state, sessionTitle.value)
       persist()
@@ -650,6 +667,9 @@ export function useGame() {
     maxNeed,
     aliveList,
     judgeScore,
+    winPrediction,
+    forcedWin,
+    isJudge,
     snapshot,
     softStep,
     undo,

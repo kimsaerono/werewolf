@@ -13,19 +13,13 @@ const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", string> = {
   draw: "平局",
 }
 
-/**
- * 检查是否第三方成员（丘比特或情侣）
- */
-function isThirdMember(state: GameState, p: { name: string; role: string }): boolean {
+export function isThirdMember(state: GameState, p: { name: string; role: string }): boolean {
   const role = getRoleInstance(p.role)
   if (role && role.def.id === "丘比特") return true
   return state.lovers.includes(p.name)
 }
 
-/**
- * 获取情侣链类型：WG=人狼恋（第三方），GG=好人恋，WW=狼狼恋
- */
-function getChainType(state: GameState): "WG" | "GG" | "WW" | "" {
+export function getChainType(state: GameState): "WG" | "GG" | "WW" | "" {
   if (state.lovers.length !== 2) return ""
   const [a, b] = state.lovers
   const pa = state.players.find((p) => p.name === a)

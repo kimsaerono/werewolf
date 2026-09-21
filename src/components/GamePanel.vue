@@ -9,13 +9,14 @@ import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import FullscreenPicker from "@/components/FullscreenPicker.vue"
+import WinPredictorPanel from "@/components/WinPredictorPanel.vue"
 import type { Game } from "@/types"
 import type { Player } from "@/game/logic"
 
 const { message, modal } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, activeTab, aliveList, actions, refs, sessionNo, snapshot, softStep, undo, canUndo, syncStatus } = props.game
+const { state, activeTab, aliveList, actions, refs, sessionNo, snapshot, softStep, undo, canUndo, syncStatus, winPrediction, forcedWin, isJudge } = props.game
 
 // 同步成功/失败提示已由 App.vue 全局统一处理（此处不再重复弹）
 
@@ -179,9 +180,10 @@ function stopSpeech() {
   speechLeft.value = 0
 }
 function rollRand() {
-  // 无警长时按当前参与人数抽随机数
-  const n = aliveCount.value || state.players.length || 1
-  randNo.value = Math.floor(Math.random() * n) + 1
+  // 只在存活玩家中抽随机号，避免抽中已出局玩家
+  const aliveNos = state.players.filter((p) => p.alive).map((p) => p.no)
+  if (!aliveNos.length) return
+  randNo.value = aliveNos[Math.floor(Math.random() * aliveNos.length)]
 }
 /** 抽中的号对应的存活玩家（用于展示名字） */
 const randPlayer = computed(() => {
@@ -1170,6 +1172,12 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       <a-tooltip :title="boardLabel" placement="bottomLeft">
         <div class="board-config-line">🎲 {{ boardSummary }}</div>
       </a-tooltip>
+
+      <!-- 胜率预测面板 -->
+      <WinPredictorPanel 
+        :game="props.game" 
+        :onFinishEarly="actions.finishGameEarly" 
+      />
 
       <a-flex :justify="'space-between'" :wrap="'wrap'" :gap="12" style="margin-bottom: 12px">
         <a-space :wrap="true">
