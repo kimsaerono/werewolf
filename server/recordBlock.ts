@@ -1,128 +1,138 @@
-/** 「每局复盘记录」卡片区块构建器（纯函数，供本地桥接与测试共用）
+/** 「每月复盘记录」表格构建器（纯函数，供本地桥接与测试共用）
  *
- * 每局一个卡片区块（列 A..N，共 14 列）：
- *   行R    │ A: 局次(gameId) │ B:N 合并: 🎮 板子 ｜ 胜负（原因）｜ 法官：xx   ← 深蓝底白字加粗
- *   行R+1  │                 │ B:N 合并: ⏰ 时间：… ｜ 🏆 MVP：… ｜ SVP：… ｜ 背锅侠：…
- *   行R+2  │                 │ B:N 合并: 积分：1.赵妍(女巫) -0.5　2.武战峰(狼人) +3.5 …
- *   行R+3~ │                 │ B 列逐行: 1.日志… / 2.日志…（灰字）
- *   行末   │ 空行分隔（与下一局卡片隔开）
+ * 每个游戏月一张子表 tab（如「2026-09复盘」），每局一行，共 14 列 A..N：
+ *   A 局次 │ B 时间 │ C 板子 │ D 胜负 │ E 原因 │ F 法官 │ G 荣誉 │ H:I 合并玩家积分 │ J:N 合并对局日志
+ * 首行为固定表头（深蓝底白字加粗 + 冻结首行）；数据行全网格浅灰边框，
+ * 积分/日志列自动换行、行高 auto（日志多行自动撑高）。
  */
 import type { SyncPayload } from "../src/api/feishuSync"
 
 /** 复盘表总列数（A..N） */
 export const RECORD_COLS = 14
 
-export interface RecordBlock {
-  /** 每行 [A, B] 两列的值，从块首行开始（末行为空行分隔） */
-  rows: string[][]
-  /** 需要合并的 B:N 区域（绝对行号 A1 表示法） */
-  mergeRanges: string[]
-  /** 标题行绝对行号 */
-  titleRow: number
-  /** 日志区起止绝对行号（无日志时 start > end） */
-  logStartRow: number
-  logEndRow: number
+/** 月份 key：YYYY-MM（空/解析失败返回 ""） */
+export function monthKeyOf(date: string): string {
+  const d = new Date(date)
+  if (isNaN(d.getTime())) return ""
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
+/** 月度复盘 tab 标题：YYYY-MM复盘 */
+export function monthTabTitle(date: string): string {
+  const m = monthKeyOf(date)
+  return m ? `${m}复盘` : "未知月复盘"
 }
 
 /** 分数展示：保留 1 位小数，正数带 + 号 */
-function fmtScore(n: number): string {
+export function fmtScore(n: number): string {
   const v = Math.round((Number(n) || 0) * 10) / 10
   return `${v > 0 ? "+" : ""}${v.toFixed(1)}`
 }
 
-/** 构建单局复盘卡片区块；startRow 为块首行的表格绝对行号（1 起） */
-export function buildRecordBlock(payload: SyncPayload, startRow: number): RecordBlock {
-  const board = payload.boardFinal || payload.board || "-"
-  const title = `🎮 ${board}板 ｜ ${payload.winner || "-"}${payload.reason ? `（${payload.reason}）` : ""} ｜ 法官：${payload.judge?.name || "-"}`
-  const infoParts = [`⏰ 时间：${payload.date}`]
-  const honors = [payload.mvp ? `🏆 MVP：${payload.mvp}` : "", payload.svp ? `SVP：${payload.svp}` : "", payload.beiguo ? `背锅侠：${payload.beiguo}` : ""].filter(Boolean)
-  if (honors.length) infoParts.push(honors.join(" ｜ "))
-  const scoreLine =
-    (payload.players || []).length
-      ? `积分：` +
-        (payload.players || [])
-          .map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`)
-          .join("　")
-      : ""
-  const lines = payload.logLines || []
+/** 表头行（14 列；合并格 H/I、J:N 的值分别落在 H、J） */
+export function headerRow(): string[] {
+  const row: string[] = new Array<string>(RECORD_COLS).fill("")
+  row[0] = "局次"
+  row[1] = "时间"
+  row[2] = "板子"
+  row[3] = "胜负"
+  row[4] = "原因"
+  row[5] = "法官"
+  row[6] = "荣誉"
+  row[7] = "玩家积分"
+  row[9] = "对局日志"
+  return row
+}
 
-  const rows: string[][] = [
-    [payload.gameId, title],
-    ["", infoParts.join(" ｜ ")],
-    ...(scoreLine ? [["", scoreLine] as [string, string]] : []),
-    ...lines.map((l, i) => ["", `${i + 1}. ${l}`]),
-    ["", ""],
-  ]
-  // 仅标题行合并 B:N（其余行不合并，靠文字溢出到 C..N 空白列自然展示，避免裁剪）
-  const logStart = startRow + (scoreLine ? 3 : 2)
-  return {
-    rows,
-    mergeRanges: [`B${startRow}:N${startRow}`],
-    titleRow: startRow,
-    logStartRow: logStart,
-    logEndRow: logStart - 1 + lines.length,
-  }
+/** 单局数据行（14 列；积分/日志值落在 H、J） */
+export function gameRow(payload: SyncPayload): string[] {
+  const row: string[] = new Array<string>(RECORD_COLS).fill("")
+  row[0] = payload.gameId
+  row[1] = payload.date
+  row[2] = payload.boardFinal || payload.board || "-"
+  row[3] = payload.winner || "-"
+  row[4] = payload.reason || ""
+  row[5] = payload.judge?.name || "-"
+  const honors = [payload.mvp ? `MVP:${payload.mvp}` : "", payload.svp ? `SVP:${payload.svp}` : "", payload.beiguo ? `背锅侠:${payload.beiguo}` : ""].filter(Boolean)
+  row[6] = honors.join("　") || "-"
+  row[7] = (payload.players || []).map((p) => `${p.no}.${p.name}(${p.role}) ${fmtScore(p.base + p.skill + p.vote)}`).join("　")
+  row[9] = (payload.logLines || []).map((l, i) => `${i + 1}. ${l}`).join("\n")
+  return row
+}
+
+/** 表头行的合并范围（A1 绝对地址，行号 1 起） */
+export const HEADER_MERGES = ["H1:I1", "J1:N1"]
+
+/** 数据行的合并范围（A1 绝对地址） */
+export function rowMerges(row: number): string[] {
+  return [`H${row}:I${row}`, `J${row}:N${row}`]
 }
 
 /** CSV 单元格转义（RFC 4180：整格引号包裹、内部引号翻倍） */
-function csvCell(v: string): string {
+export function csvCell(v: string): string {
   return `"${String(v ?? "").replace(/"/g, '""')}"`
 }
 
-/** 区块 → CSV 文本（供 +csv-put --csv 使用） */
-export function blockToCsv(block: RecordBlock): string {
-  return block.rows.map((r) => r.map(csvCell).join(",")).join("\n")
+/** 单行 → CSV 文本 */
+export function rowToCsv(row: string[]): string {
+  return row.map(csvCell).join(",")
 }
 
-/** 区块 → +batch-update 子操作列表（合并单元格 + 卡片样式 + 标题行高），原子提交 */
-export function buildRecordOps(block: RecordBlock, sheetId: string): { shortcut: string; input: Record<string, unknown> }[] {
+/** 新建月度 tab 的初始化 ops（合并 + 表头样式 + 列宽 + 行高 + 冻结），为每个 tab 建一次 */
+export function buildMonthInitOps(sheetId: string): { shortcut: string; input: Record<string, unknown> }[] {
   const ops: { shortcut: string; input: Record<string, unknown> }[] = []
-  // 仅标题行合并 B:N
-  ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range: block.mergeRanges[0] } })
-  // 标题行：深蓝底白字加粗（整行 A:N 拉通色条）+ 底边框
+  for (const range of HEADER_MERGES) {
+    ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range } })
+  }
+  // 表头：深蓝底白字加粗居中
   ops.push({
     shortcut: "+cells-set-style",
     input: {
       sheet_id: sheetId,
-      range: `A${block.titleRow}:N${block.titleRow}`,
+      range: "A1:N1",
       background_color: "#1668dc",
       font_color: "#ffffff",
       font_weight: "bold",
       font_size: 11,
+      horizontal_alignment: "center",
       vertical_alignment: "middle",
-      border_type: "BOTTOM_BORDER",
-      border_color: "#0d4a9e",
     },
   })
-  // 信息行 + 积分行：中灰 #6b7280、顶端对齐、自动换行（B 列溢出显示到 C..N）
+  // 列宽：A 局次/B 时间/C 板子/D 胜负/E 原因/F 法官/G 荣誉/H:I 积分/J:N 日志
+  ops.push({
+    shortcut: "+cols-resize",
+    input: { sheet_id: sheetId, widths: JSON.stringify({ A: 200, B: 150, C: 170, D: 100, E: 70, F: 90, G: 190, "H:I": 220, "J:N": 600 }) },
+  })
+  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: "1:1", height: 30 } })
+  ops.push({ shortcut: "+dim-freeze", input: { sheet_id: sheetId, dimension: "row", count: 1 } })
+  return ops
+}
+
+/** 单局数据行 ops：合并 + 网格边框 + 积分/日志换行 + 行高 auto（日志多行自动撑高） */
+export function buildGameRowOps(sheetId: string, row: number): { shortcut: string; input: Record<string, unknown> }[] {
+  const ops: { shortcut: string; input: Record<string, unknown> }[] = []
+  for (const range of rowMerges(row)) {
+    ops.push({ shortcut: "+cells-merge", input: { sheet_id: sheetId, range } })
+  }
+  // 全行浅灰上下边框 + 字号 11 居中
   ops.push({
     shortcut: "+cells-set-style",
     input: {
       sheet_id: sheetId,
-      range: `B${block.titleRow + 1}:B${block.logStartRow - 1}`,
-      font_color: "#6b7280",
-      vertical_alignment: "top",
-      word_wrap: "auto-wrap",
+      range: `A${row}:N${row}`,
+      font_size: 11,
+      vertical_alignment: "middle",
+      border_styles: JSON.stringify({
+        top: { style: "solid", color: "#e5e7eb", weight: "thin" },
+        bottom: { style: "solid", color: "#e5e7eb", weight: "thin" },
+      }),
     },
   })
-  // 日志区：浅灰小号
-  if (block.logEndRow >= block.logStartRow) {
-    ops.push({
-      shortcut: "+cells-set-style",
-      input: {
-        sheet_id: sheetId,
-        range: `B${block.logStartRow}:B${block.logEndRow}`,
-        font_color: "#8a8f99",
-        font_size: 10,
-        vertical_alignment: "top",
-        word_wrap: "auto-wrap",
-      },
-    })
-  }
-  // 行高：标题 30、内容行 20、分隔行 10
-  const sepRow = block.titleRow + block.rows.length - 1
-  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `${block.titleRow}:${block.titleRow}`, height: 30 } })
-  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `B${block.titleRow + 1}:B${sepRow - 1}`, height: 20 } })
-  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `${sepRow}:${sepRow}`, height: 10 } })
+  // 积分/日志列顶端对齐 + 自动换行
+  ops.push({
+    shortcut: "+cells-set-style",
+    input: { sheet_id: sheetId, range: `H${row}:N${row}`, vertical_alignment: "top", word_wrap: "auto-wrap" },
+  })
+  ops.push({ shortcut: "+rows-resize", input: { sheet_id: sheetId, range: `${row}:${row}`, type: "auto" } })
   return ops
 }
