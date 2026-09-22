@@ -71,6 +71,12 @@ export function predictWinRate(state: GameState): WinPrediction {
   const alivePlayers = state.players.filter(p => p.alive)
   const totalAlive = alivePlayers.length
 
+  // 游戏未开始（无玩家、或玩家未分配角色）：返回中立 50/50，无强制结局
+  const gameNotStarted = state.players.length === 0 || !state.players.some(p => p.role)
+  if (gameNotStarted) {
+    return { rates: { wolf: 50, good: 50, third: 0, draw: 0 }, forcedWin: null, factors: ["🎮 游戏未开始"], hasThird: false }
+  }
+
   if (totalAlive === 0) {
     return { rates: { wolf: 0, good: 0, third: 0, draw: 0 }, forcedWin: null, factors: [], hasThird: false }
   }
