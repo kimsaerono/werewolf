@@ -2,6 +2,7 @@ name: Deploy Pages
 on:
   push:
     branches: [ master, main ]
+  workflow_dispatch:
 permissions:
   contents: read
   pages: write
@@ -12,9 +13,6 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -24,8 +22,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      # 注入飞书同步 URL（.env 不入库；口令改为前端运行时输入，不打进公开代码）
+      - name: 写入同步配置
+        run: |
+          echo "VITE_SYNC_URL=https://hymallbosstest.heemoney.com/werewolf-sync" > .env
+
       # 安装依赖
-      - run: bun install
+      - run: bun install 
 
       # vite打包
       - run: bun run build

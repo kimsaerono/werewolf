@@ -69,11 +69,26 @@ export function playSfx(name: SfxName): void {
   if (!c) return
   const t = 0
   switch (name) {
-    case "howl": // 啊呜～（下滑狼嚎）
-      tone(c, 220, t, 0.5, "sawtooth", 0.18)
-      tone(c, 180, t + 0.25, 0.6, "sawtooth", 0.16)
-      tone(c, 130, t + 0.5, 0.7, "sawtooth", 0.14)
+    case "howl": { // 啊呜～～ 狼嚎（柔和正弦波）
+      const o = c.createOscillator()
+      const g = c.createGain()
+      o.type = "sine"
+      // 频率：低缓升 → 高位微颤 → 缓慢下滑
+      o.frequency.setValueAtTime(200, c.currentTime + t)
+      o.frequency.linearRampToValueAtTime(440, c.currentTime + t + 0.8)
+      o.frequency.linearRampToValueAtTime(420, c.currentTime + t + 1.4)
+      o.frequency.linearRampToValueAtTime(220, c.currentTime + t + 2.8)
+      // 音量：淡入 → 保持 → 慢慢消失
+      g.gain.setValueAtTime(0, c.currentTime + t)
+      g.gain.linearRampToValueAtTime(0.8, c.currentTime + t + 0.25)
+      g.gain.setValueAtTime(0.8, c.currentTime + t + 1.4)
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + t + 3.0)
+      o.connect(g)
+      g.connect(c.destination)
+      o.start(c.currentTime + t)
+      o.stop(c.currentTime + t + 3.1)
       break
+    }
     case "magic": // 神秘琶音
       tone(c, 880, t, 0.2, "sine", 0.14)
       tone(c, 1108, t + 0.12, 0.2, "sine", 0.13)

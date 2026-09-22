@@ -2,11 +2,12 @@
 import { computed } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
+import { roleShort } from "@/game/logic"
 
 const { message } = AntApp.useApp()
 
 const props = defineProps<{ game: Game }>()
-const { state, actions, refs, judgeScore } = props.game
+const { state, actions, refs } = props.game
 
 const winText = computed(() => (state.winCamp ? refs.WIN_TEXT[state.winCamp] : "未判定"))
 const starOptions = ["-", "⭐入门", "⭐⭐熟练", "⭐⭐⭐精通"]
@@ -30,7 +31,7 @@ function doFinish() {
           <a-tag color="gold" style="font-size: 15px">{{ winText }}</a-tag>
         </a-descriptions-item>
         <a-descriptions-item v-if="state.judge" label="⚖️ 法官（+0.5/局）">
-          {{ state.judge }} —— 累计 {{ judgeScore }} 分
+          {{ state.judge }}
         </a-descriptions-item>
       </a-descriptions>
     </a-card>
@@ -68,7 +69,7 @@ function doFinish() {
       <a-row :gutter="[12, 8]">
         <a-col v-for="p in state.players" :key="p.name" :xs="24" :sm="12" :lg="8">
           <a-space :wrap="true">
-            <span style="min-width: 110px">{{ p.name }}({{ p.role }})：</span>
+            <span style="min-width: 110px" :title="p.role">{{ p.name }}({{ roleShort(p.role) }})：</span>
             <a-select style="min-width: 120px" v-model:value="p.star" :options="starOptions.map((s) => ({ value: s, label: s }))" />
           </a-space>
         </a-col>

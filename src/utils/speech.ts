@@ -66,26 +66,49 @@ function pickZhVoice(): SpeechSynthesisVoice | null {
 }
 
 // ===== 播报队列：当前没播完就排队，播完再播下一条，避免头尾被吞 =====
-let queue: SpeechSynthesisUtterance[] = []
+type QueueItem = SpeechSynthesisUtterance | HTMLAudioElement
+let queue: QueueItem[] = []
 let playing = false
+let audioEls: HTMLAudioElement[] = []
 
 function pump(): void {
   if (playing || !queue.length) return
   const u = queue.shift()!
   playing = true
-  u.onend = () => {
-    playing = false
-    pump()
+  if (u instanceof SpeechSynthesisUtterance) {
+    u.onend = () => {
+      playing = false
+      pump()
+    }
+    u.onerror = () => {
+      playing = false
+      pump()
+    }
+    window.speechSynthesis.speak(u)
+  } else {
+    const el = u as HTMLAudioElement & { __fb?: { text: string; style?: VoiceStyleKey }; __fbDone?: boolean }
+    const fallback = () => {
+      if (el.__fb && !el.__fbDone) {
+        el.__fbDone = true
+        enqueue(el.__fb.text, el.__fb.style)
+      }
+      playing = false
+      pump()
+    }
+    u.onended = () => {
+      playing = false
+      pump()
+    }
+    u.onerror = fallback
+    u.play().catch(fallback)
   }
-  u.onerror = () => {
-    playing = false
-    pump()
-  }
-  window.speechSynthesis.speak(u)
 }
 
 function enqueue(text: string, style?: VoiceStyleKey): void {
   if (!text || !("speechSynthesis" in window)) return
+  // 允许被打断：新的播报立即打断当前与排队中的内容
+  const interrupted = playing || queue.length > 0
+  if (interrupted) stopSpeak()
   ensureVoices()
   const u = new SpeechSynthesisUtterance(text)
   u.lang = "zh-CN"
@@ -95,22 +118,59 @@ function enqueue(text: string, style?: VoiceStyleKey): void {
   u.pitch = s.pitch
   u.rate = s.rate
   queue.push(u)
+  // 打断后稍作延迟再播：规避 cancel() 后立即 speak() 被部分浏览器吞掉的已知问题
+  if (interrupted) setTimeout(pump, 30)
+  else pump()
+}
+
+function enqueueAudio(url: string, fallbackText?: string, style?: VoiceStyleKey): void {
+  const a = new Audio(url)
+  a.preload = "auto"
+  const el = a as HTMLAudioElement & { __fb?: { text: string; style?: VoiceStyleKey }; __fbDone?: boolean }
+  if (fallbackText) el.__fb = { text: fallbackText, style }
+  audioEls.push(a)
+  queue.push(a)
   pump()
 }
 
-/** 播报一段文字（中文语音）；若正在播报则排队，播完再播，保证完整不吞字 */
+/** 去掉文本中的 emoji / 特殊 Unicode 符号，防止 TTS 读出乱码 */
+function stripEmoji(text: string): string {
+  // 移除 emoji + 各类 Unicode 封装符号
+  // eslint-disable-next-line no-misleading-character-class
+  return text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u200d\uFE0F\u20E3]/gu, "").replace(/\s{2,}/g, " ").trim()
+}
+
+/** 播报一段文字（中文语音）；若正在播报则立即打断，改播本条 */
 export function speak(text: string, style?: VoiceStyleKey): void {
-  enqueue(text, style)
+  enqueue(stripEmoji(text), style)
 }
 
-/** 逐条排队播报：一条播完再播下一条 */
+/** 逐条排队播报：后一条会打断前一条（只保留最后一条） */
 export function speakQueue(texts: string[], style?: VoiceStyleKey): void {
-  for (const t of texts) enqueue(t, style)
+  for (const t of texts) enqueue(stripEmoji(t), style)
 }
 
-/** 清空队列并停止当前播报 */
+/** 预生成音频资源（当前停用：全部走系统TTS；如需启用，填入 public/audio/<id>.mp3 映射） */
+export const SPEAK_AUDIO: Record<string, string> = {}
+
+/** 播放固定语音ID：有预生成音频则播音频（失败回退TTS），否则系统TTS */
+export function speakVoice(id: string, text: string, style?: VoiceStyleKey): void {
+  const url = SPEAK_AUDIO[id]
+  if (url) enqueueAudio(url, text, style)
+  else enqueue(text, style)
+}
+
+/** 清空队列并停止当前播报（含音频） */
 export function stopSpeak(): void {
   queue = []
   playing = false
   if ("speechSynthesis" in window) window.speechSynthesis.cancel()
+  audioEls.forEach((a) => {
+    try {
+      a.pause()
+    } catch {
+      /* ignore */
+    }
+  })
+  audioEls = []
 }
