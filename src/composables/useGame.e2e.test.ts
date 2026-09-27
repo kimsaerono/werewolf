@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeEach } from "bun:test"
+import { describe, it, expect, afterAll, beforeEach } from "bun:test"
+import { __resetAudioActivityForTest } from "@/utils/audioActivity"
+import { __resetSpeechForTest } from "@/utils/speech"
 import { useGame } from "./useGame"
 
 // Mock window for test environment
@@ -45,6 +47,13 @@ describe("E2E 完整游戏流程", () => {
   beforeEach(() => {
     game = useGame()
     game.actions.clearAllData()
+  })
+
+  // 上面的假 speechSynthesis 永不触发 onend，会残留未释放的播报活动与音频活动计数，
+  // 污染同进程后续测试文件（如 speech.test.ts / audioActivity.test.ts）
+  afterAll(() => {
+    __resetSpeechForTest()
+    __resetAudioActivityForTest()
   })
 
   it("标准12人局：狼人屠神胜利", () => {

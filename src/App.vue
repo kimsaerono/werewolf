@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { theme, Modal, message } from "ant-design-vue"
 import { useGame } from "@/composables/useGame"
 import BoardSignupPanel from "@/components/BoardSignupPanel.vue"
@@ -9,6 +9,8 @@ import RecordPanel from "@/components/RecordPanel.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import ModeSelectPage from "@/components/ModeSelectPage.vue"
 import SyncSettings from "@/components/SyncSettings.vue"
+import MusicPlayerDrawer from "@/components/MusicPlayerDrawer.vue"
+import { useMusicPlayer } from "@/composables/useMusicPlayer"
 import loadingPng from "@/assets/roles/loading.png"
 
 const game = useGame()
@@ -66,6 +68,28 @@ const gameReady = computed(() => countMatch.value && state.playersConfirmed)
 const prevTab = ref("board")
 const gamePanelRef = ref<InstanceType<typeof GamePanel> | null>(null)
 const leftActionsOpen = ref(false)
+const musicPlayer = useMusicPlayer()
+const musicDrawerOpen = ref(false)
+
+function openMusicPlayer() {
+  leftActionsOpen.value = false
+  musicDrawerOpen.value = true
+}
+
+watch(
+  () => [state.phase, state.finished] as const,
+  ([phase, finished]) => {
+    // 音乐只读对局状态；万一音频层异常，绝不能把异常抛回对局流程
+    try {
+      musicPlayer.syncPhase(phase, finished)
+    } catch (e) {
+      console.warn("背景音乐切换失败（已忽略）", e)
+    }
+  },
+  { immediate: true, flush: "sync" },
+)
+
+onBeforeUnmount(() => musicPlayer.dispose())
 
 function onTabChange(key: string) {
   if (key === "game" && !gameReady.value) {
@@ -115,6 +139,12 @@ function onTabChange(key: string) {
         <a-tooltip v-if="leftActionsOpen" title="语音播报配置" key="voice">
           <a-button class="fab" type="default" shape="circle" size="large" @click="gamePanelRef?.openVoiceDrawer()">🎙️</a-button>
         </a-tooltip>
+        <a-tooltip v-if="leftActionsOpen" title="切换对局模式" placement="right" key="mode">
+          <a-button class="fab fab-mode" type="default" shape="circle" size="large" aria-label="切换对局模式" @click="actions.setModeChosen(false)">🎲</a-button>
+        </a-tooltip>
+        <a-tooltip v-if="leftActionsOpen" title="夜晚背景音乐" placement="right" key="music">
+          <a-button class="fab fab-music" type="default" shape="circle" size="large" aria-label="打开夜晚背景音乐" @click="openMusicPlayer">♫</a-button>
+        </a-tooltip>
         <a-tooltip v-if="leftActionsOpen" title="整局重置" placement="right" key="reset">
           <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
         </a-tooltip>
@@ -138,6 +168,7 @@ function onTabChange(key: string) {
           </a-button>
         </div>
       </a-modal>
+      <MusicPlayerDrawer :open="musicDrawerOpen" :player="musicPlayer" @close="musicDrawerOpen = false" />
       </template>
 
       <!-- 全局忙碌遮罩：同步飞书等耗时操作时显示 loading.png 动画 -->
@@ -152,6 +183,12 @@ function onTabChange(key: string) {
 <style>
 * {
   box-sizing: border-box;
+}
+html,
+body {
+  /* 关掉整页下拉回弹 / 下拉刷新，否则到顶继续下拉时 sticky 顶栏会跟着一起位移
+     （sticky 本身没问题，是浏览器 overscroll 行为；viewport meta 管不了这个） */
+  overscroll-behavior-y: none;
 }
 body {
   margin: 0;
@@ -194,9 +231,19 @@ body {
 .ant-card-bordered {
   border-color: #2b3145aa;
 }
+/* 只收紧「有标题」卡片的内边距；无头卡片（如对局步骤卡）保持默认 24px。
+   :has() 提高特异性，压过 Ant 的 :where(.css-hash).ant-card .ant-card-body（0,2,0）。 */
+body .ant-card:has(.ant-card-head) > .ant-card-body {
+  padding: 0;
+}
 .ant-modal .ant-card,
 .ant-drawer .ant-card {
   background: #171b28;
+}
+/* 弹层 / 抽屉内部滚动到边界时不把 overscroll 传给页面，避免带动整页回弹 */
+.ant-modal-body,
+.ant-drawer-body {
+  overscroll-behavior: contain;
 }
 /* ===== 夜晚 / 白天背景切换 ===== */
 .app-shell {
@@ -217,7 +264,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='440'%3E%3Ctext x='80' y='90' text-anchor='middle' transform='rotate(-28 80 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='80' y='220' text-anchor='middle' transform='rotate(-28 80 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='80' y='350' text-anchor='middle' transform='rotate(-28 80 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='90' text-anchor='middle' transform='rotate(-28 240 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='220' text-anchor='middle' transform='rotate(-28 240 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='240' y='350' text-anchor='middle' transform='rotate(-28 240 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='90' text-anchor='middle' transform='rotate(-28 400 90)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='220' text-anchor='middle' transform='rotate(-28 400 220)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3Ctext x='400' y='350' text-anchor='middle' transform='rotate(-28 400 350)' font-size='30' font-weight='800' fill='%23d4fde0' fill-opacity='0.3'%3E模拟模式%3C/text%3E%3C/svg%3E");
 }
 .app-shell.wm-real::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='440'%3E%3Ctext x='80' y='90' text-anchor='middle' transform='rotate(-28 80 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='220' text-anchor='middle' transform='rotate(-28 80 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='350' text-anchor='middle' transform='rotate(-28 80 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='90' text-anchor='middle' transform='rotate(-28 240 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='220' text-anchor='middle' transform='rotate(-28 240 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='350' text-anchor='middle' transform='rotate(-28 240 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='90' text-anchor='middle' transform='rotate(-28 400 90)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='220' text-anchor='middle' transform='rotate(-28 400 220)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='350' text-anchor='middle' transform='rotate(-28 400 350)' font-size='30' font-weight='800' fill='%23d6ecff' fill-opacity='0.28'%3E真实模式%3C/text%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='440'%3E%3Ctext x='80' y='90' text-anchor='middle' transform='rotate(-28 80 90)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='220' text-anchor='middle' transform='rotate(-28 80 220)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='80' y='350' text-anchor='middle' transform='rotate(-28 80 350)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='90' text-anchor='middle' transform='rotate(-28 240 90)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='220' text-anchor='middle' transform='rotate(-28 240 220)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='240' y='350' text-anchor='middle' transform='rotate(-28 240 350)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='90' text-anchor='middle' transform='rotate(-28 400 90)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='220' text-anchor='middle' transform='rotate(-28 400 220)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3Ctext x='400' y='350' text-anchor='middle' transform='rotate(-28 400 350)' font-size='30' font-weight='800' fill='%23e8dcc0' fill-opacity='0.28'%3E真实模式%3C/text%3E%3C/svg%3E");
 }
 .app-shell > * {
   position: relative;
@@ -227,13 +274,13 @@ body {
   background: linear-gradient(180deg, #0a0d16 0%, #101a2e 100%);
 }
 .app-shell.wm-sim.phase-night {
-  background: linear-gradient(180deg, #071109 0%, #0c1f12 100%);
+  background: linear-gradient(180deg, #b26326 0%,#e18238 70%, #0c1f12 100%);
 }
 .app-shell.phase-day {
   background: linear-gradient(180deg, #12151d 0%, #1c2436 100%);
 }
 .app-shell.wm-sim.phase-day {
-  background: linear-gradient(180deg, #0e1610 0%, #163020 100%);
+  background: linear-gradient(180deg, #b26326 0%,#e18238 70%, #163020 100%);
 }
 .app-shell.phase-idle {
   background: #0f1115;
@@ -241,13 +288,44 @@ body {
 .app-shell.wm-sim.phase-idle {
   background: #0c1710;
 }
-/* 悬浮座位牌列宽（桌面 76px / 移动端 62px），内容区让位 */
+/* 真实模式整屏底色：暖卡其调，和模拟模式的绿调区分 */
+.app-shell.wm-real.phase-night {
+  background: linear-gradient(180deg, #4b266f 0%,#a56edd 70%, #241d12 100%);
+}
+.app-shell.wm-real.phase-day {
+  background: linear-gradient(180deg, #4b266f 0%,#a56edd 70%, #28211a 100%);
+}
+.app-shell.wm-real.phase-idle {
+  background: #15120d;
+}
+/* 模式标签：模拟=深绿实底浅字，真实=浅卡其底深棕字（深色界面上更醒目） */
+.mode-tag {
+  border-radius: 999px;
+  font-weight: 600;
+}
+.mode-tag.sim {
+  color: #eafbe9;
+  background: #2e7d32;
+  border-color: #2e7d32;
+}
+.mode-tag.real {
+  color: #5c4a2e;
+  background: #efe3c8;
+  border-color: #d9c49a;
+}
+
+/* 悬浮座位牌列宽（桌面 76px / 移动端 62px），内容区让位；
+   --seat-ext 是玻璃面板比卡片多出的细边宽度；
+   --seat-retract 是整列默认收起的比例（50% = 半遮面，点一下完整滑出） */
 :root {
   --seat-col-w: 76px;
+  --seat-ext: 8px;
+  --seat-retract: 50%;
 }
 @media (max-width: 720px) {
   :root {
     --seat-col-w: 62px;
+    --seat-ext: 7px;
   }
 }
 .page {
@@ -327,6 +405,7 @@ body {
 }
 .ant-card + .ant-card {
   margin-top: 12px;
+  padding:10px
 }
 /* 左侧：toggle 固定底部 */
 .left-toggle {
@@ -348,6 +427,18 @@ body {
 }
 .fab-reset {
   border: 1px solid rgba(255, 77, 79, 0.6) !important;
+}
+.fab-mode {
+  /* 醒目：用琥珀色实心描边 + 深底，和旁边中性的 🎙️ / ♫ 区分开 */
+  background: linear-gradient(135deg, #3a2c08 0%, #241c05 100%) !important;
+  border: 2px solid #d4a017 !important;
+  color: #ffd666 !important;
+  font-size: 20px;
+  box-shadow: 0 0 0 3px rgba(212, 160, 23, 0.18);
+}
+.fab-mode:hover {
+  background: linear-gradient(135deg, #4d3a0b 0%, #33280a 100%) !important;
+  border-color: #ffd666 !important;
 }
 .fab-toggle {
   background: rgba(30, 35, 50, 0.92) !important;
@@ -465,6 +556,7 @@ body {
   padding: 10px;
   background: #171b28;
   touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 .member-item {
   width: 100%;
@@ -506,10 +598,11 @@ body {
   background: #2ed573;
   color: #0f1115;
 }
+/* 法官卡片：现在法官留在成员池里（双击可换/取消），必须保持可点击。
+   旧设计把法官过滤出池子，这里曾用 pointer-events: none 禁用，会让「再次双击取消法官」失效。 */
 .member-item.judge {
-  cursor: not-allowed;
+  cursor: pointer;
   border-color: #ffa50255;
-  pointer-events: none;
   opacity: 1;
 }
 .member-item.judge .member-name {

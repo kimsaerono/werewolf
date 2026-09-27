@@ -1,7 +1,7 @@
-import { computed, reactive, ref } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import * as g from "@/game/logic"
 import { predictWinRate, checkForcedWin } from "@/game/win-predictor"
-import type { GameState, Player } from "@/game/logic"
+import type { GameState, Player, WinCamp } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
 import { syncGameToFeishu } from "@/api/feishuSync"
@@ -110,13 +110,13 @@ function dayKey(time: string): string {
   if (isNaN(d.getTime())) return ""
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }
-/** 最终板子角色组成（含手动加的角色），如"狼人×3 预言家×1…" */
+/** 最终板子角色组成（含手动加的角色），如"狼×3 预×1…"，角色用简称 */
 function boardFinalText(): string {
   const roles = g.getBoardRoles(state)
   const counts: Record<string, number> = {}
   roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
   return Object.entries(counts)
-    .map(([role, n]) => `${role}×${n}`)
+    .map(([role, n]) => `${g.roleShort(role)}×${n}`)
     .join(" ")
 }
 /** 日期文案：YYYY年M月D日 */
@@ -237,50 +237,57 @@ function undo(): boolean {
   }
 }
 
+/** 结算收尾：保存本局、锁定对局、弹结算面板（自动判胜与「提前结束对局」共用） */
+function settle(reason: string, skipFinish = false): void {
+  if (!skipFinish) g.finishGameAuto(state)
+  const isDraw = state.winCamp === "draw"
+  const winText =
+    state.winCamp === "wolf" ? "狼人胜利"
+    : state.winCamp === "third" ? "第三方胜利"
+    : state.winCamp === "draw" ? "平局"
+    : "好人胜利"
+  state.recordText = g.buildAutoRecord(state, sessionTitle.value)
+  history.value.push({
+    title: sessionTitle.value,
+    time: new Date().toLocaleString(),
+    board: state.board,
+    boardFinal: boardFinalText(),
+    winner: winText,
+    reason,
+    judge: state.judge,
+    judgeScore: g.judgeTotal(state),
+    players: state.players.map((p: Player) => ({
+      no: p.no,
+      name: p.name,
+      role: p.role,
+      alive: p.alive,
+      scoreRound: p.scoreRound,
+      scoreTotal: p.scoreTotal,
+      star: p.star,
+      scoreDetail: [...p.scoreDetail],
+    })),
+    log: [...state.globalLog],
+    lovers: [...state.lovers],
+    synced: false,
+    sim: state.simMode,
+    mvp: state.mvp,
+    svp: state.svp,
+    beiguo: state.beiguo,
+  })
+  saveHistory()
+  // 平局或模拟模式：不计积分、不同步飞书
+  if (!isDraw && !state.simMode) {
+    autoSyncRecord(history.value[history.value.length - 1])
+  }
+  winNotice.value = { text: winText, reason, camps: g.campBreakdown(state) }
+  if (state.voiceEnabled) speak(`${winText}！${reason}`)
+}
+
 /** 每次操作后调用：重算分数 + 自动判胜负（判出则保存本局、锁定对局、弹窗） */
 function refresh(): void {
   g.recalcScore(state)
   const r = g.checkWin(state)
-  if (r.ended && r.text) {
-    const isDraw = state.winCamp === "draw"
-    g.finishGameAuto(state)
-    state.recordText = g.buildAutoRecord(state, sessionTitle.value)
-    history.value.push({
-      title: sessionTitle.value,
-      time: new Date().toLocaleString(),
-      board: state.board,
-      boardFinal: boardFinalText(),
-      winner: r.text,
-      reason: r.reason,
-      judge: state.judge,
-      judgeScore: g.judgeTotal(state),
-      players: state.players.map((p: Player) => ({
-        no: p.no,
-        name: p.name,
-        role: p.role,
-        alive: p.alive,
-        scoreRound: p.scoreRound,
-        scoreTotal: p.scoreTotal,
-        star: p.star,
-        scoreDetail: [...p.scoreDetail],
-      })),
-      log: [...state.globalLog],
-      lovers: [...state.lovers],
-      synced: false,
-      sim: state.simMode,
-      mvp: state.mvp,
-      svp: state.svp,
-      beiguo: state.beiguo,
-    })
-    saveHistory()
-    // 平局或模拟模式：不计积分、不同步飞书
-    if (!isDraw && !state.simMode) {
-      autoSyncRecord(history.value[history.value.length - 1])
-    }
-    const winText = state.winCamp === "wolf" ? "狼人胜利" : state.winCamp === "third" ? "第三方胜利" : state.winCamp === "draw" ? "平局" : "好人胜利"
-    winNotice.value = { text: winText, reason: r.reason, camps: g.campBreakdown(state) }
-    if (state.voiceEnabled) speak(`${winText}！${r.reason}`)
-  }
+  if (r.ended && r.text) settle(r.reason)
   persist()
 }
 
@@ -293,6 +300,27 @@ export function useGame() {
   // ===== 胜率预测与必然结局检测 =====
   const winPrediction = computed(() => predictWinRate(state))
   const forcedWin = computed(() => checkForcedWin(state))
+  /** 三档确定度：A 真必然 / B 单方必胜 / C 均势 */
+  const certainty = computed(() => winPrediction.value.certainty)
+
+  /** 当前处于劣势的阵营：A 档取败方（完全没赢法），B 档取弱势方，C 档没有劣势方 */
+  const disadvantagedCamp = computed<g.Camp | null>(() => {
+    const c = certainty.value
+    if (c.tier === "even" || !c.winner) return null
+    if (c.tier === "oneSided") return c.underdog
+    return c.winner === "wolf" ? "good" : "wolf"
+  })
+
+  // 观察劣势方并记进本局；结算时胜方命中它就是绝地翻盘。
+  // 用 watch 而不是写死在每个 action 里：任何改动 state 的路径（含撤销、模拟对局）都会自动记上。
+  // logic 侧按「连续 N 次才算真被压制」过滤，所以这里可以如实上报每一次观察。
+  watch(
+    disadvantagedCamp,
+    (camp) => {
+      if (camp && g.noteUnderdog(state, camp)) persist()
+    },
+    { immediate: true },
+  )
   const isJudge = computed(() => state.judge && state.players.some(p => p.name === state.judge)) // 简化判断，实际可能需要更精确的判断
 
   const actions = {
@@ -555,15 +583,28 @@ export function useGame() {
       return err
     },
 
-    /** 提前结束对局（仅在检测到必然结局时可用） */
+    /** 空刀：狼人本夜不刀人 */
+    wolfEmptyKill(): string | null {
+      const err = g.wolfEmptyKill(state)
+      refresh()
+      return err
+    },
+
+    /** 提前结束对局（仅在检测到必然结局时可用）：按求解出的胜方直接结算 */
     finishGameEarly(): string | null {
       const forced = checkForcedWin(state)
       if (!forced?.detected) {
         return "当前局势未达成必然结局条件，无法提前结束"
       }
-      const err = g.finishGameAuto(state)
-      refresh()
-      return err
+      const camp: WinCamp = forced.winner === "good" ? "god" : (forced.winner as WinCamp)
+      const err = g.finishGameAuto(state, { camp, reason: forced.reason })
+      if (err) {
+        refresh()
+        return err
+      }
+      settle(forced.reason, true)
+      persist()
+      return null
     },
 
     buildRecord(): string {
@@ -669,6 +710,7 @@ export function useGame() {
     judgeScore,
     winPrediction,
     forcedWin,
+    certainty,
     isJudge,
     snapshot,
     softStep,

@@ -15,6 +15,9 @@ import { randomDefaultAvatar } from "@/assets/roles"
 
 export const NO_CHECK = "__NOCHECK__"
 
+/** 板子不再可选：固定 9 人标准（3狼+预言家+女巫+猎人+3平民），其它配置靠「加角色」微调 */
+export const DEFAULT_BOARD = "9"
+
 export const boardConfig: Record<string, string[]> = {
   "6a": ["狼人", "狼人", "预言家", "猎人", "平民", "平民"],
   "6b": ["狼人", "狼人", "预言家", "女巫", "平民", "平民"],
@@ -62,20 +65,20 @@ export function roleShort(role?: string): string {
 }
 
 export const boardLabels: Record<string, string> = {
-  "6a": "6人竞技｜2狼+预言家+猎人+2平民",
-  "6b": "6人娱乐｜2狼+预言家+女巫+2平民",
-  "7a": "7人竞技｜2狼+预言家+猎人+3平民",
-  "7b": "7人娱乐｜2狼+女巫+4平民",
-  "8a": "8人竞技预女猎｜3狼+预言家+女巫+猎人+2平民",
-  "8b": "8人预女猎守｜2狼+预言家+女巫+猎人+守卫+2平民",
-  "9": "9人标准预女猎｜3狼+预言家+女巫+猎人+3平民",
-  "10": "10人标准｜3狼+预言家+女巫+猎人+4平民",
-  "11": "11人标准｜3狼+预言家+女巫+猎人+5平民",
-  "12": "12人预女猎白｜4狼+预言家+女巫+猎人+白痴+4平民",
-  "13": "13人预女猎白扩｜4狼+预言家+女巫+猎人+白痴+5平民",
-  "12k": "12人预女猎骑白｜3狼+预言家+女巫+猎人+骑士+白痴+4平民",
-  "12q": "12人预女猎丘｜4狼+预言家+女巫+猎人+丘比特+4平民",
-  "13w": "13人白狼王｜白狼王+3狼+预言家+女巫+猎人+白痴+5平民",
+  "6a": "6人竞技｜2狼+预+猎+2民",
+  "6b": "6人娱乐｜2狼+预+巫+2民",
+  "7a": "7人竞技｜2狼+预+猎+3民",
+  "7b": "7人娱乐｜2狼+巫+4民",
+  "8a": "8人竞技预女猎｜3狼+预+巫+猎+2民",
+  "8b": "8人预女猎守｜2狼+预+巫+猎+守+2民",
+  "9": "9人标准预女猎｜3狼+预+巫+猎+3民",
+  "10": "10人标准｜3狼+预+巫+猎+4民",
+  "11": "11人标准｜3狼+预+巫+猎+5民",
+  "12": "12人预女猎白｜4狼+预+巫+猎+痴+4民",
+  "13": "13人预女猎白扩｜4狼+预+巫+猎+痴+5民",
+  "12k": "12人预女猎骑白｜3狼+预+巫+猎+骑+痴+4民",
+  "12q": "12人预女猎丘｜4狼+预+巫+猎+丘+4民",
+  "13w": "13人白狼王｜白狼+3狼+预+巫+猎+痴+5民",
 }
 
 /** 板子简称：去掉人数/描述后缀，如 9→预女猎、12→预女猎白、13w→白狼王；无角色简称兜底显示 N人X */
@@ -128,6 +131,8 @@ export interface Player {
 }
 
 export type WinCamp = "wolf" | "god" | "civil" | "third" | "draw" | null
+/** 求解器口径的两方阵营（与 WinCamp 的历史叫法不同，这里单独定义避免混用） */
+export type Camp = "wolf" | "good"
 export type Phase = "idle" | "night" | "day"
 
 export const DEFAULT_VOICES: Record<string, string> = {
@@ -224,6 +229,17 @@ export interface GameState {
   simMode: boolean
   /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
   modeChosen: boolean
+  /**
+   * 本局被持续压制过的阵营（求解器判定为劣势方，且连续出现足够多次）。
+   * 结算时胜方命中这里就记一次绝地翻盘。
+   */
+  underdogs: Camp[]
+  /** 绝地翻盘：胜方在本局中确实处于过劣势 */
+  comeback: boolean
+  /** 最近一次观察到「处于劣势」的阵营 */
+  underdogCamp: Camp | null
+  /** 该阵营连续劣势的观察次数，达到阈值才计入 underdogs */
+  underdogStreak: number
 }
 
 export function defaultMark(): Mark {
@@ -254,7 +270,7 @@ export function defaultMark(): Mark {
 
 export function defaultState(): GameState {
   return {
-    board: "6a",
+    board: DEFAULT_BOARD,
     boardRoles: null,
     voiceEnabled: true,
     voices: { ...DEFAULT_VOICES },
@@ -298,6 +314,10 @@ export function defaultState(): GameState {
     lovers: [],
     simMode: true,
     modeChosen: false,
+    underdogs: [],
+    comeback: false,
+    underdogCamp: null,
+    underdogStreak: 0,
   }
 }
 
@@ -336,6 +356,10 @@ export function normalizeState(s: GameState): GameState {
   if (!Array.isArray(st.lovers)) st.lovers = []
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
+  if (!Array.isArray(st.underdogs)) st.underdogs = []
+  if (typeof st.comeback !== "boolean") st.comeback = false
+  if (typeof st.underdogStreak !== "number" || !Number.isFinite(st.underdogStreak)) st.underdogStreak = 0
+  if (st.underdogCamp !== "wolf" && st.underdogCamp !== "good") st.underdogCamp = null
   const legacy = (s as { judgeScore?: number }).judgeScore
   if (typeof legacy === "number" && st.judge) {
     st.judgeScores[st.judge] = (st.judgeScores[st.judge] || 0) + legacy
@@ -565,6 +589,10 @@ export function startNewGame(state: GameState): void {
   state.beiguo = ""
   state.finished = false
   state.lovers = []
+  state.underdogs = []
+  state.comeback = false
+  state.underdogCamp = null
+  state.underdogStreak = 0
   pushGlobalLog(state, "✅本局开始：发牌后由法官在夜晚睁眼时确认身份")
 }
 
@@ -928,6 +956,29 @@ export function wolfKill(state: GameState, sel: string): string | null {
     pushGlobalLog(state, `🌑狼人刀人：${sel}${isSelf ? "（自刀）" : ""}`)
   }
   pushFlow(state, "狼人刀人", sel, isSelf ? "自刀" : "")
+  return null
+}
+
+/**
+ * 空刀（狼人本夜不刀人）。
+ * nightWolfKill 留空即代表无人被刀，下游（夜间结算/解药/自刀加分）本来就按「无刀口」处理，
+ * 这里只负责显式记录一次决定，并把狼人睁眼步骤标记为已完成，流程才能继续往下走。
+ */
+export function wolfEmptyKill(state: GameState): string | null {
+  const prev = state.nightWolfKill
+  if (prev) {
+    // 已经选过刀人：改判为空刀，要把自刀标记撤掉，否则会留下错误的自刀加分
+    state.wolfSelfKill = false
+    pushNightLog(state, `🌑刀人目标切换：${prev} → 空刀（不刀人）`)
+    pushGlobalLog(state, `🌑狼人本夜空刀（不刀人），原目标 ${prev} 作废`)
+  } else {
+    pushNightLog(state, "狼人空刀：本夜不刀人")
+    pushGlobalLog(state, "🌑狼人空刀：本夜不刀人")
+  }
+  state.nightWolfKill = ""
+  state.wolfSelfKill = false
+  state.nightSteps.wolf = true
+  pushFlow(state, "狼人刀人", "", "空刀")
   return null
 }
 
@@ -1412,10 +1463,40 @@ export function resetRoundScore(state: GameState): void {
   state.players.forEach((p) => (p.scoreRound = 0))
 }
 
-export function finishGameAuto(state: GameState): string | null {
+/**
+ * 连续劣势达到多少次才算「这一方真的被压制过」。
+ * 求解器 B 档的结论会随行动方翻转（狼人一刀就变成狼人占优），
+ * 单次观察到的劣势多半只是「轮到谁动手」，直接记会让每局都挂上绝地翻盘。
+ */
+export const UNDERDOG_MIN_STREAK = 2
+
+/**
+ * 记下「本局这个阵营处于劣势」。由 UI 在观察到求解器结论时调用。
+ * 同一阵营连续 UNDERDOG_MIN_STREAK 次才算真正被压制过，才计入 underdogs；
+ * 已计入过的阵营不重复计数，只更新连续次数。
+ */
+export function noteUnderdog(state: GameState, camp: Camp): boolean {
+  if (state.finished) return false
+  if (state.underdogCamp === camp) state.underdogStreak++
+  else {
+    state.underdogCamp = camp
+    state.underdogStreak = 1
+  }
+  if (state.underdogs.includes(camp)) return false
+  if (state.underdogStreak < UNDERDOG_MIN_STREAK) return false
+  state.underdogs.push(camp)
+  return true
+}
+
+export function finishGameAuto(state: GameState, forced?: { camp: WinCamp; reason: string }): string | null {
   if (state.finished) return "本局已结算，请勿重复结算"
   if (state.players.length === 0) return "还没有玩家，无法结算"
-  if (!state.winCamp) {
+  let forcedReason = ""
+  if (forced) {
+    if (!forced.camp) return "无法判定胜负"
+    state.winCamp = forced.camp
+    forcedReason = forced.reason
+  } else if (!state.winCamp) {
     checkWin(state)
     if (!state.winCamp) return "无法判定胜负（狼人和好人仍同时存在）"
   }
@@ -1428,7 +1509,16 @@ export function finishGameAuto(state: GameState): string | null {
     state.judgeScores[state.judge] = Math.round(((state.judgeScores[state.judge] || 0) + 0.5) * 10) / 10
     pushGlobalLog(state, `⚖️法官 ${state.judge} 主持本局 +0.5，累计 ${state.judgeScores[state.judge]} 分`)
   }
-  pushGlobalLog(state, `🏁一键完整结算完成：${WIN_TEXT[state.winCamp]}，各玩家本轮分已固化到总分`)
+  // 绝地翻盘：结算前曾以 1% 弱势方身份出现的阵营赢了
+  const winnerCamp: Camp | null =
+    state.winCamp === "third" || state.winCamp === "draw" || !state.winCamp ? null : state.winCamp === "wolf" ? "wolf" : "good"
+  if (winnerCamp && state.underdogs.includes(winnerCamp)) {
+    state.comeback = true
+    pushGlobalLog(state, `🔥绝地翻盘：${WIN_TEXT[state.winCamp]}曾在这局里被持续压制，硬是翻了回来`)
+  }
+  const forcedTag = forcedReason ? `（提前结束：${forcedReason}）` : ""
+  const comebackTag = state.comeback ? "【绝地翻盘】" : ""
+  pushGlobalLog(state, `🏁一键完整结算完成：${comebackTag}${WIN_TEXT[state.winCamp]}${forcedTag}，各玩家本轮分已固化到总分`)
   return null
 }
 
@@ -1442,6 +1532,10 @@ export function buildAutoRecord(state: GameState, title?: string): string {
     txt += `情侣：${state.lovers.join(" ❤ ")}（${chainText}）\n`
   }
   if (state.judge) txt += `法官：${state.judge}（+0.5/局，累计 ${state.judgeScores[state.judge] || 0} 分）\n`
+  if (state.underdogs.length) {
+    txt += `曾持续处于劣势：${state.underdogs.map((c) => (c === "wolf" ? "狼人" : "好人")).join("、")}\n`
+  }
+  if (state.comeback) txt += `绝地翻盘：🔥 ${state.winCamp ? WIN_TEXT[state.winCamp] : "胜方"}从被压制局面翻盘获胜\n`
   state.players.forEach((p) => {
     txt += `玩家【${p.name}】身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}（${p.scoreDetail.join("；") || "无加分"}）\n`
   })

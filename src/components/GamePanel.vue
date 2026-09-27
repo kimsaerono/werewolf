@@ -185,6 +185,10 @@ function rollRand() {
   if (!aliveNos.length) return
   randNo.value = aliveNos[Math.floor(Math.random() * aliveNos.length)]
 }
+/** 发言随机号回到「未抽」初始状态（每次天亮 / 回退 / 开局都调用） */
+function resetSpeechRand() {
+  randNo.value = null
+}
 /** 抽中的号对应的存活玩家（用于展示名字） */
 const randPlayer = computed(() => {
   if (randNo.value == null) return null
@@ -208,6 +212,7 @@ function doUndo() {
       if (!undo()) return message.warning("暂无可回退的操作")
       // 回退后重置本地瞬时展示（步骤/进度由 state 自动恢复）
       stopSpeech()
+      resetSpeechRand()
       checkResult.value = ""
       lastDawnDeaths.value = []
       message.success("已回退上一步（含日志、玩家状态与当前进度）")
@@ -273,13 +278,13 @@ const aliveCount = computed(() => state.players.filter((p) => p.alive).length)
 const phaseText = computed(() =>
   state.phase === "idle" ? "未开局" : state.phase === "night" ? "🌙夜晚" : "☀️白天",
 )
-/** 当前板子配置摘要：角色 × 数量（用于顶部展示） */
+/** 当前板子配置摘要：角色 × 数量（用于顶部展示），角色用简称 */
 const boardSummary = computed(() => {
   const roles = refs.getBoardRoles(state)
   const counts: Record<string, number> = {}
   roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
   return Object.entries(counts)
-    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${role}×${n}`)
+    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${roleShort(role)}×${n}`)
     .join(" ")
 })
 const boardLabel = computed(() => refs.boardLabels[state.board] || state.board)
@@ -650,6 +655,12 @@ function doWolfKill(v: string) {
   const victim = state.players.find((x) => x.name === v)
   effect("wolf", "death", victim ? `狼人刀：${refs.playerLabel(victim)}` : `狼人刀：${v}`)
 }
+function doWolfEmptyKill() {
+  snapshot()
+  const err = actions.wolfEmptyKill()
+  if (err) return message.error(err)
+  effect("wolf", undefined, "狼人空刀：本夜不刀人")
+}
 function doWolfClose() {
   markDoneStep("wolf")
   playVoice("wolf_close")
@@ -790,6 +801,7 @@ const loversTip = computed(() => {
 
 /** idle 步骤：开局重置后进入第 1 晚 */
 function doBeginGame() {
+  resetSpeechRand()
   actions.startGame()
   doFlow()
 }
@@ -1086,6 +1098,7 @@ function doDawn() {
   const err = actions.dawnSettle()
   dawnLogSnapshot.value = state.globalLog.length
   if (err) return message.error(err)
+  resetSpeechRand()
   const after = aliveList.value.map((p) => p.name)
   lastDawnDeaths.value = before.filter((n) => !after.includes(n))
   const dawnDeaths = lastDawnDeaths.value
@@ -1174,9 +1187,9 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </a-tooltip>
 
       <!-- 胜率预测面板 -->
-      <WinPredictorPanel 
-        :game="props.game" 
-        :onFinishEarly="actions.finishGameEarly" 
+      <WinPredictorPanel
+        :game="props.game"
+        :onFinishEarly="actions.finishGameEarly"
       />
 
       <a-flex :justify="'space-between'" :wrap="'wrap'" :gap="12" style="margin-bottom: 12px">
@@ -1273,7 +1286,14 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-else>
             <p class="small" style="text-align: center">狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）</p>
             <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', aliveOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
-            <div v-else class="prophet-result">
+            <a-button v-if="!state.nightWolfKill" size="large" @click="doWolfEmptyKill">🈳 空刀（不刀人）</a-button>
+            <div v-if="state.nightSteps.wolf && !state.nightWolfKill" class="prophet-result">
+              <div class="prophet-result-main">
+                🌑 本夜空刀：狼人一致决定不刀人
+              </div>
+              <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
+            </div>
+            <div v-else-if="state.nightWolfKill" class="prophet-result">
               <div class="prophet-result-main">
                 🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? playerLabelShort(v) : state.nightWolfKill })() }}
               </div>
@@ -1321,7 +1341,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-else>
           <!-- 解药已用完时，女巫不需要知道被刀者，隐藏其号码姓名（仅剩毒药仍睁眼走流程） -->
           <p v-if="!state.witchSaveUsed" class="small" style="text-align: center; margin-bottom: 4px">
-            本晚被刀：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
+            本晚被刀：<b class="key-name">{{ state.nightWolfKill || (state.nightSteps.wolf ? "空刀（不刀人）" : "尚未记录") }}</b>
           </p>
            <div class="witch-actions">
             <div
@@ -1436,15 +1456,20 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <div class="step-emoji">📢</div>
           <h3 class="step-title">竞选警长</h3>
           <template v-if="!jinghuiPk">
-            <a-button type="primary" size="large" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
-            <a-button type="text" style="margin-top: 12px" @click="jinghuiPk = true">平票 → 进入PK（二次投票）</a-button>
-            <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">本轮不竞选</a-button>
+            <p class="choice-hint">按本轮实际情况，直接点对应按钮</p>
+            <div class="choice-row">
+              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
+              <a-button size="large" class="choice-btn" @click="jinghuiPk = true">⚖️ 二次平票 PK</a-button>
+              <a-button size="large" class="choice-btn" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">🚫 本轮不竞选</a-button>
+            </div>
           </template>
           <template v-else>
-            <p class="small" style="text-align: center">第一轮投票平票，进入 PK 二次投票</p>
-            <a-button type="primary" size="large" @click="openPicker('选择警长（PK）', aliveOptions, (v) => doJingHui(v))">📢 设置警长（PK）</a-button>
-            <a-button danger type="text" style="margin-top: 12px" @click="doJingHuiLose">二次仍平票 → 警徽永久流失</a-button>
-            <a-button type="text" style="margin-top: 12px" @click="jinghuiPk = false">返回上一轮</a-button>
+            <p class="choice-hint">第一轮投票平票，进入 PK 二次投票</p>
+            <div class="choice-row">
+              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长（PK）', aliveOptions, (v) => doJingHui(v))">📢 设置警长（PK）</a-button>
+              <a-button danger size="large" class="choice-btn" @click="doJingHuiLose">💔 二次仍平票 · 警徽流失</a-button>
+              <a-button size="large" class="choice-btn" @click="jinghuiPk = false">↩️ 返回上一轮</a-button>
+            </div>
           </template>
         </div>
 
@@ -1456,7 +1481,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <div v-if="lastDawnDeaths.length" class="prophet-result-main">
             ☠️ 昨夜死亡：{{ lastDawnDeaths.map((n) => noOf(n)).join("、") }}
           </div>
-          <div v-else class="prophet-result-main">☠️ 昨夜平安夜</div>
+          <div v-else class="prophet-result-main peace">昨夜平安夜</div>
           <a-button type="primary" size="large" @click="markDoneStep('prophetReport')">已公布，进入发言</a-button>
         </div>
 
@@ -1794,6 +1819,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 </template>
 
 <style scoped>
+/* 对局操作页的卡片全部无标题，App.vue 里「有标题才收紧 padding」的规则管不到这里，
+   统一去掉 body 内边距，由各内容块（步骤卡 / 板子行 / 遗言卡）自己控制留白。
+   .panel 是本组件根元素，scoped 会给它带上属性选择器，合成特异性 (0,3,0)
+   高于 Ant 的 :where(.css-hash).ant-card .ant-card-body（:where 权重为 0，即 (0,2,0)）。 */
+.panel:deep(.ant-card-body) {
+  padding: 0;
+}
 /* 板子配置行：可换行完整展示，不与其它标签冲突 */
 .board-config-line {
   font-size: 12px;
@@ -1813,12 +1845,65 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   border: 1px solid #2b3145;
   border-radius: 14px;
 }
+/* ===== 当前待操作步骤：边框流光高亮（复用警长流光边框的 @property + conic + mask 方案） ===== */
+@property --step-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+.step-card {
+  border-color: #58b8ff;
+  box-shadow: 0 0 12px rgba(88, 184, 255, 0.3);
+  animation: step-glow 1.8s ease-in-out infinite alternate;
+}
+/* 仅支持 mask 时才叠加流光环；不支持时退化为静态蓝边，避免整块渐变盖住卡片内容 */
+@supports (mask-composite: exclude) or (-webkit-mask-composite: xor) {
+  .step-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 2px;
+    background: conic-gradient(
+      from var(--step-angle, 0deg),
+      #eaf8ff 0%,
+      #58b8ff 14%,
+      #0b5fa5 28%,
+      #04121f 42%,
+      #0b5fa5 56%,
+      #58b8ff 70%,
+      #eaf8ff 86%,
+      #58b8ff 94%,
+      #eaf8ff 100%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
+    animation: step-flow 2.4s linear infinite;
+  }
+}
+@keyframes step-flow {
+  to {
+    --step-angle: 360deg;
+  }
+}
+@keyframes step-glow {
+  from {
+    box-shadow: 0 0 6px rgba(88, 184, 255, 0.22);
+  }
+  to {
+    box-shadow: 0 0 18px 2px rgba(88, 184, 255, 0.5);
+  }
+}
 .step-body {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 18px 12px;
+  padding:0 10px 15px;
 }
 .step-emoji {
   font-size: 34px;
@@ -1826,6 +1911,26 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 .step-title {
   margin: 0;
   font-size: 18px;
+}
+/* 竞选警长：三选一的按钮组，避免主按钮 + 两个文字链的层级落差 */
+.choice-hint {
+  margin: 0;
+  text-align: center;
+  color: #8b93ab;
+  font-size: 13px;
+}
+.choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+}
+.choice-btn {
+  flex: 1 1 150px;
+  min-width: 140px;
+  height: 48px;
+  font-weight: 600;
 }
 .key-name {
   color: #ff6464;
@@ -1998,6 +2103,11 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   font-size: 18px;
   font-weight: 700;
   color: #fff;
+}
+/* 平安夜：绿色（沿用项目"存活/成功"色），不加 ☠️ */
+.prophet-result-main.peace {
+  color: #2ed573;
+  text-shadow: 0 0 14px rgba(46, 213, 115, 0.45);
 }
 .dawn-deaths {
   display: flex;

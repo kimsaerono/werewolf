@@ -81,7 +81,6 @@ function onClearAll() {
     <a-card title="🗂️ 历史对局记录（自动保存）" :bordered="false">
       <template #extra>
         <a-space :wrap="true">
-          <a-tag :color="state.simMode ? '#2e7d32' : '#1668dc'">{{ state.simMode ? "🧪 模拟对局" : "🎯 真实对局" }}</a-tag>
           <a-button v-if="historyByDay.length" danger size="small" @click="onClearAll">🗑️ 清空所有历史数据</a-button>
         </a-space>
       </template>
@@ -128,6 +127,7 @@ function onClearAll() {
 
 <style scoped>
 .day-group {
+  padding:5px;
   margin-bottom: 14px;
 }
 .day-header {

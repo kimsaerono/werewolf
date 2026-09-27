@@ -41,6 +41,36 @@ const seatRows = computed(() => Math.max(1, Math.ceil(props.players.length / 2))
 const leftPlayers = computed(() => props.players.slice(0, seatRows.value))
 const rightPlayers = computed(() => props.players.slice(seatRows.value))
 
+// ===== 半遮面：整列默认收进一半贴屏边，点一下 / 触摸滑出完整，静止 1.5s 自动收回 =====
+// 注意：不做「再点一下收回」。展开后卡片要留给 Sortable 拖动，二次点击会先把卡片
+// 收回半屏，pointer 被裁掉，拖动根本触发不了；收回统一交给「无操作静止 1.5s」。
+const seatOpen = ref(false)
+const SEAT_AUTO_HIDE_MS = 1500
+let seatTimer: ReturnType<typeof setTimeout> | undefined
+
+/** 点列上任意卡片：只展开（幂等），并开始静止倒计时 */
+function openSeat() {
+  seatOpen.value = true
+  armSeatHide()
+}
+/** 任何指针活动（按下/抬起/移动/移入/移出）都重新计时；静止满 1.5s 自动收回 */
+function armSeatHide() {
+  if (seatTimer) clearTimeout(seatTimer)
+  seatTimer = setTimeout(() => {
+    seatOpen.value = false
+    seatTimer = undefined
+  }, SEAT_AUTO_HIDE_MS)
+}
+/** 拖拽 / 长按进行中：保持滑出且不启动倒计时 */
+function holdSeatOpen() {
+  if (seatTimer) clearTimeout(seatTimer)
+  seatOpen.value = true
+}
+function clearSeatTimer() {
+  if (seatTimer) clearTimeout(seatTimer)
+  seatTimer = undefined
+}
+
 // ===== 拖动排序：左右两列各自一个 Sortable + 共享 group（跨列互换、元素随手） =====
 const listEl = ref<HTMLElement | null>(null)
 const leftEl = ref<HTMLElement | null>(null)
@@ -73,6 +103,7 @@ function makeSortable(el: HTMLElement): Sortable {
     group: { name: "seats", pull: true, put: true },
     onChoose: (evt) => {
       // 触屏长按确认后：震动反馈 + 放大提示
+      holdSeatOpen()
       const pt = (evt as unknown as { pointerType?: string }).pointerType
       if (pt === "touch" || pt === "pen") {
         vibrate(18)
@@ -85,6 +116,7 @@ function makeSortable(el: HTMLElement): Sortable {
       if (evt.item) evt.item.classList.remove("dragging-lift")
       const names = collectOrder()
       if (names.length === props.players.length) emit("reorder", names)
+      armSeatHide()
     },
   })
 }
@@ -113,7 +145,10 @@ watch(
 
 // draggable 为 true 时等待 DOM 就绪后再挂载 Sortable
 onMounted(mountSortables)
-onBeforeUnmount(destroySortables)
+onBeforeUnmount(() => {
+  destroySortables()
+  clearSeatTimer()
+})
 
 function badgeText(p: Player): string {
   const role = getRoleInstance(p.role)
@@ -159,6 +194,7 @@ const ROLE_BG: Record<string, string> = {
 
 /** 深色背景的文字需要改成浅色 */
 const DARK_BG = new Set(["狼人", "狼王"])
+const isDarkBg = (role?: string) => role ? DARK_BG.has(role) : false
 
 function cardBg(p: Player): Record<string, string> | undefined {
   const style: Record<string, string> = {}
@@ -201,7 +237,12 @@ function cardBg(p: Player): Record<string, string> | undefined {
   <div class="seat-board" :class="{ floating }">
     <div ref="listEl" class="seat-list">
       <template v-if="floating">
-        <div ref="leftEl" class="seat-col">
+        <div
+          ref="leftEl"
+          class="seat-col seat-col-left"
+          :class="{ 'is-open': seatOpen }"
+          @pointerenter="armSeatHide"
+        >
           <div
             v-for="(p, idx) in leftPlayers"
             :key="p.name"
@@ -209,9 +250,15 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :data-name="p.name"
             :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
             :style="cardBg(p)"
+            @pointerdown="openSeat"
+            @pointermove="armSeatHide"
+            @pointerup="armSeatHide"
+            @pointercancel="armSeatHide"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
-            <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
+            <span class="seat-name-badge" :class="{ 'dark-bg': isDarkBg(p.role) }">
+              <span class="seat-name-text"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
+            </span>
             <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || idx + 1 }}</span>
@@ -226,7 +273,12 @@ function cardBg(p: Player): Record<string, string> | undefined {
           </div>
         </div>
         <div class="seat-col-spacer"></div>
-        <div ref="rightEl" class="seat-col">
+        <div
+          ref="rightEl"
+          class="seat-col seat-col-right"
+          :class="{ 'is-open': seatOpen }"
+          @pointerenter="armSeatHide"
+        >
           <div
             v-for="(p, idx) in rightPlayers"
             :key="p.name"
@@ -234,9 +286,15 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :data-name="p.name"
             :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
             :style="cardBg(p)"
+            @pointerdown="openSeat"
+            @pointermove="armSeatHide"
+            @pointerup="armSeatHide"
+            @pointercancel="armSeatHide"
           >
             <span v-if="draggable" class="seat-grip">⠿</span>
-            <span class="seat-name float"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
+            <span class="seat-name-badge" :class="{ 'dark-bg': isDarkBg(p.role) }">
+              <span class="seat-name-text"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
+            </span>
             <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
             <span v-if="!p.alive" class="seat-dead-x">✕</span>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
@@ -311,7 +369,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
   align-items: center;
   justify-content: center;
   color: #ff4d4f;
-  font-size: 48px;
+  font-size: 70px;
   font-weight: 900;
   line-height: 1;
   background: rgba(18, 22, 34, 0.55);
@@ -322,6 +380,30 @@ function cardBg(p: Player): Record<string, string> | undefined {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 滚动条：默认隐藏（滑块透明），悬停/聚焦时显示细条，滚动功能不受影响 */
+.seat-list {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.seat-list:hover,
+.seat-list:focus-within {
+  scrollbar-color: rgba(160, 190, 255, 0.45) transparent;
+}
+.seat-list::-webkit-scrollbar {
+  width: 4px;
+}
+.seat-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.seat-list::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.seat-list:hover::-webkit-scrollbar-thumb,
+.seat-list:focus-within::-webkit-scrollbar-thumb {
+  background: rgba(160, 190, 255, 0.45);
 }
 
 /* ===== 悬浮模式：固定贴边 + 左右两列（grid 三列：左窄列 / 中间留白 / 右窄列） ===== */
@@ -336,20 +418,92 @@ function cardBg(p: Player): Record<string, string> | undefined {
   top: 80px;
   left: 0;
   right: 0;
-  max-height: calc(100vh - 120px);
+  box-sizing: border-box;
+  /* 上下 10px padding 是面板 ::before 的出血空间，避免被 overflow 裁掉；横向 0 = 左右贴边 */
+  max-height: calc(100vh - 100px);
   overflow-y: auto;
+  overscroll-behavior: contain; /* 内滚到边界不把回弹传给整页 */
   pointer-events: none; /* 容器不拦截点击，只在卡片上开放 */
   display: grid;
   grid-template-columns: var(--seat-col-w, 76px) 1fr var(--seat-col-w, 76px);
   align-items: start;
   gap: 8px;
-  padding: 0 4px;
+  padding: 10px 0;
 }
+/* 半遮面：整列默认向屏幕边缘收进一半（只露出贴边的那半张卡片），
+   点一下 / 触摸整列滑出到完整位置；面板始终只比卡片宽 --seat-ext 一条细边。 */
 .seat-board.floating .seat-col {
+  position: relative;
+  width: var(--seat-col-w, 76px);
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
+  transition: transform 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.seat-board.floating .seat-col-left {
+  transform: translateX(calc(-1 * var(--seat-retract, 50%)));
+}
+.seat-board.floating .seat-col-right {
+  transform: translateX(var(--seat-retract, 50%));
+}
+.seat-board.floating .seat-col-left.is-open,
+.seat-board.floating .seat-col-right.is-open {
+  transform: translateX(0);
+}
+/* 左右列玻璃面板：贴边的一块彩色渐变 + 描边 + 顶部高光，和中间主内容区分开。
+   pointer-events:none 保证不拦截卡片点击与 Sortable 拖动。 */
+.seat-board.floating .seat-col::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  bottom: -10px;
+  width: auto;
+  border-radius: 22px;
+  pointer-events: none;
+  z-index: 0;
+  border: 1px solid rgba(150, 180, 255, 0.28);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(160, 190, 255, 0.3), rgba(160, 190, 255, 0) 70%),
+    linear-gradient(180deg, rgba(122, 152, 240, 0.34) 0%, rgba(78, 96, 170, 0.2) 45%, rgba(10, 13, 24, 0.55) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 34px rgba(140, 170, 255, 0.18),
+    0 12px 34px rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(110, 145, 255, 0.18);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+/* 面板只比卡片宽 --seat-ext（内侧细边提示）；左侧列向右出血，右侧列向左出血 */
+.seat-board.floating .seat-col-left::before {
+  left: 0;
+  right: calc(-1 * var(--seat-ext, 8px));
+}
+.seat-board.floating .seat-col-right::before {
+  right: 0;
+  left: calc(-1 * var(--seat-ext, 8px));
+}
+/* 内侧光墙：落在面板描边内侧，左右同色对称，跟随面板一起滑出 */
+.seat-board.floating .seat-col::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  bottom: 8%;
+  width: 3px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(190, 212, 255, 0), rgba(190, 212, 255, 0.7) 30%, rgba(190, 212, 255, 0.55) 70%, rgba(190, 212, 255, 0));
+  box-shadow: 0 0 14px rgba(150, 185, 255, 0.75);
+}
+.seat-board.floating .seat-col-left::after {
+  right: calc(-1 * var(--seat-ext, 8px));
+}
+.seat-board.floating .seat-col-right::after {
+  left: calc(-1 * var(--seat-ext, 8px));
+}
+.seat-board.floating .seat-col > .seat-card {
+  z-index: 1;
 }
 .seat-board.floating .seat-card {
   pointer-events: auto; /* 卡片区域可交互（拖动/滚动） */
@@ -502,20 +656,74 @@ function cardBg(p: Player): Record<string, string> | undefined {
 .seat-board.floating .seat-grip {
   display: none;
 }
-.seat-name.float {
+
+/* 紧凑横向胶囊：左列靠右、右列靠左，收起态露出半边 */
+.seat-name-badge {
   position: absolute;
-  top: 3px;
-  left: 6px;
-  right: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  color: #1d2233;
-  line-height: 1.2;
+  top: 0px;
+  left:0;
+  right: auto !important;
+  padding: 1px;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  background: linear-gradient(135deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  z-index: 5;
+  display: flex;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* 左列：靠右，收起时露出右半边 */
+.seat-board.floating .seat-col-left .seat-name-badge {
+  right: 0px !important;
+  left: auto !important;
+  transform: none !important;
+}
+
+/* 右列：靠左，收起时露出左半边 */
+.seat-board.floating .seat-col-right .seat-name-badge {
+  left: 0px !important;
+  right: auto !important;
+  transform: none !important;
+}
+
+.seat-name-badge .seat-name-text {
+  font-size:11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  padding: 0 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-  z-index: 1;
+  max-width: 60px;
+  display: inline-block;
+}
+
+/* 深色背景角色（狼人/狼王） */
+.seat-name-badge.dark-bg {
+  background: linear-gradient(135deg, rgba(20,20,30,0.65), rgba(10,10,20,0.4));
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* 法官/警长/丘比特图标在徽章内前缀 */
+.seat-name-badge > span:first-child:not(.seat-name-text) {
+  margin-right: 2px;
+  font-size: 9px;
+  vertical-align: middle;
+}
+
+/* 法官图标在徽章内特殊颜色 */
+.seat-name-badge > span:first-child[style*="color"] {
+  color: #ffd666 !important;
+}
+
+/* 死者状态：灰字保留描边 */
+.seat-card.dead .seat-name-badge .seat-name-text {
+  color: #aaa;
 }
 .seat-avatar.float {
   width: 34px;
@@ -535,13 +743,35 @@ function cardBg(p: Player): Record<string, string> | undefined {
 }
 .seat-no.float {
   position: absolute;
-  right: 3px;
-  bottom: 3px;
-  width: 18px;
-  height: 18px;
-  font-size: 10px;
-  text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-  z-index: 1;
+  right: 2px;
+  bottom: 2px;
+  width: 24px;
+  height: 24px;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #2ed573;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.2);
+  text-shadow: none;
+  z-index: 2;
+}
+/* 右列：序号靠左，收起时可见 */
+.seat-board.floating .seat-col-right .seat-no.float {
+  left: 2px;
+  right: auto;
+}
+/* 左列：序号保持右侧 */
+.seat-board.floating .seat-col-left .seat-no.float {
+  right: 2px;
+  left: auto;
+}
+/* 死者：红底 */
+.seat-card.dead .seat-no.float {
+  background: #ff4d4f;
 }
 .seat-avatar {
   width: 40px;
