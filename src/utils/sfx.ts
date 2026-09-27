@@ -1,4 +1,5 @@
-// Web Audio 代码生成的提示音，无需任何音频素材
+import { beginAudioActivity } from "@/utils/audioActivity"
+
 let ctx: AudioContext | null = null
 
 function ac(): AudioContext | null {
@@ -64,9 +65,25 @@ export type SfxName =
   | "ding" // 时间到
   | "death" // 出局
 
+const SFX_DURATIONS: Record<SfxName, number> = {
+  howl: 3.2,
+  magic: 0.7,
+  guard: 0.5,
+  witch: 0.6,
+  gunshot: 0.4,
+  boing: 1.1,
+  rooster: 0.6,
+  explode: 0.6,
+  sword: 0.3,
+  beep: 0.2,
+  ding: 0.6,
+  death: 0.7,
+}
+
 export function playSfx(name: SfxName): void {
   const c = ac()
   if (!c) return
+  const release = beginAudioActivity()
   const t = 0
   switch (name) {
     case "howl": { // 啊呜～～ 狼嚎（柔和正弦波）
@@ -137,4 +154,5 @@ export function playSfx(name: SfxName): void {
       tone(c, 262, t + 0.18, 0.4, "sine", 0.16)
       break
   }
+  setTimeout(release, SFX_DURATIONS[name] * 1000)
 }

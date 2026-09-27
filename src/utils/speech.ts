@@ -1,3 +1,5 @@
+import { beginAudioActivity } from "@/utils/audioActivity"
+
 export type VoiceStyleKey = "default" | "xiaoxin" | "conan" | "cartoon" | "robot" | "female"
 
 export interface VoiceStyle {
@@ -70,24 +72,42 @@ type QueueItem = SpeechSynthesisUtterance | HTMLAudioElement
 let queue: QueueItem[] = []
 let playing = false
 let audioEls: HTMLAudioElement[] = []
+let activityRelease: (() => void) | null = null
+let playbackGeneration = 0
+
+function releaseActivity(release: (() => void) | null): void {
+  if (activityRelease === release) activityRelease = null
+  release?.()
+}
 
 function pump(): void {
   if (playing || !queue.length) return
   const u = queue.shift()!
+  const generation = ++playbackGeneration
   playing = true
+  const release = beginAudioActivity()
+  activityRelease = release
+  const finish = () => {
+    if (generation !== playbackGeneration) {
+      release()
+      return
+    }
+    releaseActivity(release)
+    playing = false
+    pump()
+  }
   if (u instanceof SpeechSynthesisUtterance) {
-    u.onend = () => {
-      playing = false
-      pump()
-    }
-    u.onerror = () => {
-      playing = false
-      pump()
-    }
+    u.onend = finish
+    u.onerror = finish
     window.speechSynthesis.speak(u)
   } else {
     const el = u as HTMLAudioElement & { __fb?: { text: string; style?: VoiceStyleKey }; __fbDone?: boolean }
     const fallback = () => {
+      if (generation !== playbackGeneration) {
+        release()
+        return
+      }
+      releaseActivity(release)
       if (el.__fb && !el.__fbDone) {
         el.__fbDone = true
         enqueue(el.__fb.text, el.__fb.style)
@@ -95,10 +115,7 @@ function pump(): void {
       playing = false
       pump()
     }
-    u.onended = () => {
-      playing = false
-      pump()
-    }
+    u.onended = finish
     u.onerror = fallback
     u.play().catch(fallback)
   }
@@ -162,6 +179,8 @@ export function speakVoice(id: string, text: string, style?: VoiceStyleKey): voi
 
 /** 清空队列并停止当前播报（含音频） */
 export function stopSpeak(): void {
+  playbackGeneration += 1
+  releaseActivity(activityRelease)
   queue = []
   playing = false
   if ("speechSynthesis" in window) window.speechSynthesis.cancel()
@@ -173,4 +192,13 @@ export function stopSpeak(): void {
     }
   })
   audioEls = []
+}
+
+/** 仅供测试：残留的播报队列/音频活动会污染后续用例 */
+export function __resetSpeechForTest(): void {
+  try {
+    stopSpeak()
+  } catch {
+    /* ignore */
+  }
 }
