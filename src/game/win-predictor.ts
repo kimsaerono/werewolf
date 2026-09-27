@@ -1,6 +1,8 @@
 import type { GameState, Player, Mark } from "./logic"
 import { isWolfRole, getBoardRoles } from "./logic"
 import { getChainType, isThirdMember } from "./win-checker"
+import { analyzeCertainty, solveForcedWin } from "./forced-win"
+import type { Certainty } from "./forced-win"
 import { getRoleInstance } from "./roles/builtin"
 
 export interface WinPrediction {
@@ -10,11 +12,18 @@ export interface WinPrediction {
     third: number
     draw: number
   }
+  /** 三档确定度：A 真必然 / B 单方必胜 / C 均势 */
+  certainty: Certainty
+  /**
+   * A 档（真必然）才非空。面板的「提前结束」按钮只认这一档 ——
+   * B 档只是「某方占优、对手要靠犯错」，拿它结束对局会把 1% 的翻盘路掐死。
+   */
   forcedWin: {
     detected: boolean
     winner: "wolf" | "good" | "third" | "draw"
     reason: string
     detail: string
+    minNights: number
   } | null
   factors: string[]
   /** 本局是否存在第三方阵营（丘比特圈出跨阵营人狼恋） */
@@ -60,6 +69,9 @@ function markOf(p: Player): Mark {
   return p.mark
 }
 
+/** 未开始 / 无人存活时的中性结论：均势、无必胜方 */
+const NEUTRAL: Certainty = { tier: "even", winner: null, underdog: null, reason: "", detail: "", facts: [], minNights: 0 }
+
 function clamp(v: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, v))
 }
@@ -74,11 +86,23 @@ export function predictWinRate(state: GameState): WinPrediction {
   // 游戏未开始（无玩家、或玩家未分配角色）：返回中立 50/50，无强制结局
   const gameNotStarted = state.players.length === 0 || !state.players.some(p => p.role)
   if (gameNotStarted) {
-    return { rates: { wolf: 50, good: 50, third: 0, draw: 0 }, forcedWin: null, factors: ["🎮 游戏未开始"], hasThird: false }
+    return {
+      rates: { wolf: 50, good: 50, third: 0, draw: 0 },
+      certainty: NEUTRAL,
+      forcedWin: null,
+      factors: ["🎮 游戏未开始"],
+      hasThird: false,
+    }
   }
 
   if (totalAlive === 0) {
-    return { rates: { wolf: 0, good: 0, third: 0, draw: 0 }, forcedWin: null, factors: [], hasThird: false }
+    return {
+      rates: { wolf: 0, good: 0, third: 0, draw: 0 },
+      certainty: NEUTRAL,
+      forcedWin: null,
+      factors: [],
+      hasThird: false,
+    }
   }
 
   const aliveWolfCount = state.players.filter(p => p.alive && isWolfRole(p.role)).length
@@ -91,75 +115,20 @@ export function predictWinRate(state: GameState): WinPrediction {
 
   const factors: string[] = []
 
-  // ===== 必然结局检测（数学绝对必胜）=====
-  let forcedWin: WinPrediction["forcedWin"] = null
-
-  // 1. 狼全灭 -> 好人必胜
-  if (aliveWolfCount === 0) {
-    forcedWin = {
-      detected: true,
-      winner: "good",
-      reason: "所有狼人已出局",
-      detail: "场上已无存活狼人，好人阵营必胜"
-    }
-  }
-  // 2. 无好人存活 -> 狼人必胜
-  else if (aliveGoodCount === 0) {
-    forcedWin = {
-      detected: true,
-      winner: "wolf",
-      reason: "无好人存活",
-      detail: "场上已无存活好人，狼人阵营必胜"
-    }
-  }
-  // 3. 仅剩第三方成员 -> 第三方必胜
-  else if (chain === "WG" && hasThird && alivePlayers.every(isThird)) {
-    forcedWin = {
-      detected: true,
-      winner: "third",
-      reason: "仅剩第三方成员",
-      detail: "场上仅剩丘比特与人狼情侣，第三方阵营必胜"
-    }
-  }
-  // 4. 第三方与平民票数僵持 -> 平局
-  else if (chain === "WG" && aliveWolfCount === 0 && hasThird) {
-    const aliveNonThird = alivePlayers.filter(p => !isThird(p))
-    const onlyCivil = aliveNonThird.every(p => {
-      const role = getRoleInstance(p.role)
-      return role && role.def.camp === "villager"
-    })
-    if (onlyCivil && aliveNonThird.length <= thirdAlive.length) {
-      forcedWin = {
-        detected: true,
-        winner: "draw",
-        reason: "第三方与平民僵持",
-        detail: "第三方人数不少于平民，票数与存活僵持，无法继续放逐"
-      }
-    }
-  }
-  // 5. 狼人数 >= 好人数 且 所有逆转技能完全失效 -> 狼人必胜
-  else if (aliveWolfCount >= aliveGoodCount) {
-    const hunter = alivePlayers.find(p => p.role === "猎人")
-    const witch = alivePlayers.find(p => p.role === "女巫")
-    const guard = alivePlayers.find(p => p.role === "守卫")
-    const idiot = alivePlayers.find(p => p.role === "白痴" && !markOf(p).idiotFlipped)
-    const knight = alivePlayers.find(p => p.role === "骑士" && !state.knightDuelUsed)
-
-    const hunterThreat = !!hunter && !markOf(hunter).hunterIsPoisoned && !(markOf(hunter).hunterKillWolf || markOf(hunter).hunterKillGood)
-    const witchThreat = !!witch && !(markOf(witch).witchPoWolf || markOf(witch).witchPoGood) && !markOf(witch).witchSaveGood
-    const guardThreat = !!guard
-    const idiotThreat = !!idiot
-    const knightThreat = !!knight
-
-    if (!hunterThreat && !witchThreat && !guardThreat && !idiotThreat && !knightThreat) {
-      forcedWin = {
-        detected: true,
-        winner: "wolf",
-        reason: "狼人数≥好人数且所有逆转技能失效",
-        detail: `狼人${aliveWolfCount}人 ≥ 好人${aliveGoodCount}人，且猎人/女巫/守卫/白痴/骑士等逆转技能均已失效`
-      }
-    }
-  }
+  // ===== 局势确定度（三档）=====
+  // 第三方特判 + minimax 求解（守卫/女巫/猎人/骑士均按好人最优选择建模）。
+  // A 真必然 / B 单方必胜 / C 均势，胜率显示与提前结束都读这里。
+  const certainty = analyzeCertainty(state)
+  const forcedWin: WinPrediction["forcedWin"] =
+    certainty.tier === "forced" && certainty.winner
+      ? {
+          detected: true,
+          winner: certainty.winner,
+          reason: certainty.reason,
+          detail: certainty.detail,
+          minNights: certainty.minNights,
+        }
+      : null
 
   // ===== 胜率计算（基准分 + 实时增减）=====
   // ① 开场基准：开局固定 50/50（除非板子有强势狼角色）
@@ -310,18 +279,39 @@ export function predictWinRate(state: GameState): WinPrediction {
     factors.push("💘 人狼恋·第三方")
   }
 
-  // 必胜情况直接覆盖胜率显示
-  if (forcedWin) {
-    switch (forcedWin.winner) {
+  // A 档（真必然）根据 minNights 分层：
+  // - minNights = 0：已是终局当步即结束，弱势方 0%，不给任何翻盘余地
+  // - minNights >= 1：还得再熬几夜，弱势方留 1% 做最后缓冲（防“提前结束”误伤）
+  if (certainty.tier === "forced" && certainty.winner) {
+    const isInstant = certainty.minNights === 0
+    const strong = isInstant ? 100 : 99
+    const weak = isInstant ? 0 : 1
+    switch (certainty.winner) {
       case "wolf":
-        wolfRate = 100; goodRate = 0; thirdRate = 0; drawRate = 0; break
+        wolfRate = strong
+        goodRate = weak
+        thirdRate = 0
+        drawRate = 0
+        break
       case "good":
-        wolfRate = 0; goodRate = 100; thirdRate = 0; drawRate = 0; break
+        goodRate = strong
+        wolfRate = weak
+        thirdRate = 0
+        drawRate = 0
+        break
       case "third":
         wolfRate = 0; goodRate = 0; thirdRate = 100; drawRate = 0; break
       case "draw":
         wolfRate = 0; goodRate = 0; thirdRate = 0; drawRate = 100; break
     }
+  }
+
+  // B 档文字只在与启发式数字同向时给出。
+  // 两者有约 15% 的局面方向相反（启发式只数牌面存量，求解器还算行动权：
+  // 1狼3预 这种牌面启发式看好人，但夜里能刀的是狼人），此时宁可不出声也不自相矛盾。
+  if (certainty.tier === "oneSided" && certainty.winner) {
+    const solverFavorsWolf = certainty.winner === "wolf"
+    if (solverFavorsWolf === wolfRate > goodRate) factors.push(`⚖️ ${certainty.reason}`)
   }
 
   return {
@@ -331,6 +321,7 @@ export function predictWinRate(state: GameState): WinPrediction {
       third: thirdRate,
       draw: drawRate
     },
+    certainty,
     forcedWin,
     factors: [...new Set(factors)],
     hasThird
@@ -341,6 +332,12 @@ export function predictWinRate(state: GameState): WinPrediction {
  * 仅检测必然结局（用于独立调用）
  */
 export function checkForcedWin(state: GameState) {
-  const result = predictWinRate(state)
-  return result.forcedWin
+  return solveForcedWin(state)
+}
+
+/**
+ * 仅取三档确定度（面板与复盘用）。返回的对象是缓存里的同一份引用，调用方不要改它。
+ */
+export function checkCertainty(state: GameState): Certainty {
+  return analyzeCertainty(state)
 }

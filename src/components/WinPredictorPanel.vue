@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import { computed, unref } from 'vue'
+import { computed, ref, unref } from 'vue'
+import { App as AntApp } from 'ant-design-vue'
 import type { Game } from '@/types'
 
 interface Props {
   game: Game
-  onFinishEarly: () => void
+  onFinishEarly: () => string | null
 }
 
 const props = defineProps<Props>()
 
+const { message } = AntApp.useApp()
+const finishing = ref(false)
+
+/** 提前结束：返回错误信息则提示，成功由结算面板接管 */
+function finishEarly(): void {
+  if (finishing.value) return
+  finishing.value = true
+  try {
+    const err = props.onFinishEarly()
+    if (err) message.error(err)
+  } finally {
+    finishing.value = false
+  }
+}
+
+const winModeLabel = computed(() => (props.game.state.winMode === "city" ? "屠城" : "屠边"))
+
 const prediction = computed(() => {
   return unref(props.game.winPrediction) || {
     rates: { wolf: 50, good: 50, third: 0, draw: 0 },
+    certainty: { tier: 'even', winner: null, underdog: null, reason: '', detail: '', facts: [], minNights: 0 },
     forcedWin: null,
     factors: [],
     hasThird: false
@@ -22,6 +41,21 @@ const rates = computed(() => unref(prediction).rates)
 const forcedWin = computed(() => unref(prediction).forcedWin)
 const factors = computed(() => unref(prediction).factors)
 const hasThird = computed(() => unref(prediction).hasThird)
+const finished = computed(() => !!unref(props.game.state)?.finished)
+
+/**
+ * B 档的「为什么不是必然」：把求解器给出的局面事实摊给界面。
+ * 没有这块的话，92% / 8% 配一句「狼人占优」会让人以为 8% 是拍脑袋估的。
+ */
+const explainer = computed(() => {
+  const c = unref(prediction).certainty
+  if (c.tier !== 'oneSided' || !c.underdog || !c.facts.length) return null
+  return {
+    name: c.underdog === 'wolf' ? '狼人' : '好人',
+    rate: rates.value[c.underdog],
+    facts: c.facts
+  }
+})
 
 const thirdLeft = computed(() => rates.value.wolf)
 const drawLeft = computed(() => rates.value.wolf + rates.value.third)
@@ -32,7 +66,7 @@ const drawLeft = computed(() => rates.value.wolf + rates.value.third)
     <!-- 头部：狼人在左，好人在右 -->
     <div class="wp-head">
       <span class="wp-side wolf-side"><i class="dot wolf"></i>狼人 <b>{{ rates.wolf }}%</b></span>
-      <span class="wp-title">⚡ 胜率预测</span>
+      <span class="wp-title">⚡ 胜率预测<span class="wp-mode">（{{ winModeLabel }}）</span></span>
       <span class="wp-side good-side"><b>{{ rates.good }}%</b> 好人 <i class="dot good"></i></span>
     </div>
 
@@ -56,12 +90,22 @@ const drawLeft = computed(() => rates.value.wolf + rates.value.third)
       <span class="factor-tag" v-for="f in factors" :key="f">{{ f }}</span>
     </div>
 
-    <div v-if="forcedWin?.detected" class="wp-forced">
+    <!-- B 档：把决定局面的事实摊开讲，避免「狼人占优 92%」+「好人 8%」看着自相矛盾 -->
+    <div v-if="explainer" class="wp-explain">
+      <span class="wp-explain-title">📌 局面事实（弱势方 {{ explainer.name }}那 {{ explainer.rate }}% 的翻盘条件就在这里）</span>
+      <ul class="wp-explain-facts">
+        <li v-for="f in explainer.facts" :key="f">{{ f }}</li>
+      </ul>
+    </div>
+
+    <div v-if="forcedWin?.detected && !finished" class="wp-forced">
       <div class="wp-forced-text">
         <strong>⚡ 检测到必然结局：{{ forcedWin.reason }}</strong>
         <span>{{ forcedWin.detail }}</span>
       </div>
-      <button class="wp-finish" @click="props.onFinishEarly()">✅ 提前结束对局</button>
+      <button class="wp-finish" :disabled="finishing" @click="finishEarly">
+        {{ finishing ? '结算中…' : '✅ 提前结束对局' }}
+      </button>
     </div>
   </div>
 </template>
@@ -87,6 +131,13 @@ const drawLeft = computed(() => rates.value.wolf + rates.value.third)
   font-size: 13px;
   font-weight: 700;
   color: #ffd166;
+}
+/* 胜负口径后缀：跟着标题但弱化，避免和「胜率预测」抢视觉 */
+.wp-mode {
+  font-size: 11px;
+  font-weight: 600;
+  color: #999;
+  margin-left: 1px;
 }
 
 .wp-side {
@@ -152,6 +203,29 @@ const drawLeft = computed(() => rates.value.wolf + rates.value.third)
   white-space: nowrap;
 }
 
+.wp-explain {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #5b7fa6;
+  background: rgba(91,127,166,.12);
+}
+
+.wp-explain-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #9dc0e0;
+}
+
+.wp-explain-facts {
+  margin: 3px 0 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #b9c4d2;
+}
+
 .wp-forced {
   margin-top: 10px;
   padding: 8px 10px;
@@ -195,5 +269,12 @@ const drawLeft = computed(() => rates.value.wolf + rates.value.third)
 
 .wp-finish:active {
   transform: scale(.98);
+}
+
+.wp-finish:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 </style>
