@@ -52,6 +52,8 @@ if (fs.existsSync(envFile)) {
 
 const PORT = Number(process.env.PORT || 3460)
 const ENV = {
+  /** 飞书 OpenAPI 根地址；仅测试/私有化部署需要覆盖，默认官方地址 */
+  FEISHU_BASE: process.env.FEISHU_BASE || "https://open.feishu.cn",
   APP_ID: process.env.APP_ID || "",
   APP_SECRET: process.env.APP_SECRET || "",
   SPREADSHEET_TOKEN: process.env.SPREADSHEET_TOKEN || "",
@@ -70,7 +72,7 @@ let tokenCache = { token: "", expireAt: 0 }
 async function getTenantToken() {
   const now = Date.now()
   if (tokenCache.token && now < tokenCache.expireAt) return tokenCache.token
-  const res = await fetchJson("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+  const res = await fetchJson(`${ENV.FEISHU_BASE}/open-apis/auth/v3/tenant_access_token/internal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ app_id: ENV.APP_ID, app_secret: ENV.APP_SECRET }),
@@ -84,7 +86,40 @@ async function getTenantToken() {
 const https = require("https")
 const httpMod = require("http")
 
-function fetchJson(url, opts = {}) {
+/** 值得重试的 socket 错误：连接被重置/超时/断连/临时 DNS 抖动 */
+const TRANSIENT_ERR_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "ESOCKETTIMEDOUT",
+  "EPIPE",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENETDOWN",
+  "EAI_AGAIN",
+])
+/** 值得重试的 HTTP 状态：限流与网关类瞬时故障 */
+const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504])
+
+const REQ_TIMEOUT_MS = Number(process.env.SYNC_REQ_TIMEOUT_MS || 20000)
+const MAX_ATTEMPTS = Number(process.env.SYNC_MAX_ATTEMPTS || 4)
+const BASE_BACKOFF_MS = Number(process.env.SYNC_BACKOFF_MS || 300)
+const MAX_BACKOFF_MS = 5000
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** 指数退避 + 抖动，避免多个并发同步同时重试打爆对端 */
+function backoffMs(attempt) {
+  const base = Math.min(BASE_BACKOFF_MS * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+  return Math.round(base * (0.7 + Math.random() * 0.6))
+}
+
+function isRetryableError(err) {
+  return !!(err && typeof err.code === "string" && TRANSIENT_ERR_CODES.has(err.code))
+}
+
+/** 单次请求，返回 { status, body }；由调用方判断业务错误码 */
+function requestOnce(url, opts) {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
     const mod = u.protocol === "https:" ? https : httpMod
@@ -93,23 +128,68 @@ function fetchJson(url, opts = {}) {
       {
         method: opts.method || "GET",
         headers: opts.headers || {},
+        // 每次新建连接：keep-alive 复用的 socket 若已被对端关闭，
+        // 读第一口就会抛 ECONNRESET（低 QPS 场景下握手开销可忽略）
+        agent: false,
+        timeout: opts.timeout || REQ_TIMEOUT_MS,
       },
       (res) => {
         let data = ""
+        res.setEncoding("utf8")
         res.on("data", (c) => (data += c))
-        res.on("end", () => {
-          try {
-            resolve(JSON.parse(data))
-          } catch {
-            resolve({ raw: data })
-          }
-        })
+        res.on("end", () => resolve({ status: res.statusCode, body: data }))
+        res.on("error", reject)
       },
     )
+    req.on("timeout", () => {
+      const e = new Error(`请求超时（${req.timeout || REQ_TIMEOUT_MS}ms）`)
+      e.code = "ETIMEDOUT"
+      req.destroy(e)
+    })
     req.on("error", reject)
     if (opts.body) req.write(opts.body)
     req.end()
   })
+}
+
+/**
+ * 带超时与重试的 JSON 请求。
+ * 瞬时网络故障（ECONNRESET 等）与 429/5xx 会按指数退避重试；
+ * 业务级 4xx 仍原样返回给调用方按飞书错误码处理。
+ */
+async function fetchJson(url, opts = {}) {
+  const max = Math.max(1, Number(opts.retries != null ? opts.retries : MAX_ATTEMPTS))
+  let lastErr = null
+  for (let attempt = 1; attempt <= max; attempt++) {
+    try {
+      const { status, body } = await requestOnce(url, opts)
+      const parsed = (() => {
+        try {
+          return JSON.parse(body)
+        } catch {
+          return { raw: body }
+        }
+      })()
+      if (RETRYABLE_STATUS.has(status) && attempt < max) {
+        lastErr = new Error(`上游返回 HTTP ${status}`)
+        lastErr.status = status
+        await sleep(backoffMs(attempt))
+        continue
+      }
+      if (RETRYABLE_STATUS.has(status)) {
+        // 重试用尽：抛出而不是把 5xx 当成空数据静默吞掉
+        const e = new Error(`上游返回 HTTP ${status}（已重试 ${max} 次）`)
+        e.status = status
+        throw e
+      }
+      return parsed
+    } catch (e) {
+      lastErr = e
+      if (attempt >= max || !isRetryableError(e)) throw e
+      await sleep(backoffMs(attempt))
+    }
+  }
+  throw lastErr || new Error("请求失败")
 }
 
 function checkAuth(req) {
@@ -122,7 +202,7 @@ function authHeaders(token) {
 
 // ===== 通用表格读写 =====
 async function readValues(token, sheetId, range) {
-  const url = `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${sheetId}!${range}`
+  const url = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${sheetId}!${range}`
   const rr = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } })
   if (rr.code && rr.code !== 0) throw new Error("读取失败: " + rr.code + " " + (rr.msg || ""))
   return (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
@@ -156,7 +236,7 @@ function rangeFor(startCell, values) {
 }
 
 async function writeValues(token, sheetId, startCell, values) {
-  const url = `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+  const url = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
   const range = `${sheetId}!${rangeFor(startCell, values)}`
   const res = await fetchJson(url, {
     method: "POST",
@@ -177,7 +257,7 @@ function lastDataRow(values) {
 
 // ===== 子表（tab）管理 =====
 async function listSheets(token) {
-  const url = `https://open.feishu.cn/open-apis/sheets/v3/spreadsheets/${ENV.SPREADSHEET_TOKEN}/sheets/query`
+  const url = `${ENV.FEISHU_BASE}/open-apis/sheets/v3/spreadsheets/${ENV.SPREADSHEET_TOKEN}/sheets/query`
   const res = await fetchJson(url, { headers: { Authorization: `Bearer ${token}` } })
   if (res.code && res.code !== 0) throw new Error("读工作簿失败: " + res.code + " " + (res.msg || ""))
   const map = new Map()
@@ -188,7 +268,7 @@ async function listSheets(token) {
 }
 
 async function addSheet(token, title) {
-  const url = `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/sheets_batch_update`
+  const url = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/sheets_batch_update`
   const res = await fetchJson(url, {
     method: "POST",
     headers: authHeaders(token),
@@ -254,7 +334,7 @@ async function initMonthTab(token, sheetId, title) {
       const headerVals = headerRow(LAYOUT)
       headerVals[0] = headerCell
       await writeValues(token, sheetId, "A1", [headerVals])
-      const mergeUrl = `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`
+      const mergeUrl = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`
       for (const range of headerMerges(LAYOUT)) {
         const mRes = await fetchJson(mergeUrl, {
           method: "POST",
@@ -264,7 +344,7 @@ async function initMonthTab(token, sheetId, title) {
         if (mRes.code && mRes.code !== 0) throw new Error("合并失败: " + mRes.code + " " + (mRes.msg || ""))
       }
       const sRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -276,7 +356,7 @@ async function initMonthTab(token, sheetId, title) {
       if (sRes.code && sRes.code !== 0) throw new Error("表头样式失败: " + sRes.code + " " + (sRes.msg || ""))
       // 表头行高 30px
       const hRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -288,7 +368,7 @@ async function initMonthTab(token, sheetId, title) {
       )
       if (hRes.code && hRes.code !== 0) throw new Error("表头行高失败: " + hRes.code + " " + (hRes.msg || ""))
       // 冻结表头首行
-      await fetchJson(`https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/frozen_rows`, {
+      await fetchJson(`${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/frozen_rows`, {
         method: "POST",
         headers: authHeaders(token),
         body: JSON.stringify({ sheetId, frozenRowCount: 1 }),
@@ -298,7 +378,7 @@ async function initMonthTab(token, sheetId, title) {
     for (const [letters, px] of Object.entries(L.widths)) {
       const start = colToIndex(letters)
       const dRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -326,7 +406,7 @@ async function initSeasonsTab(token, sheetId) {
     // 表头 A1:B1 = "赛季"/"前三名"；配置存 Z1（远端）
     await writeValues(token, sheetId, "A1", [["赛季", "前三名"]])
     const sRes = await fetchJson(
-      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+      `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
       {
         method: "PUT",
         headers: authHeaders(token),
@@ -338,7 +418,7 @@ async function initSeasonsTab(token, sheetId) {
     if (sRes.code && sRes.code !== 0) throw new Error("表头样式失败: " + sRes.code + " " + (sRes.msg || ""))
     for (const [key, px] of Object.entries({ A: 180, B: 450 })) {
       const start = colToIndex(key)
-      await fetchJson(`https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
+      await fetchJson(`${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
         method: "PUT",
         headers: authHeaders(token),
         body: JSON.stringify({
@@ -351,15 +431,38 @@ async function initSeasonsTab(token, sheetId) {
 }
 
 // ===== 幂等去重 =====
+/**
+ * 判断某个 A 列单元格是否属于该 gameId。
+ * 旧 14 列布局：A 列整格就是 gameId；
+ * 卡片块布局 F：A 列整格是「🎮 第1局｜2026/9/28\n🃏 板子…」多行合并块；
+ * 卡片块布局 G：标题行 A 列是「2026/9/28  第1局  🧑‍⚖️ 法官：…」。
+ * 因此不能整格全等比较，只能在首行内按 token 匹配，并用数字边界避免
+ * 「第1局」误配到「第11局」「第21局」。
+ */
+function cellHasGameId(cell, gameId) {
+  const text = String(cell == null ? "" : cell)
+  const g = String(gameId == null ? "" : gameId).trim()
+  if (!g) return false
+  if (text.trim() === g) return true
+  const firstLine = text.split("\n")[0] || ""
+  const idx = firstLine.indexOf(g)
+  if (idx < 0) return false
+  const before = idx > 0 ? firstLine[idx - 1] : ""
+  const after = firstLine[idx + g.length]
+  if (before && /[0-9]/.test(before)) return false
+  if (after && /[0-9]/.test(after)) return false
+  return true
+}
+
 async function hasGameId(token, gameId, monthTabId) {
   if (!gameId) return false
   if (monthTabId) {
     const a = await readValues(token, monthTabId, "A1:A5000")
-    if (a.some((v) => v && String(v[0] || "").trim() === String(gameId).trim())) return true
+    if (a.some((v) => v && cellHasGameId(v[0], gameId))) return true
   }
   if (ENV.RECORD_SHEET_ID) {
     const b = await readValues(token, ENV.RECORD_SHEET_ID, "A1:A5000")
-    if (b.some((v) => v && String(v[0] || "").trim() === String(gameId).trim())) return true
+    if (b.some((v) => v && cellHasGameId(v[0], gameId))) return true
   }
   return false
 }
@@ -399,7 +502,7 @@ function wrapRangeFor(layout, row) {
 async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
   const L = layoutFor(layoutName)
   await safeStyle(async () => {
-    const mergeUrl = `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`
+    const mergeUrl = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/merge_cells`
     // 标题行合并 + 样式（蓝底、居中）
     for (const range of rowMerges(titleRow, layoutName)) {
       const mRes = await fetchJson(mergeUrl, {
@@ -411,7 +514,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
     }
     const lastCol = colToLetters(L.cols)
     const sTitle = await fetchJson(
-      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+      `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
       {
         method: "PUT",
         headers: authHeaders(token),
@@ -432,7 +535,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
         if (mRes.code && mRes.code !== 0) throw new Error("合并失败: " + mRes.code + " " + (mRes.msg || ""))
       }
       const sBody = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -444,7 +547,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
       if (sBody.code && sBody.code !== 0) throw new Error("内容行样式失败: " + sBody.code + " " + (sBody.msg || ""))
       // 内容行自动换行
       const wRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -456,7 +559,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
       if (wRes.code && wRes.code !== 0) throw new Error("换行样式失败: " + wRes.code + " " + (wRes.msg || ""))
       // 行高：标题行固定 36px（左对齐+底部留白），内容行按内容估算（最低 400px）
       await Promise.all([
-        fetchJson(`https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
+        fetchJson(`${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
           method: "PUT",
           headers: authHeaders(token),
           body: JSON.stringify({
@@ -469,7 +572,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
     } else {
       // 兼容旧布局：单行
       const sRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -480,7 +583,7 @@ async function decorateGameRow(token, sheetId, titleRow, bodyRow, layoutName) {
       )
       if (sRes.code && sRes.code !== 0) throw new Error("行样式失败: " + sRes.code + " " + (sRes.msg || ""))
       const wRes = await fetchJson(
-        `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+        `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
         {
           method: "PUT",
           headers: authHeaders(token),
@@ -528,7 +631,7 @@ async function autoSizeRowEstimate(token, sheetId, row, isTitleRow = false) {
   // 布局 G 内容行最低 400px，标题行固定 30px
   const minPx = LAYOUT === "G" && !isTitleRow ? 400 : 36
   const px = Math.max(minPx, Math.round(lines * 22 + 12))
-  await fetchJson(`https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
+  await fetchJson(`${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`, {
     method: "PUT",
     headers: authHeaders(token),
     body: JSON.stringify({
@@ -564,7 +667,7 @@ async function appendMonthGame(token, body) {
 // ===== 更新积分排名 =====
 async function updateRanking(token, rows) {
   const readUrl =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
   const readRes = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (readRes.code && readRes.code !== 0) throw new Error("读排名失败: " + readRes.code)
   const values = (readRes.data && readRes.data.valueRange && readRes.data.valueRange.values) || []
@@ -607,7 +710,7 @@ async function updateRanking(token, rows) {
 
   if (updates.length) {
     const res = await fetchJson(
-      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
+      `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
       {
         method: "POST",
         headers: authHeaders(token),
@@ -628,7 +731,7 @@ async function updateRanking(token, rows) {
       }
     }
     const res = await fetchJson(
-      `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
+      `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
       {
         method: "POST",
         headers: authHeaders(token),
@@ -650,12 +753,12 @@ async function addJudgeScore(token, judge) {
   const score = Number(judge.score || 0)
   if (!score) return
   const readUrl =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
   const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
   const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
   const url =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
   let row = null
   for (let i = 0; i < vals.length; i++) {
     if (vals[i] && String(vals[i][1] || "").trim() === String(judge.name).trim()) {
@@ -696,7 +799,7 @@ async function addJudgeScore(token, judge) {
 // ===== 按总积分降序重排排名表 =====
 async function reSortRanking(token) {
   const readUrl =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`
   const rr = await fetchJson(readUrl, { headers: { Authorization: `Bearer ${token}` } })
   if (rr.code && rr.code !== 0) throw new Error("读排名失败: " + rr.code)
   const vals = (rr.data && rr.data.valueRange && rr.data.valueRange.values) || []
@@ -710,7 +813,7 @@ async function reSortRanking(token) {
   const out = rows.slice()
   while (out.length < 199) out.push(["", "", "", "", "", "", "", "", "", "", ""])
   const url =
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`
   const res = await fetchJson(url, {
     method: "POST",
     headers: authHeaders(token),
@@ -718,7 +821,7 @@ async function reSortRanking(token) {
   })
   if (res.code && res.code !== 0) throw new Error("重排排名失败: " + res.code + " " + res.msg)
   const styleRes = await fetchJson(
-    `https://open.feishu.cn/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/styles_batch_update`,
     {
       method: "PUT",
       headers: authHeaders(token),
@@ -745,6 +848,43 @@ function readBody(req) {
     req.on("data", (c) => (data += c))
     req.on("end", () => resolve(data))
   })
+}
+
+// ===== 同步步骤日志（进程内） =====
+// 一次同步是多步非原子写：季度归档 → 排名累加 → 法官分 → 重排 → 复盘行（提交点）。
+// updateRanking / addJudgeScore 都是「读改写累加」，若中途失败、用户整体重试，
+// 会把积分/场次加两遍。日志让重试只补未完成的步骤。
+// 进程重启后日志丢失 → 退化为原有行为（最坏重复累加），不会漏写，故仅作增强。
+const STEP_JOURNAL = new Map()
+const STEP_JOURNAL_MAX = 50
+
+function stepJournalFor(gameId) {
+  let steps = STEP_JOURNAL.get(gameId)
+  if (!steps) {
+    // 兜底上限：异常 gameId 不会让 Map 无限增长
+    if (STEP_JOURNAL.size >= STEP_JOURNAL_MAX) {
+      STEP_JOURNAL.delete(STEP_JOURNAL.keys().next().value)
+    }
+    steps = new Set()
+    STEP_JOURNAL.set(gameId, steps)
+  }
+  return steps
+}
+
+function clearStepJournal(gameId) {
+  STEP_JOURNAL.delete(gameId)
+}
+
+/** 已完成的步骤直接跳过；失败时补上步骤名，便于定位是哪一步断的 */
+async function runStep(journal, step, label, fn) {
+  if (journal && journal.has(step)) return
+  try {
+    await fn()
+  } catch (e) {
+    const msg = (e && e.message) || String(e)
+    throw new Error(`${label}失败：${msg}`)
+  }
+  if (journal) journal.add(step)
 }
 
 const server = http.createServer(async (req, res) => {
@@ -786,16 +926,22 @@ const server = http.createServer(async (req, res) => {
         return
       }
 
+      const gid = String(body.gameId || "").trim()
+      const journal = gid ? stepJournalFor(gid) : null
+
       // 新季度首局：先留存上季前三 + 排名清零，再累计当季度
-      await archiveSeasonIfChanged(token, body.date)
+      await runStep(journal, "archive", "季度归档", () => archiveSeasonIfChanged(token, body.date))
 
       // 排名 / 法官 / 重排
-      await updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote })))
-      await addJudgeScore(token, body.judge)
-      await reSortRanking(token)
+      await runStep(journal, "ranking", "更新排名", () =>
+        updateRanking(token, body.players.map((p) => ({ name: p.name, win: p.win, score: p.base + p.skill + p.vote }))),
+      )
+      await runStep(journal, "judge", "写法官积分", () => addJudgeScore(token, body.judge))
+      await runStep(journal, "sort", "重排排名", () => reSortRanking(token))
 
       // 复盘表写入放最后作为「提交点」：gameId 落盘 ⇒ 整局已累计完成
-      await appendMonthGame(token, body)
+      await runStep(journal, "record", "写复盘行", () => appendMonthGame(token, body))
+      if (gid) clearStepJournal(gid)
       sendJson(res, 200, { ok: true })
       return
     }
@@ -818,6 +964,14 @@ module.exports = {
   LAYOUT,
   getTenantToken,
   fetchJson,
+  cellHasGameId,
+  isRetryableError,
+  backoffMs,
+  requestOnce,
+  runStep,
+  stepJournalFor,
+  clearStepJournal,
+  STEP_JOURNAL,
   readValues,
   writeValues,
   addSheet,
