@@ -118,16 +118,41 @@ function isRetryableError(err) {
   return !!(err && typeof err.code === "string" && TRANSIENT_ERR_CODES.has(err.code))
 }
 
+/**
+ * 飞书 IP 亲和：部分机房/出口对 open.feishu.cn 的部分 CDN 节点会随机
+ * RST 连接（实测 16 个 IP 中 13 个不稳定、3 个稳定）。DNS 轮询会随机命中
+ * 坏节点导致 read ECONNRESET。这里按 Pinned_IP 顺序轮换，让重试换节点，
+ * 而不是重连同一个坏节点。未配置时行为与之前完全一致。
+ */
+const PINNED_IPS = String(process.env.SYNC_PINNED_IPS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+/** 每个 host 下一个游标，保证同一节点连挂后换下一个 */
+const ipCursor = new Map()
+function nextPinnedIp(hostname) {
+  if (!PINNED_IPS.length) return undefined
+  const start = ipCursor.get(hostname) || 0
+  const ip = PINNED_IPS[start % PINNED_IPS.length]
+  ipCursor.set(hostname, (start + 1) % PINNED_IPS.length)
+  return ip
+}
+
 /** 单次请求，返回 { status, body }；由调用方判断业务错误码 */
 function requestOnce(url, opts) {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
     const mod = u.protocol === "https:" ? https : httpMod
+    const pinned = nextPinnedIp(u.hostname)
+    // connect 到指定 IP，但 SNI 与 Host 仍用域名，证书与路由才正确
+    const target = pinned
+      ? { protocol: u.protocol, host: pinned, servername: u.hostname, path: u.pathname + u.search }
+      : u
     const req = mod.request(
-      u,
+      target,
       {
         method: opts.method || "GET",
-        headers: opts.headers || {},
+        headers: Object.assign({ Host: u.host }, opts.headers || {}),
         // 每次新建连接：keep-alive 复用的 socket 若已被对端关闭，
         // 读第一口就会抛 ECONNRESET（低 QPS 场景下握手开销可忽略）
         agent: false,
@@ -967,6 +992,7 @@ module.exports = {
   cellHasGameId,
   isRetryableError,
   backoffMs,
+  nextPinnedIp,
   requestOnce,
   runStep,
   stepJournalFor,
