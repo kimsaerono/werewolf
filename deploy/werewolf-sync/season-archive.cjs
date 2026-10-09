@@ -4,7 +4,7 @@
  *
  * 「历赛季前三」tab 布局（2 列 A..B，表头第 1 行）：
  *   A赛季 │ B前三名
- * 配置区：C1=固定标签"当前赛季"，C2=当前赛季 key（YYYY-Qn）。
+ * 配置区：Z1=当前赛季 key（YYYY-Qn）。
  */
 "use strict"
 
@@ -45,6 +45,24 @@ function quarterLater(a, b) {
   const mb = String(b).match(/^(\d{4})-Q([1-4])$/)
   if (!ma || !mb) return false
   return Number(ma[1]) * 4 + Number(ma[2]) > Number(mb[1]) * 4 + Number(mb[2])
+}
+
+/** 上一季度 key（2026-Q4→2026-Q3，2027-Q1→2026-Q4；非法返回 ""） */
+function quarterBefore(key) {
+  const m = String(key).match(/^(\d{4})-Q([1-4])$/)
+  if (!m) return ""
+  const y = Number(m[1])
+  const q = Number(m[2])
+  return q === 1 ? `${y - 1}-Q4` : `${y}-Q${q - 1}`
+}
+
+/** 排名表是否已有累计（场次>0 或积分≠0）；表头行「玩家昵称/昵称」忽略 */
+function rankHasHistory(rows) {
+  return (rows || []).some((r) => {
+    const name = String((r && r[1]) || "").trim()
+    if (!name || name === "玩家昵称" || name === "昵称") return false
+    return (Number((r && r[2]) || 0) || 0) > 0 || (Number((r && r[6]) || 0) || 0) !== 0
+  })
 }
 
 /** 「历赛季前三」表头行（2 列） */
@@ -96,4 +114,4 @@ function rankResetRows(rows) {
   return out
 }
 
-module.exports = { quarterKeyOf, quarterLabel, quarterLater, archiveHeaderRow, CONFIG_SEASON_CELL, readConfigSeason, topThree, archiveRowFor, rankResetRows, SEASON_DISPLAY_MAP }
+module.exports = { quarterKeyOf, quarterLabel, quarterLater, quarterBefore, rankHasHistory, archiveHeaderRow, CONFIG_SEASON_CELL, readConfigSeason, topThree, archiveRowFor, rankResetRows, SEASON_DISPLAY_MAP }

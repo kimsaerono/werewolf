@@ -27,12 +27,12 @@ const { layoutFor, headerRow, gameRow, gameRows, monthTabTitle, headerMerges, ro
 const {
   quarterKeyOf,
   quarterLater,
+  quarterBefore,
+  rankHasHistory,
   readConfigSeason,
   archiveRowFor,
   rankResetRows,
-  archiveHeaderRow,
   CONFIG_SEASON_CELL,
-  CONFIG_SEASON_LABEL,
 } = require("./season-archive.cjs")
 
 // 自动加载同目录 .env（KEY=VALUE 每行一行，忽略 # 注释）
@@ -292,12 +292,15 @@ async function listSheets(token) {
   return map
 }
 
-async function addSheet(token, title) {
+async function addSheet(token, title, index) {
   const url = `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/sheets_batch_update`
+  const properties = { title }
+  // 不传 index 时飞书默认插到 index 0（最前）；显式传现有表数量则追加到末尾
+  if (typeof index === "number" && index >= 0) properties.index = index
   const res = await fetchJson(url, {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }),
+    body: JSON.stringify({ requests: [{ addSheet: { properties } }] }),
   })
   if (res.code && res.code !== 0) throw new Error("建 tab 失败: " + res.code + " " + (res.msg || ""))
   const sid =
@@ -318,7 +321,7 @@ async function ensureSheet(token, title, initFn) {
     if (map.has(title)) return { sheetId: map.get(title), created: false }
     let sheetId
     try {
-      sheetId = await addSheet(token, title)
+      sheetId = await addSheet(token, title, map.size)
     } catch (e) {
       if (attempt < 5 && String((e && e.message) || "").includes("90210")) {
         await new Promise((r) => setTimeout(r, 15000))
@@ -493,27 +496,31 @@ async function hasGameId(token, gameId, monthTabId) {
 }
 
 // ===== 季度存档 + 排名清零 =====
+/** 把 rankRows 的前三按 quarterKey 追加到「历赛季前三」，并清零排名表 */
+async function archiveAndReset(token, seasonsId, cfgRows, rankRows, quarterKey) {
+  const archRow = archiveRowFor(rankRows.slice(1), quarterKey, new Date().toLocaleString())
+  const sNext = lastDataRow(cfgRows) + 1
+  await writeValues(token, seasonsId, `A${sNext}`, [archRow])
+  await writeValues(token, ENV.RANK_SHEET_ID, "A1", rankResetRows(rankRows))
+}
+
 async function archiveSeasonIfChanged(token, date) {
   const seasonKey = quarterKeyOf(date)
   if (!seasonKey) return
   const seasons = await ensureSheet(token, SEASONS_TAB_TITLE, initSeasonsTab)
   const cfgRows = await readValues(token, seasons.sheetId, "A1:Z100")
   const cur = readConfigSeason(cfgRows)
+  if (cur && !quarterLater(seasonKey, cur)) return
+  const rankRows = await readValues(token, ENV.RANK_SHEET_ID, "A1:K200")
   if (cur) {
-    if (!quarterLater(seasonKey, cur)) return
-    // 上季度（cur）前三 →「历赛季前三」追加一行
-    const rankRows = await readValues(token, ENV.RANK_SHEET_ID, "A1:K200")
-    const archRow = archiveRowFor(rankRows.slice(1), cur, new Date().toLocaleString())
-    const sNext = lastDataRow(cfgRows) + 1
-    await writeValues(token, seasons.sheetId, `A${sNext}`, [archRow])
-    // 排行榜清零：保留名单与表头，场次/胜/负/胜率/积分归零，排名重排
-    await writeValues(token, ENV.RANK_SHEET_ID, "A1", rankResetRows(rankRows))
-    // 更新当前赛季标记
-    await writeValues(token, seasons.sheetId, CONFIG_SEASON_CELL, [[seasonKey]])
-  } else {
-    // 首跑：仅写当前赛季基线（不清零、不补存档）
-    await writeValues(token, seasons.sheetId, CONFIG_SEASON_CELL, [[seasonKey]])
+    // 上季度（cur）前三 →「历赛季前三」追加一行，再清零开新赛季
+    await archiveAndReset(token, seasons.sheetId, cfgRows, rankRows, cur)
+  } else if (rankHasHistory(rankRows)) {
+    // 首跑但排名已有累计：视为上一季度遗留，归档+清零，避免静默跳过赛季边界
+    const prev = quarterBefore(seasonKey)
+    if (prev) await archiveAndReset(token, seasons.sheetId, cfgRows, rankRows, prev)
   }
+  await writeValues(token, seasons.sheetId, CONFIG_SEASON_CELL, [[seasonKey]])
 }
 
 // ===== 月度复盘追加 =====

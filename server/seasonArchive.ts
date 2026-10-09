@@ -47,6 +47,24 @@ export function quarterLater(a: string, b: string): boolean {
   return Number(ma[1]) * 4 + Number(ma[2]) > Number(mb[1]) * 4 + Number(mb[2])
 }
 
+/** 上一季度 key（2026-Q4→2026-Q3，2027-Q1→2026-Q4；非法返回 ""） */
+export function quarterBefore(key: string): string {
+  const m = String(key).match(/^(\d{4})-Q([1-4])$/)
+  if (!m) return ""
+  const y = Number(m[1])
+  const q = Number(m[2])
+  return q === 1 ? `${y - 1}-Q4` : `${y}-Q${q - 1}`
+}
+
+/** 排名表是否已有累计（场次>0 或积分≠0）；表头行「玩家昵称/昵称」忽略 */
+export function rankHasHistory(rows: (string | number)[][]): boolean {
+  return (rows || []).some((r) => {
+    const name = String(r?.[1] ?? "").trim()
+    if (!name || name === "玩家昵称" || name === "昵称") return false
+    return (Number(r?.[2] ?? 0) || 0) > 0 || (Number(r?.[6] ?? 0) || 0) !== 0
+  })
+}
+
 /** 「历赛季前三」表头行（2 列） */
 export function archiveHeaderRow(): string[] {
   return ["赛季", "前三名"]

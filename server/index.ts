@@ -15,7 +15,7 @@ import {
   buildRecordOps as buildGameRowOps,
   legacyBuildMonthInitOps
 } from "./recordBlock"
-import { quarterKeyOf, quarterLater, readConfigSeason, archiveRowFor, rankResetRows, archiveHeaderRow, CONFIG_SEASON_CELL, CONFIG_SEASON_LABEL } from "./seasonArchive"
+import { quarterKeyOf, quarterLater, quarterBefore, rankHasHistory, readConfigSeason, archiveRowFor, rankResetRows, archiveHeaderRow, CONFIG_SEASON_CELL, CONFIG_SEASON_LABEL } from "./seasonArchive"
 
 const PORT = Number(process.env.PORT || 3457)
 
@@ -195,7 +195,7 @@ async function ensureSheetByTitle(
   const sheets = await workbookSheets()
   const existing = sheets.get(title)
   if (existing) return { sheetId: existing, created: false }
-  const create = await runLark(["sheets", "+sheet-create", "--url", SPREADSHEET_URL, "--title", title, "--row-count", "5000", "--col-count", "14", "--format", "json"])
+  const create = await runLark(["sheets", "+sheet-create", "--url", SPREADSHEET_URL, "--title", title, "--index", String(sheets.size), "--row-count", "5000", "--col-count", "14", "--format", "json"])
   if (!create.ok) throw new Error(create.error?.message || `创建 tab「${title}」失败`)
   // 创建后重新列工作簿拿新 tab 的 sheet_id（不依赖创建响应结构）
   const after = await workbookSheets()
@@ -262,39 +262,31 @@ app.post("/api/sync-feishu", async (c) => {
     let rankRows = await readSheet(RANK_SHEET_ID, "A1:K200")
     if (seasonKey) {
       const seasonsId = await ensureSeasonsTab()
-      const seasonsRows = await readSheet(seasonsId, "A1:J100")
+      const seasonsRows = await readSheet(seasonsId, "A1:Z100")
       const cur = readConfigSeason(seasonsRows)
-      if (cur) {
-        if (quarterLater(seasonKey, cur)) {
-          // 上季度（cur）前三名 →「历赛季前三」追加一行
-          const archRow = archiveRowFor(rankRows.slice(1), cur, new Date().toLocaleString())
-          const sNext = lastDataRow(seasonsRows) + 1
-          const writeArch = await runLark([
-            "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", seasonsId,
-            "--start-cell", `A${sNext}`, "--csv", rowToCsv(archRow), "--format", "json",
-          ])
-          if (!writeArch.ok) throw new Error(writeArch.error?.message || "写季度前三失败")
-          // 排行榜清零（场次/胜/负/胜率/积分归零，排名重排；保留名单）
-          const resetRows = rankResetRows(rankRows)
-          const writeReset = await runLark([
-            "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", RANK_SHEET_ID,
-            "--start-cell", "A1", "--csv", resetRows.map((r) => r.map(csvCell).join(",")).join("\n"), "--format", "json",
-          ])
-          if (!writeReset.ok) throw new Error(writeReset.error?.message || "赛季清零失败")
-          rankRows = resetRows
-          // 更新当前赛季标记
-          const writeCfg = await runLark([
-            "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", seasonsId,
-            "--start-cell", CONFIG_SEASON_CELL, "--csv", csvCell(seasonKey), "--format", "json",
-          ])
-          if (!writeCfg.ok) throw new Error(writeCfg.error?.message || "更新当前赛季失败")
-        }
-      } else {
-        // 首跑：仅写入当前赛季基线（不清零、不补存档，避免误清历史累计）
-        await runLark([
+      const archivePrev = cur ? (quarterLater(seasonKey, cur) ? cur : "") : rankHasHistory(rankRows) ? quarterBefore(seasonKey) : ""
+      if (archivePrev) {
+        const archRow = archiveRowFor(rankRows.slice(1), archivePrev, new Date().toLocaleString())
+        const sNext = lastDataRow(seasonsRows) + 1
+        const writeArch = await runLark([
+          "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", seasonsId,
+          "--start-cell", `A${sNext}`, "--csv", rowToCsv(archRow), "--format", "json",
+        ])
+        if (!writeArch.ok) throw new Error(writeArch.error?.message || "写季度前三失败")
+        const resetRows = rankResetRows(rankRows)
+        const writeReset = await runLark([
+          "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", RANK_SHEET_ID,
+          "--start-cell", "A1", "--csv", resetRows.map((r) => r.map(csvCell).join(",")).join("\n"), "--format", "json",
+        ])
+        if (!writeReset.ok) throw new Error(writeReset.error?.message || "赛季清零失败")
+        rankRows = resetRows
+      }
+      if (!cur || archivePrev) {
+        const writeCfg = await runLark([
           "sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", seasonsId,
           "--start-cell", CONFIG_SEASON_CELL, "--csv", csvCell(seasonKey), "--format", "json",
         ])
+        if (!writeCfg.ok) throw new Error(writeCfg.error?.message || "更新当前赛季失败")
       }
     }
 
