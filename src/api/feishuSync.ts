@@ -6,6 +6,7 @@
 import { isWolfRole, GOD_LIST, decorateLog, cleanLogLine } from "@/game/logic"
 import type { GameRecord } from "@/composables/useGame"
 import { getRoleInstance } from "@/game/roles/builtin"
+import { WEREWOLF_GROUP_ID } from "@/api/feishu"
 
 // dev 时用相对 /api（vite 代理到本地 3457 桥接）；生产用部署端绝对地址
 const SYNC_URL = (import.meta.env.VITE_SYNC_URL as string | undefined) || ""
@@ -175,6 +176,24 @@ export async function testSyncConnection(): Promise<string | null> {
   } catch (e) {
     return `无法连接同步服务：${(e as Error).message}`
   }
+}
+
+/**
+ * 拉取飞书群最新成员（用于「同步人」按钮，新人入群后一键刷新）。
+ * - 生产（部署端）：GET ${SYNC_URL}/api/members，带同步口令
+ * - dev（本地桥接）：GET /api/members?chatId=...，无口令
+ * 返回结构统一为 { member_id, name }[]，失败抛错由调用方回退静态名单。
+ */
+export async function fetchGroupMembers(): Promise<{ member_id: string; name: string }[]> {
+  const url = SYNC_URL
+    ? `${SYNC_URL}/api/members`
+    : `/api/members?chatId=${encodeURIComponent(WEREWOLF_GROUP_ID)}`
+  const res = await fetch(url, { headers: syncHeaders() })
+  if (res.status === 401) throw new Error("鉴权失败：同步口令不正确（请先在同步设置里填写口令）")
+  if (!res.ok) throw new Error(`获取成员失败(${res.status})`)
+  const data = (await res.json()) as { users?: { member_id: string; name: string }[] }
+  if (!Array.isArray(data.users)) throw new Error("成员返回格式错误")
+  return data.users
 }
 
 /** 拉取积分排名（预留） */

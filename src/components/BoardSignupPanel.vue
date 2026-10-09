@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { getWerewolfGroupMembers } from "@/api/feishu"
+import { fetchGroupMembers } from "@/api/feishuSync"
 import SeatBoard from "@/components/SeatBoard.vue"
 import { DEFAULT_BOARD, roleShort } from "@/game/logic"
 import type { Game } from "@/types"
@@ -101,6 +102,25 @@ async function loadMembers() {
   } catch (e: unknown) {
     loadStatus.value = `获取成员失败：${(e as Error).message}（请确认后端已启动）`
     message.error(loadStatus.value)
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 从飞书群实时同步成员（新人入群后点一下即可刷新）；失败保留当前名单不中断选人 */
+async function syncMembers() {
+  loading.value = true
+  loadStatus.value = ""
+  try {
+    const users = await fetchGroupMembers()
+    const names = [...new Set(users.map((u) => u.name).filter(Boolean))]
+    if (!names.length) throw new Error("群成员为空")
+    memberCache.value = names
+    loadStatus.value = `已从飞书群同步 ${names.length} 名成员`
+    message.success(`🔄 已同步 ${names.length} 名成员`)
+  } catch (e: unknown) {
+    loadStatus.value = `同步成员失败：${(e as Error).message}`
+    message.error(`${loadStatus.value}（保留当前名单）`)
   } finally {
     loading.value = false
   }
@@ -331,6 +351,7 @@ function onPoolPointerEnd(e: PointerEvent) {
       </div>
       <div class="row" style="margin-top: 0">
         <span v-if="loadStatus" class="small">{{ loadStatus }}</span>
+        <a-button size="small" :loading="loading" @click="syncMembers">🔄 同步成员</a-button>
       </div>
       <SeatBoard
         v-if="state.players.length"

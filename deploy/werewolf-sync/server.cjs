@@ -63,6 +63,9 @@ const ENV = {
 }
 const SEASONS_TAB_TITLE = "历赛季前三"
 
+// 狼人杀飞书群 chat_id（读群成员用；可用环境变量覆盖）
+const WEREWOLF_CHAT_ID = process.env.WEREWOLF_CHAT_ID || "oc_336d1cd3a4eb1ea9187d4114dd616fc8"
+
 // 月度复盘布局（F=整局一合并块左对齐/默认），可用 LAYOUT_MODE 覆盖
 const LAYOUT = String(process.env.LAYOUT_MODE || "F").toUpperCase()
 
@@ -223,6 +226,41 @@ function checkAuth(req) {
 
 function authHeaders(token) {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+}
+
+/**
+ * 拉取飞书群成员（分页遍历；去空、去重、保持顺序）。
+ * 返回 [{ member_id, name }]，与本地桥接 /api/members 结构对齐，便于 dev/prod 共用前端。
+ */
+async function fetchGroupMembers(token) {
+  const users = []
+  const seen = new Set()
+  let pageToken = ""
+  for (let guard = 0; guard < 50; guard++) {
+    const qs =
+      "member_id_type=open_id&page_size=100" +
+      (pageToken ? "&page_token=" + encodeURIComponent(pageToken) : "")
+    const res = await fetchJson(
+      `${ENV.FEISHU_BASE}/open-apis/im/v1/chats/${WEREWOLF_CHAT_ID}/members?${qs}`,
+      { headers: authHeaders(token) },
+    )
+    if (res.code && res.code !== 0) throw new Error("读群成员失败: " + res.code + " " + (res.msg || ""))
+    const data = res.data || {}
+    const items = data.items || []
+    for (const it of items) {
+      const id = String((it && it.member_id) || "")
+      const name = String((it && (it.name || it.member_id)) || "").trim()
+      const key = name || id
+      if (key && !seen.has(key)) {
+        seen.add(key)
+        users.push({ member_id: id, name })
+      }
+    }
+    if (!data.has_more) break
+    pageToken = data.page_token || ""
+    if (!pageToken) break
+  }
+  return users
 }
 
 // ===== 通用表格读写 =====
@@ -943,6 +981,13 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, test: true })
       return
     }
+    if (path === "/api/members" && req.method === "GET") {
+      if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
+      const token = await getTenantToken()
+      const users = await fetchGroupMembers(token)
+      sendJson(res, 200, { ok: true, users, count: users.length })
+      return
+    }
     if (path === "/api/sync" && req.method === "POST") {
       if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
       const body = JSON.parse((await readBody(req)) || "{}")
@@ -995,6 +1040,7 @@ module.exports = {
   PORT,
   LAYOUT,
   getTenantToken,
+  fetchGroupMembers,
   fetchJson,
   cellHasGameId,
   isRetryableError,
