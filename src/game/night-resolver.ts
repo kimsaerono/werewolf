@@ -110,30 +110,12 @@ export function resolveNightEffects(state: GameState): string | null {
     }
   }
 
-  // 执行死亡
+  // 执行死亡（猎人/狼王开枪判定由各自的 onAfterDeath 钩子在 killPlayer 内触发）
   const deathList: string[] = []
-  const poisonTarget = state.nightWitchPoison
   for (const [name, { reason }] of killed) {
     const p = state.players.find((x) => x.name === name)
     if (p && p.alive) {
       deathList.push(...killPlayer(state, name, reason))
-      // 猎人/狼王开枪判定（与 main 分支保持一致）
-      if (p.role === "猎人" && poisonTarget === name) {
-        p.mark.hunterIsPoisoned = true
-        pushNightLog(state, `⚠️猎人${name}被毒，本出局无法开枪`)
-      }
-      if (p.role === "猎人" && poisonTarget !== name) {
-        state.hunterShotPending = true
-        pushNightLog(state, `🔫猎人${name}被刀，可开枪`)
-      }
-      if (p.role === "狼王" && poisonTarget === name) {
-        p.mark.wolfKingIsPoisoned = true
-        pushNightLog(state, `⚠️狼王${name}被毒，本出局无法开枪`)
-      }
-      if (p.role === "狼王" && poisonTarget !== name) {
-        state.wolfKingShotPending = true
-        pushNightLog(state, `🔫狼王${name}被刀，可开枪`)
-      }
     }
   }
 

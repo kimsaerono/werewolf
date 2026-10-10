@@ -2,7 +2,7 @@
 import { computed, ref, onMounted } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
-import { roleShort } from "@/game/logic"
+import { roleShort, campPlayerCounts } from "@/game/logic"
 
 const { message } = AntApp.useApp()
 
@@ -58,17 +58,15 @@ const timelineEvents = computed(() => {
 const stats = computed(() => {
   const alive = state.players.filter(p => p.alive)
   const dead = state.players.filter(p => !p.alive)
-  const wolves = state.players.filter(p => p.role && ["狼人", "狼王", "白狼王"].includes(p.role))
-  const gods = state.players.filter(p => p.role && ["预言家", "女巫", "猎人", "守卫", "骑士"].includes(p.role))
-  const villagers = state.players.filter(p => p.role === "平民")
+  const camps = campPlayerCounts(state)
 
   return {
     total: state.players.length,
     alive: alive.length,
     dead: dead.length,
-    wolves: wolves.length,
-    gods: gods.length,
-    villagers: villagers.length,
+    wolves: camps.wolf,
+    gods: camps.god,
+    villagers: camps.villager,
     rounds: state.round,
     winCamp: state.winCamp,
     comeback: state.comeback

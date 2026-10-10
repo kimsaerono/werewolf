@@ -449,8 +449,8 @@ export function useGame() {
       refresh()
       return err
     },
-    confirmWolves(names: string[]): string | null {
-      const err = g.confirmWolves(state, names)
+    confirmWolves(names: string[], roleId?: string): string | null {
+      const err = g.confirmWolves(state, names, roleId)
       refresh()
       return err
     },

@@ -532,22 +532,22 @@ export function confirmRole(state: GameState, name: string, role: string): strin
   return null
 }
 
-/** 批量确认狼人（狼人睁眼时由法官一次确认） */
-export function confirmWolves(state: GameState, names: string[]): string | null {
-  // 使用角色系统查找狼人角色ID
-  const wolfRoleId = Object.keys(roleQuota(state)).find((r) => {
-    const role = getRoleInstance(r)
-    return role && role.def.camp === "wolf"
-  }) || "狼人"
-  const need = roleQuota(state)[wolfRoleId] || 0
-  const now = state.players.filter((p) => p.role === wolfRoleId).length
+/** 批量确认狼人（狼人睁眼时由法官一次确认同一种狼阵营角色，默认「狼人」） */
+export function confirmWolves(state: GameState, names: string[], roleId = "狼人"): string | null {
+  const quota = roleQuota(state)
+  const need = quota[roleId] || 0
+  if (need === 0) return `本板子没有【${roleId}】角色`
+  const now = state.players.filter((p) => p.role === roleId).length
   const unassigned = [...new Set(names)].filter(
     (n) => n && !state.players.find((p) => p.name === n)?.role,
   )
   if (now + unassigned.length > need) {
-    return `狼人已确认 ${now} 个，本板子需要 ${need} 个，最多还能确认 ${need - now} 个`
+    return `${roleId}已确认 ${now} 个，本板子需要 ${need} 个，最多还能确认 ${need - now} 个`
   }
-  for (const n of unassigned) confirmRole(state, n, wolfRoleId)
+  for (const n of unassigned) {
+    const err = confirmRole(state, n, roleId)
+    if (err) return err
+  }
   return null
 }
 
@@ -692,6 +692,8 @@ export function applyLoverDeaths(state: GameState): string[] {
       partner.alive = false
       partner.deathReason = "lover"
       killed.push(partnerName)
+      // 殉情不递归走 killPlayer，警徽 pending 必须在此补置，否则 GamePanel 的移交弹窗永不触发、警徽卡在死人身上
+      if (state.jingHui === partnerName) state.badgePending = partnerName
     }
   }
   // 合并殉情播报：所有殉情玩家合并为一条日志
@@ -935,9 +937,11 @@ export function nextNight(state: GameState): void {
 export function wolfKill(state: GameState, sel: string): string | null {
   if (!sel) return "请选择被刀对象"
   const target = state.players.find((x) => x.name === sel)
-  const isSelf = target ? isWolfRole(target.role) : false
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为刀人对象`
+  const isSelf = isWolfRole(target.role)
   // 情侣不能互刀：狼恋人不可作为刀人目标
-  if (target && isLover(state, sel) && isWolfRole(target.role)) {
+  if (isLover(state, sel) && isWolfRole(target.role)) {
     return `情侣不能互刀，请重新选择刀人对象（${sel}是狼人恋人）`
   }
   const prev = state.nightWolfKill
@@ -994,9 +998,11 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
     return prophetNoCheck(state)
   }
   const target = state.players.find((x) => x.name === sel)
-  const isWolf = target ? isWolfRole(target.role) : false
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能查验`
+  const isWolf = isWolfRole(target.role)
   state.nightSteps.prophet = true
-  const lbl = target ? playerLabel(target) : sel
+  const lbl = playerLabel(target)
   state.prophetReport = `${lbl} → ${isWolf ? "狼人" : "好人"}`
   pushNightLog(state, `🔮预言家查验${lbl}，结果：${isWolf ? "狼人" : "好人"}`)
   pushGlobalLog(state, `🔮预言家查验：${lbl} → ${isWolf ? "狼人" : "好人"}`)
@@ -1038,6 +1044,9 @@ export function guardDo(state: GameState, sel: string, flagSame: boolean): strin
   })
   if (!guard) return "本局没有守卫"
   if (!guard.alive) return "守卫已出局，本晚不能守人"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为守护对象`
   if (state.guardLastTarget && sel === state.guardLastTarget) {
     return `守卫不能连续两晚守同一人（${sel}上晚已被守）`
   }
@@ -1092,6 +1101,8 @@ export function witchPoison(state: GameState, sel: string): string | null {
   if (!witch.alive) return "女巫已出局，本晚不能用药"
   if (sel === witch.name) return "女巫不能对自己用毒"
   const tar = state.players.find((x) => x.name === sel)
+  if (!tar) return "未找到该玩家"
+  if (!tar.alive) return `${sel}已出局，不能用毒药`
   state.witchPoisonUsed = true
   state.nightUsedDrug = "poison"
   state.nightWitchPoison = sel
@@ -1544,6 +1555,22 @@ export function buildAutoRecord(state: GameState, title?: string): string {
     .map((l, i) => `${i + 1}. ${decorateLog(state, cleanLogLine(l))}`)
     .join("\n")
   return txt
+}
+
+/** 结算统计：按阵营统计已分配身份的玩家数量（全量，含出局） */
+export function campPlayerCounts(state: GameState): { wolf: number; god: number; villager: number; third: number } {
+  let wolf = 0
+  let god = 0
+  let villager = 0
+  let third = 0
+  for (const p of state.players) {
+    const camp = getRole(p.role)?.camp
+    if (camp === "wolf") wolf++
+    else if (camp === "god") god++
+    else if (camp === "villager") villager++
+    else if (camp === "third") third++
+  }
+  return { wolf, god, villager, third }
 }
 
 /** 各阵营角色分配摘要（用于结算展示） */

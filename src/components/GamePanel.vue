@@ -712,20 +712,20 @@ function confirmRoleWithCheck(role: string, v: string) {
 function openWolfConfirm() {
   openMultiPicker(
     "🐺 确认狼人（睁眼认人，勾选" + wolfNeed.value + "个）",
-    aliveList.value.filter((x) => !x.role || refs.isWolfRole(x.role)).map((p) => playerOption(p)),
+    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => playerOption(p)),
     (sel) => {
       if (sel.length !== wolfNeed.value) {
         message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${sel.length} 个`)
         return
       }
       snapshot()
-      const err = actions.confirmWolves(sel)
+      const err = actions.confirmWolves(sel, "狼人")
       if (err) message.error(err)
       else message.success("狼人身份已确认")
     },
     wolfNeed.value,
     wolfNeed.value,
-    state.players.filter((p) => refs.isWolfRole(p.role)).map((p) => p.name),
+    state.players.filter((p) => p.role === "狼人").map((p) => p.name),
   )
 }
 

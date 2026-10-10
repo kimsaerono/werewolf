@@ -39,10 +39,16 @@ export class HunterRole extends BaseRole {
       return
     }
 
-    // 被刀/放逐可开枪
-    if (evt.reason === "wolfKill" || evt.reason === "vote") {
+    // 被刀可开枪（夜晚语境，记入夜晚日志）
+    if (evt.reason === "wolfKill") {
       state.hunterShotPending = true
       pushNightLog(state, `🔫猎人${evt.name}被刀，可开枪`)
+      return
+    }
+
+    // 被放逐可开枪（白天语境，播报由 finishVote 负责）
+    if (evt.reason === "vote") {
+      state.hunterShotPending = true
     }
   }
 

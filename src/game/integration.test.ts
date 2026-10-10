@@ -375,10 +375,16 @@ describe("胜负边界情况", () => {
     killPlayer(st, "P4", "vote") // 女巫
     killPlayer(st, "P5", "vote") // 猎人
     killPlayer(st, "P6", "vote") // 守卫
-    killPlayer(st, "P7", "vote") // 白痴
+    killPlayer(st, "P7", "vote") // 白痴 → 翻牌免死，人还活着
     // 民全灭
     killPlayer(st, "P8", "vote")
     killPlayer(st, "P9", "vote")
+    checkWin(st)
+    // 屠城要杀光好人：翻牌白痴还活着 → 不能判狼胜
+    expect(g(st, "P7").alive).toBe(true)
+    expect(st.winCamp).toBeNull()
+    // 补刀翻牌白痴（毒药无视翻牌）→ 好人全灭，狼胜成立
+    killPlayer(st, "P7", "poison")
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
   })

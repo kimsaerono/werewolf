@@ -21,4 +21,9 @@ export class WhiteWolfKingRole extends BaseRole {
     if (m.wolfSelfKillCheat) entries.push({ reason: "自刀骗解药", delta: 0.5 })
     return entries
   }
+
+  highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
+    const m = player.mark
+    return !!(m.wolfHanTiaoJinghui || m.wolfSelfKillCheat)
+  }
 }

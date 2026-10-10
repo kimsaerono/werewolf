@@ -37,37 +37,50 @@ export interface CampCounts {
   wolf: number
   god: number
   civil: number
+  /** 第三方角色（丘比特等 camp==="third"）存活数：屠城判胜前必须清零；屠边不看它 */
+  third: number
 }
 
 /**
  * 存活阵营计数（checkWin 与必然结束求解器共用，避免两处口径不一致）。
- * 口径与改造前逐条等价，刻意保持不变：
+ * 口径：
  * - 神职桶：注册表 camp==="god"（不含已翻牌的白痴）
- * - 平民桶：camp==="villager"（已翻牌的白痴 camp 仍是 god，故两个桶都不进）
- * - camp==="third"（丘比特）不进任何桶，由第三方分支单独判定
- * 已知历史遗留：翻牌后的白痴既不算神也不算民。本函数刻意不修正它，
- * 以保证「必然结束检测」与「实际判胜」口径完全一致，且不改动原有对局结果。
+ * - 平民桶：camp==="villager"，**外加已翻牌的白痴** —— 翻牌只免去神职身份与投票权，
+ *   人还活着、还是好人，屠城（杀光好人）没打完就不能判狼胜
+ * - 第三方桶：camp==="third"（丘比特）。人狼恋时由第三方分支单独判定，此处只服务屠城口径
  */
 export function aliveCampCounts(state: GameState): CampCounts {
   let wolf = 0
   let god = 0
   let civil = 0
+  let third = 0
   for (const p of state.players) {
     if (!p.alive) continue
+    const role = getRoleInstance(p.role)
     if (isWolfRole(p.role)) {
       wolf++
       continue
     }
-    if (GOD_LIST.includes(p.role) && !(getRoleInstance(p.role)?.def.id === "白痴" && p.mark.idiotFlipped)) god++
-    else if (getRoleInstance(p.role)?.def.camp === "villager") civil++
+    // 翻牌白痴：失去神职身份 → 计入平民桶（仍是要屠完的好人）
+    if (role?.def.id === "白痴" && p.mark.idiotFlipped) {
+      civil++
+      continue
+    }
+    if (GOD_LIST.includes(p.role)) god++
+    else if (role?.def.camp === "villager") civil++
+    else if (role?.def.camp === "third") third++
   }
-  return { wolf, god, civil }
+  return { wolf, god, civil, third }
 }
 
-/** 狼人此刻是否已达成胜利条件（屠边：神或民任一全灭；屠城：神与民全灭） */
+/**
+ * 狼人此刻是否已达成胜利条件（屠边：神或民任一全灭；屠城：神与民全灭，且第三方丘比特不在场）。
+ * 屠边是「按类别屠」，丘比特既不算神也不算民，他活着不挡屠边；
+ * 屠城是「杀光好人」，活着的丘比特就是没杀完。
+ */
 export function wolfWinNow(c: CampCounts, mode: "edge" | "city"): boolean {
   if (c.wolf === 0) return false
-  return mode === "city" ? c.god === 0 && c.civil === 0 : c.god === 0 || c.civil === 0
+  return mode === "city" ? c.god === 0 && c.civil === 0 && c.third === 0 : c.god === 0 || c.civil === 0
 }
 
 /** 好人此刻是否已达成胜利条件（狼人全灭；与 checkWin 的 else 分支一致） */

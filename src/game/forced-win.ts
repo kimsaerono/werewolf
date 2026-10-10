@@ -141,9 +141,9 @@ function godsOf(s: GoodNode): number {
   return s.g + (s.witch ? 1 : 0) + (s.guard ? 1 : 0) + (s.hunter ? 1 : 0) + (s.knight ? 1 : 0)
 }
 
-/** 平民桶：与 checkWin 口径一致，不含已翻牌的白痴（见 aliveCampCounts 注释） */
+/** 平民桶：与 checkWin 口径一致，含已翻牌的白痴（翻牌只是失去神职与投票权，人还是活的好人） */
 function civsOf(s: GoodNode): number {
-  return s.c
+  return s.c + s.flipped
 }
 
 /** 好人票数：翻牌白痴失去投票权 */
@@ -200,7 +200,9 @@ function killOf(s: GoodNode, k: Kind): GoodNode {
 }
 
 function campOf(s: GoodNode): CampCounts {
-  return { wolf: s.w, god: godsOf(s), civil: civsOf(s) }
+  // third 恒为 0：节点不建模丘比特 —— 屠城局若根状态有存活第三方，trivialCertainty 直接返回 EVEN
+  // （见下方 hasThird/屠城兜底），根本不会进搜索；屠边判胜本来就不看第三方，两边口径因此保持一致
+  return { wolf: s.w, god: godsOf(s), civil: civsOf(s), third: 0 }
 }
 
 /** 终局判定：true = 目标方已胜，false = 目标方已败，null = 未分胜负 */
@@ -940,8 +942,13 @@ function trivialCertainty(state: GameState): Certainty | null {
       }
     }
   }
-  // ⑤ 第三方仍在场时不求解：情侣未死前好/狼都不判胜，交给 checkWin 的第三方分支
+  // ⑤ 第三方仍在场时不求解：
+  //    人狼恋活跃时好/狼都不判胜，交给 checkWin 的第三方分支；
+  //    屠城局还要求第三方角色（丘比特）清零才判狼胜 —— 他既不在神桶也不在民桶，
+  //    而节点不建模丘比特，放进搜索会把他当成不存在、误报「狼人必胜」，故直接返回均势。
+  //    情侣（人人恋/狼狼恋）按自己的角色进神/民桶，不走这条兜底，正常参与求解
   if (hasThird && thirdAlive.length > 0) return EVEN
+  if (state.winMode === "city" && counts.third > 0) return EVEN
   // ⑥ 双方都还有存活单位 → 需要 minimax
   return null
 }

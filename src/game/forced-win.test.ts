@@ -154,11 +154,16 @@ describe("checkWin 与求解器口径一致", () => {
     expect(s.winCamp).toBe("wolf")
   })
 
-  it("翻牌白痴沿用原口径（既不算神也不算民），屠城仍判狼人胜", () => {
-    // 与改造前行为保持一致：翻牌白痴不进入任何桶，屠城只看「神与民」是否全灭
+  it("翻牌白痴计入平民桶：他活着时屠城不判狼胜，出局后才判", () => {
+    // 翻牌只是免去神职身份与投票权，人还是活的好人 → 屠城没打完
     const s = build(["狼人", "白痴", "平民"], [true, true, false], "city")
     s.players[1].mark.idiotFlipped = true
-    const r = checkWin(s)
+    let r = checkWin(s)
+    expect(r.ended).toBe(false)
+    expect(s.winCamp).toBeNull()
+    // 翻牌白痴出局（毒药无视翻牌）→ 好人清零，狼胜成立
+    s.players[1].alive = false
+    r = checkWin(s)
     expect(r.ended).toBe(true)
     expect(s.winCamp).toBe("wolf")
   })
@@ -171,6 +176,21 @@ describe("checkWin 与求解器口径一致", () => {
     r = checkWin(s)
     expect(r.ended).toBe(true)
     expect(s.winCamp).toBe("wolf")
+  })
+
+  it("屠城 + 丘比特存活：checkWin 不判胜，求解器也不报必胜（两边同口径）", () => {
+    // 丘比特是活着的好人，屠城没杀完 → 判胜与必然结束检测都必须闭嘴
+    const s = build(["狼人", "狼人", "丘比特"], [], "city")
+    let r = checkWin(s)
+    expect(r.ended).toBe(false)
+    expect(s.winCamp).toBeNull()
+    expect(certainty(s).winner).toBeNull()
+    // 丘比特出局 → 两边同时判狼胜
+    s.players[2].alive = false
+    r = checkWin(s)
+    expect(r.ended).toBe(true)
+    expect(s.winCamp).toBe("wolf")
+    expect(certainty(s).winner).toBe("wolf")
   })
 
   it("本局已结算后 checkWin 不再改写 winCamp（提前结束不会被 refresh 冲掉）", () => {

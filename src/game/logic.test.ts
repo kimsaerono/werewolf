@@ -47,6 +47,9 @@ import {
   applyHonor,
   suggestHonor,
   resetRoundScore,
+  confirmWolves,
+  autoFillCivilians,
+  campPlayerCounts,
   roleShort,
   playerLabel,
   playerLabelShort,
@@ -1415,5 +1418,204 @@ describe("角色注册表派生常量", () => {
     expect(isRegistered("僵尸")).toBe(false)
     expect(isWolfRole("僵尸")).toBe(false)
     expect(roleShort("僵尸")).toBe("僵尸")
+  })
+})
+
+describe("批量确认狼人 confirmWolves", () => {
+  /** 建一个自定义板子，玩家全部未分配身份 */
+  function board(roles: string[]): GameState {
+    const st = defaultState()
+    expect(setBoardRoles(st, roles)).toBeNull()
+    st.players = makePlayers(roles.map(() => ""))
+    return st
+  }
+
+  it("白狼王排在小狼之前时，仍按「狼人」配额确认（回归死锁）", () => {
+    const st = board(["预言家", "女巫", "骑士", "白狼王", "狼人", "狼人", "平民", "平民", "平民", "平民"])
+    expect(confirmWolves(st, ["P4", "P5"])).toBeNull()
+    expect(g(st, "P4").role).toBe("狼人")
+    expect(g(st, "P5").role).toBe("狼人")
+  })
+
+  it("超出「狼人」配额时报错，且不再写入身份", () => {
+    const st = board(["预言家", "女巫", "骑士", "白狼王", "狼人", "狼人", "平民", "平民", "平民", "平民"])
+    const err = confirmWolves(st, ["P4", "P5", "P6"])
+    expect(err).toContain("狼人已确认 0 个")
+    expect(err).toContain("需要 2 个")
+    expect(err).toContain("最多还能确认 2 个")
+    expect(g(st, "P6").role).toBe("")
+  })
+
+  it("内置 13w 板（白狼王首位）按 3 个小狼确认", () => {
+    const st = board(boardConfig["13w"])
+    expect(confirmWolves(st, ["P0", "P1", "P2"])).toBeNull()
+    expect([g(st, "P0").role, g(st, "P1").role, g(st, "P2").role]).toEqual(["狼人", "狼人", "狼人"])
+    expect(confirmWolves(st, ["P3"])).toContain("需要 3 个")
+  })
+
+  it("板子没有「狼人」角色时返回明确错误", () => {
+    const st = board(["白狼王", "预言家", "狼王", "平民"])
+    expect(confirmWolves(st, ["P3"])).toBe("本板子没有【狼人】角色")
+  })
+
+  it("自定义 roleId 按对应角色配额校验", () => {
+    const st = board(["白狼王", "预言家", "狼王", "平民"])
+    expect(confirmWolves(st, ["P0"], "白狼王")).toBeNull()
+    expect(g(st, "P0").role).toBe("白狼王")
+    expect(confirmWolves(st, ["P2"], "白狼王")).toContain("需要 1 个")
+  })
+})
+
+describe("自动补平民 autoFillCivilians", () => {
+  it("非平民角色确认完毕后，剩余玩家自动补为平民", () => {
+    const st = defaultState()
+    setBoardRoles(st, ["狼人", "狼人", "预言家", "女巫", "平民", "平民"])
+    st.players = makePlayers(["", "", "", "", "", ""])
+    ;["P0", "P1"].forEach((n) => (g(st, n).role = "狼人"))
+    g(st, "P2").role = "预言家"
+    g(st, "P3").role = "女巫"
+    expect(autoFillCivilians(st)).toBe(2)
+    expect([g(st, "P4").role, g(st, "P5").role]).toEqual(["平民", "平民"])
+  })
+
+  it("平民排在板子首位时同样生效（顺序变体）", () => {
+    const st = defaultState()
+    setBoardRoles(st, ["平民", "平民", "狼人", "狼人", "预言家", "女巫"])
+    st.players = makePlayers(["", "", "", "", "", ""])
+    ;["P2", "P3"].forEach((n) => (g(st, n).role = "狼人"))
+    g(st, "P4").role = "预言家"
+    g(st, "P5").role = "女巫"
+    expect(autoFillCivilians(st)).toBe(2)
+    expect([g(st, "P0").role, g(st, "P1").role]).toEqual(["平民", "平民"])
+  })
+})
+
+describe("夜晚死亡日志不重复", () => {
+  function countLog(st: GameState, kw: string): number {
+    return st.nightLog.filter((l) => l.includes(kw)).length
+  }
+
+  it("猎人被刀：开枪日志仅 1 条", () => {
+    const st = setup()
+    nextNight(st)
+    wolfKill(st, "P5") // 猎人
+    resolveNightDeath(st)
+    expect(st.hunterShotPending).toBe(true)
+    expect(countLog(st, "🔫猎人")).toBe(1)
+  })
+
+  it("猎人被毒：吞枪日志仅 1 条", () => {
+    const st = setup()
+    nextNight(st)
+    wolfKill(st, "P5")
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P5"
+    st.nightSteps.witch = true
+    resolveNightDeath(st)
+    expect(st.hunterShotPending).toBe(false)
+    expect(countLog(st, "⚠️猎人")).toBe(1)
+  })
+
+  it("狼王被刀：开枪日志仅 1 条", () => {
+    const st = setup(["狼人", "狼人", "狼王", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民"])
+    nextNight(st)
+    wolfKill(st, "P2") // 狼王
+    resolveNightDeath(st)
+    expect(st.wolfKingShotPending).toBe(true)
+    expect(countLog(st, "🔫狼王")).toBe(1)
+  })
+
+  it("狼王被毒：吞枪日志仅 1 条", () => {
+    const st = setup(["狼人", "狼人", "狼王", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民"])
+    nextNight(st)
+    wolfKill(st, "P2")
+    st.witchPoisonUsed = true
+    st.nightUsedDrug = "poison"
+    st.nightWitchPoison = "P2"
+    st.nightSteps.witch = true
+    resolveNightDeath(st)
+    expect(st.wolfKingShotPending).toBe(false)
+    expect(g(st, "P2").mark.wolfKingIsPoisoned).toBe(true)
+    expect(countLog(st, "⚠️狼王")).toBe(1)
+  })
+})
+
+describe("白天放逐死亡的播报与开枪", () => {
+  function day(st: GameState): GameState {
+    st.phase = "day"
+    st.round = 1
+    return st
+  }
+
+  it("放逐猎人：可开枪，夜晚日志不被污染，全局日志正确", () => {
+    const st = day(setup())
+    expect(finishVote(st, "P5", false)).toBeNull()
+    expect(g(st, "P5").alive).toBe(false)
+    expect(st.hunterShotPending).toBe(true)
+    expect(st.nightLog.some((l) => l.includes("猎人"))).toBe(false)
+    expect(st.globalLog.some((l) => l.includes("猎人P5被放逐，可开枪"))).toBe(true)
+  })
+
+  it("放逐狼王：可开枪，夜晚日志不被污染", () => {
+    const st = day(setup(["狼人", "狼人", "狼王", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民"]))
+    expect(finishVote(st, "P2", false)).toBeNull()
+    expect(g(st, "P2").alive).toBe(false)
+    expect(st.wolfKingShotPending).toBe(true)
+    expect(st.nightLog.some((l) => l.includes("狼王"))).toBe(false)
+    expect(st.globalLog.some((l) => l.includes("狼王P2被放逐，可开枪"))).toBe(true)
+  })
+
+  it("放逐普通平民：无开枪标记，夜晚日志为空", () => {
+    const st = day(setup())
+    expect(finishVote(st, "P8", false)).toBeNull()
+    expect(g(st, "P8").alive).toBe(false)
+    expect(st.hunterShotPending).toBe(false)
+    expect(st.wolfKingShotPending).toBe(false)
+    expect(st.nightLog.length).toBe(0)
+    expect(st.globalLog.some((l) => l.includes("投票放逐出局：P8"))).toBe(true)
+  })
+})
+
+describe("结算阵营统计 campPlayerCounts", () => {
+  it("白痴计入神职（回归：旧硬编码神职列表漏了白痴）", () => {
+    const st = setup()
+    const c = campPlayerCounts(st)
+    expect(c.wolf).toBe(3)
+    expect(c.god).toBe(5) // 预言家/女巫/猎人/守卫/白痴
+    expect(c.villager).toBe(2)
+  })
+
+  it("白狼王/狼王计入狼人阵营，丘比特单列第三方", () => {
+    const st = setup(["白狼王", "狼人", "狼王", "预言家", "女巫", "平民", "平民", "丘比特"])
+    const c = campPlayerCounts(st)
+    expect(c.wolf).toBe(3)
+    expect(c.god).toBe(2)
+    expect(c.villager).toBe(2)
+    expect(c.third).toBe(1)
+  })
+
+  it("未分配身份的玩家不计入任何阵营", () => {
+    const st = defaultState()
+    st.players = makePlayers(["狼人", "", "", "平民"])
+    const c = campPlayerCounts(st)
+    expect(c).toEqual({ wolf: 1, god: 0, villager: 1, third: 0 })
+  })
+})
+
+describe("白狼王荣誉推荐 highlight", () => {
+  it("白狼王自刀骗药且分差≥2 时入选 MVP", () => {
+    const st = setup(["白狼王", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民"])
+    st.winCamp = "wolf"
+    g(st, "P0").scoreRound = 3
+    g(st, "P0").mark.wolfSelfKillCheat = true
+    expect(suggestHonor(st).mvp).toBe("P0")
+  })
+
+  it("白狼王无荣誉标记时不入选（对照）", () => {
+    const st = setup(["白狼王", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民"])
+    st.winCamp = "wolf"
+    g(st, "P0").scoreRound = 3
+    expect(suggestHonor(st).mvp).toBe("")
   })
 })
