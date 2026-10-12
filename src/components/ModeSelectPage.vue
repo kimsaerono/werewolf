@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from "vue"
 import type { Game } from "@/types"
+import VersionSwitcher from "@/components/VersionSwitcher.vue"
 
 const props = defineProps<{ game: Game }>()
 const { state, actions } = props.game
@@ -148,6 +149,9 @@ interface Particle {
 
 <template>
   <div class="mode-page">
+    <div class="mode-version">
+      <VersionSwitcher />
+    </div>
     <div class="mode-hero">
       <div class="mode-logo">🐺</div>
       <h1 class="mode-title">狼人杀法官助手</h1>
@@ -208,6 +212,12 @@ interface Particle {
   text-align: center;
   position: relative;
   overflow: hidden;
+}
+.mode-version {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
 }
 .mode-hero {
   display: flex;

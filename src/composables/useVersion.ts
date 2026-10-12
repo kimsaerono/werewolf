@@ -1,31 +1,28 @@
 import { ref, computed } from "vue"
 
-const currentVersion = ref<string>("")
+interface CurrentInfo {
+  version: string
+  commit: string
+  dirty: boolean
+}
+
+const currentInfo = ref<CurrentInfo>({ version: "", commit: "", dirty: false })
 const availableVersions = ref<Array<{ label: string; value: string; current: boolean }>>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-function parseVersion(raw: string): { label: string; short: string; commit: string; dirty: boolean } {
-  const dirty = raw.endsWith("-dirty")
-  const clean = dirty ? raw.slice(0, -6) : raw
-  const parts = clean.split("-")
-  let tag = parts[0]
-  let distance = ""
-  let commit = ""
-
-  if (parts.length >= 3 && /^\d+$/.test(parts[parts.length - 2])) {
-    distance = parts[parts.length - 2]
-    commit = parts[parts.length - 1].replace("g", "")
-    tag = parts.slice(0, -2).join("-")
-  } else if (parts.length >= 2) {
-    commit = parts[parts.length - 1].replace("g", "")
-    tag = parts.slice(0, -1).join("-")
-  }
-
-  const semver = tag.replace(/^stable-v/, "v")
-  const label = distance ? `${semver}-${distance}-g${commit}` : semver
-
-  return { label, short: semver, commit: commit.slice(0, 7), dirty }
+/**
+ * 把 git describe 输出拆成「版本号 + 提交」：
+ *   stable-v1.2                 → { label: v1.2, commit: "" }
+ *   stable-v1.2-5-g792fad3      → { label: v1.2, commit: "792fad3" }
+ *   main                        → { label: main, commit: "" }
+ */
+function parseLabel(raw: string): { label: string; commit: string } {
+  const m = raw.match(/^(.*)-(\d+)-g([0-9a-f]+)$/)
+  const base = m ? m[1] : raw
+  const commit = m ? m[3] : ""
+  const label = base.replace(/^stable-v/, "v")
+  return { label, commit }
 }
 
 export function useVersion() {
@@ -37,9 +34,9 @@ export function useVersion() {
       if (!res.ok) throw new Error("获取版本列表失败")
       const data = await res.json()
       availableVersions.value = data.map((v: any) => ({
-        label: v.isBranch ? `${v.tag} (分支)` : v.tag,
-        value: v.tag,
-        current: v.current,
+        label: v.isBranch ? `${v.version} (分支)` : v.version,
+        value: v.version,
+        current: !!v.current,
       }))
     } catch (e) {
       error.value = (e as Error).message
@@ -53,9 +50,9 @@ export function useVersion() {
       const res = await fetch("/api/version/current")
       if (!res.ok) throw new Error("获取当前版本失败")
       const data = await res.json()
-      currentVersion.value = data.version
+      currentInfo.value = { version: data.version, commit: data.commit || "", dirty: !!data.dirty }
     } catch {
-      currentVersion.value = __APP_VERSION__ || "unknown"
+      currentInfo.value = { version: __APP_VERSION__ || "unknown", commit: "", dirty: false }
     }
   }
 
@@ -79,10 +76,18 @@ export function useVersion() {
     }
   }
 
-  const parsed = computed(() => parseVersion(currentVersion.value || __APP_VERSION__))
+  const parsed = computed(() => {
+    const raw = currentInfo.value.version || __APP_VERSION__
+    const { label, commit } = parseLabel(raw)
+    return {
+      label,
+      commit: currentInfo.value.commit || commit,
+      dirty: currentInfo.value.dirty,
+    }
+  })
 
   return {
-    currentVersion,
+    currentVersion: computed(() => currentInfo.value.version),
     availableVersions,
     loading,
     error,

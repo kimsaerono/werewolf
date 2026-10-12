@@ -11,7 +11,6 @@ import SeatBoard from "@/components/SeatBoard.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import FullscreenPicker from "@/components/FullscreenPicker.vue"
 import WinPredictorPanel from "@/components/WinPredictorPanel.vue"
-import VersionSwitcher from "@/components/VersionSwitcher.vue"
 import type { Game } from "@/types"
 import type { Player } from "@/game/logic"
 
@@ -1195,7 +1194,6 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <a-tag v-if="aliveCount <= 2 && !state.finished" color="volcano">⚡ 最后一推！</a-tag>
           <a-tag v-if="state.hunterShotPending" color="error">🔴 猎人可开枪</a-tag>
         </a-space>
-        <VersionSwitcher />
       </a-flex>
 
       <!-- 天亮公布昨夜情况已并入「对局流程进度」的每一晚标题后 -->
