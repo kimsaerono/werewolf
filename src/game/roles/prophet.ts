@@ -37,11 +37,6 @@ export class ProphetRole extends BaseRole {
         entries.push({ reason: "验狼", delta: 0.5 })
       }
 
-      // 验好人
-      if (m.prophetCheckGood) {
-        entries.push({ reason: "验好人", delta: 0.5 })
-      }
-
       // 首夜验狼
       if (m.prophetFirstDayWolf) {
         entries.push({ reason: "首夜验狼", delta: 0.5 })
