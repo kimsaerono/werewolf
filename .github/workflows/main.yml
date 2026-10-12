@@ -17,6 +17,10 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          # 必须拉全量历史 + tag，否则 vite.config.ts 的 `git describe --tags` 只能拿到 hash（版本号会显示成裸 hash）
+          fetch-depth: 0
+          fetch-tags: true
 
       # 安装 Bun 环境
       - name: Setup Bun
