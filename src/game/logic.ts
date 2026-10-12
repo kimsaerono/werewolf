@@ -200,7 +200,7 @@ export interface GameState {
   nightWitchPoison: string
   nightWitchSave: string
   nightSameSaveKill: boolean
-  nightSteps: { guard: boolean; wolf: boolean; prophet: boolean; witch: boolean }
+  nightSteps: Record<string, boolean>
   guardLastTarget: string
   hunterShotPending: boolean
   hunterShotDone: boolean
@@ -1122,6 +1122,45 @@ export function witchPoison(state: GameState, sel: string): string | null {
   pushGlobalLog(state, `🧪女巫毒药毒杀：${sel}`)
   pushFlow(state, "女巫毒药", sel)
   return null
+}
+
+/**
+ * 统一夜间行动入口（Phase 2.1：动态化 nightSteps + 统一入口）
+ * 替代分散的 wolfKill/guardDo/prophetCheck/witchPoison/witchSave/cupidConnect 等直接调用
+ * 内部仍转发给原函数，保持行为不变，仅提供统一接口供 UI/自动化调用
+ */
+export function executeNightAction(
+  state: GameState,
+  roleKey: string,
+  target?: string | string[],
+  extra?: { flagSame?: boolean }
+): string | null {
+  switch (roleKey) {
+    case "wolf":
+      if (!target) return "请选择被刀对象"
+      return wolfKill(state, target as string)
+    case "wolfEmpty":
+      return wolfEmptyKill(state)
+    case "guard":
+      if (!target) return "请选择守护对象"
+      return guardDo(state, target as string, extra?.flagSame ?? false)
+    case "prophet":
+      if (!target) return "请选择查验对象"
+      if (target === "__NOCHECK__") return prophetNoCheck(state)
+      const pc = prophetCheck(state, target as string)
+      if (typeof pc === "object") return null // 正常返回结果对象，无错误
+      return pc
+    case "witchSave":
+      return witchSave(state)
+    case "witchPoison":
+      if (!target) return "请选择毒杀目标"
+      return witchPoison(state, target as string)
+    case "cupid":
+      if (!target || (Array.isArray(target) && target.length !== 2)) return "请选择两位玩家作为情侣"
+      return cupidConnect(state, target as string[])
+    default:
+      return `未知夜间行动: ${roleKey}`
+  }
 }
 
 export function hunterShootConfirm(state: GameState, tarName: string): string | null {
