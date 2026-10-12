@@ -4,7 +4,7 @@ import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { roleShort, playerLabelShort } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
-import { getActiveStepKeys, NIGHT_ACTION_STEPS } from "@/components/nightActionRegistry"
+import { getActiveNightStepKeys } from "@/components/nightActionRegistry"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -100,6 +100,17 @@ const jinghuiPk = ref(false)
 const voiceDrawer = ref(false)
 const witchModal = ref<"save" | "poison" | null>(null)
 const rightActionsOpen = ref(false)
+
+// ===== 首夜睁眼认人：底部上滑半屏确认 =====
+const roleConfirm = ref<{ role: string; name: string } | null>(null)
+const roleConfirmVisible = ref(false)
+const roleConfirmLabel = computed(() => {
+  const rc = roleConfirm.value
+  if (!rc) return ""
+  const p = state.players.find((x) => x.name === rc.name)
+  return p ? refs.playerLabel(p) : rc.name
+})
+const roleConfirmColor = computed(() => (roleConfirm.value ? roleColor(roleConfirm.value.role) : "#fff"))
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35
@@ -514,12 +525,22 @@ const stepKeys = computed(() => {
   if (state.finished) return ["end"]
   if (state.phase === "idle") return ["idle"]
   if (state.phase === "night") {
-    // 使用注册表动态获取夜间步骤（Phase 2.3）
-    const nightKeys = getActiveStepKeys(state)
-    // 兼容：首夜竞选警长在所有夜间步骤之后
-    if (state.round <= 1 && !uiDone.value.jinghui) nightKeys.push("jinghui")
-    if (nightKeys.length === 0) nightKeys.push("dawn")
-    return nightKeys
+    // 夜间步骤顺序见 nightActionRegistry（须与历史行为一致）
+    const ks = getActiveNightStepKeys({
+      boardRoles: refs.getBoardRoles(state),
+      uiDone: uiDone.value,
+      nightSteps: state.nightSteps,
+      round: state.round,
+      lovers: state.lovers,
+      isWolfRole: refs.isWolfRole,
+      players: state.players,
+      hunterExists: !!hunterObj.value,
+      hunterAlive: !!hunterObj.value?.alive,
+    })
+    // 首夜所有角色睁眼后先竞选警长，再天亮公布死讯
+    if (state.round <= 1 && !uiDone.value.jinghui) ks.push("jinghui")
+    if (ks.length === 0) ks.push("dawn")
+    return ks
   }
   if (state.skipVote) {
     // 自爆跳过投票：但若存在待开枪（如白狼王带走猎人/狼王），先处理枪再入夜
@@ -673,29 +694,28 @@ function roleColor(role: string): string {
   return ROLE_COLOR[role] || "#fff"
 }
 function confirmRoleWithCheck(role: string, v: string) {
-  const p = state.players.find((x) => x.name === v)
-  const label = p ? refs.playerLabel(p) : v
-  const color = roleColor(role)
-  modal.confirm({
-    title: `确认${role}身份？`,
-    width: "min(620px, 94vw)",
-    content: h("div", { style: "text-align:center;padding:10px 0" }, [
-      h("div", { style: `font-size:44px;font-weight:800;color:${color};line-height:1.3;letter-spacing:1px` }, label),
-      h("div", { style: `font-size:20px;color:${color};margin-top:12px;font-weight:600` }, `将确认其为：${refs.ROLE_EMOJI[role] || ""}${role}`),
-    ]),
-    okText: "✅ 确认",
-    cancelText: "🔄 重新选择",
-    onOk() {
-      snapshot()
-      const err = actions.confirmRole(v, role)
-      if (err) return message.error(err)
-      message.success(`已确认 ${v} 为${refs.ROLE_EMOJI[role] || ""}${role}`)
-    },
-    onCancel() {
-      // 重新选择：重新打开该角色选择弹窗
-      openPicker(`确认${role}（睁眼认人）`, unassignedAliveOptions.value, (v2) => confirmRoleWithCheck(role, v2))
-    },
-  })
+  roleConfirm.value = { role, name: v }
+  roleConfirmVisible.value = true
+}
+/** 底部抽屉：确认身份 */
+function doConfirmRole() {
+  const rc = roleConfirm.value
+  if (!rc) return
+  snapshot()
+  const err = actions.confirmRole(rc.name, rc.role)
+  if (err) return message.error(err)
+  message.success(`已确认 ${rc.name} 为${refs.ROLE_EMOJI[rc.role] || ""}${rc.role}`)
+  roleConfirmVisible.value = false
+  roleConfirm.value = null
+}
+/** 底部抽屉：重新选择 → 关闭并重开选择器 */
+function cancelConfirmRole() {
+  const role = roleConfirm.value?.role
+  roleConfirmVisible.value = false
+  roleConfirm.value = null
+  if (role) {
+    openPicker(`确认${role}（睁眼认人）`, unassignedAliveOptions.value, (v2) => confirmRoleWithCheck(role, v2))
+  }
 }
 function openWolfConfirm() {
   openMultiPicker(
@@ -1803,6 +1823,29 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         </div>
       </div>
     </transition>
+
+    <!-- 首夜认人：底部上滑半屏确认 -->
+    <a-drawer
+      v-model:open="roleConfirmVisible"
+      placement="bottom"
+      :height="300"
+      :closable="false"
+      root-class-name="role-confirm-sheet"
+      :body-style="{ padding: 0 }"
+    >
+      <div v-if="roleConfirm" class="role-sheet">
+        <div class="role-sheet-handle"></div>
+        <div class="role-sheet-role" :style="{ color: roleConfirmColor }">
+          {{ refs.ROLE_EMOJI[roleConfirm.role] || "" }}{{ roleConfirm.role }}
+        </div>
+        <div class="role-sheet-label" :style="{ color: roleConfirmColor }">{{ roleConfirmLabel }}</div>
+        <div class="role-sheet-desc">确认将其设为 <b>{{ roleConfirm.role }}</b> ？</div>
+        <div class="role-sheet-actions">
+          <a-button block size="large" @click="cancelConfirmRole">🔄 重新选择</a-button>
+          <a-button block size="large" type="primary" @click="doConfirmRole">✅ 确认</a-button>
+        </div>
+      </div>
+    </a-drawer>
   </div>
 </template>
 
@@ -2462,5 +2505,58 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 .fs-note {
   font-size: 14px;
   color: #ffd666;
+}
+
+/* ===== 首夜认人底部半屏 ===== */
+.role-sheet {
+  padding: 8px 24px 28px;
+  text-align: center;
+}
+.role-sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(140, 140, 140, 0.4);
+  margin: 6px auto 18px;
+}
+.role-sheet-role {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.role-sheet-label {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 1px;
+  margin-top: 6px;
+}
+.role-sheet-desc {
+  font-size: 14px;
+  color: #bbb;
+  margin-top: 12px;
+}
+.role-sheet-desc b {
+  color: #fff;
+}
+.role-sheet-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+.role-sheet-actions :deep(.ant-btn) {
+  flex: 1;
+}
+</style>
+
+<style>
+/* 底部认人半屏抽屉（teleport 到 body，需全局样式） */
+.role-confirm-sheet .ant-drawer-content {
+  border-radius: 18px 18px 0 0;
+  background: #171b28;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
+}
+.role-confirm-sheet .ant-drawer-header {
+  display: none;
 }
 </style>
