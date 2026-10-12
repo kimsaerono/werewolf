@@ -1,9 +1,10 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, ScoreEntry } from "./types"
+import type { RoleDef, ScoreEntry, Effect } from "./types"
 
 /**
  * 白狼王角色：狼人，白天可自爆带走一人。
+ * 同时作为狼人参与夜间刀人。
  */
 export class WhiteWolfKingRole extends BaseRole {
   readonly def: RoleDef = {
@@ -13,7 +14,19 @@ export class WhiteWolfKingRole extends BaseRole {
     emoji: "❄️🐺",
     short: "白狼",
     nightStep: { order: 11, key: "whitewolfking" },
-    intentKeys: [],
+    intentKeys: ["nightWolfKill"],
+  }
+
+  onNightResolve(state: GameState): Effect[] {
+    const effects: Effect[] = []
+    if (state.nightWolfKill) {
+      effects.push({
+        type: "kill",
+        target: state.nightWolfKill,
+        source: "狼人刀人",
+      })
+    }
+    return effects
   }
 
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {

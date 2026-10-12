@@ -27,18 +27,6 @@ export function resolveNightEffects(state: GameState): string | null {
     }
   }
 
-  // 兜底：如果狼人步骤已完成且有刀人目标，但没有狼人角色产生 kill 效果（狼人已全灭），则自动添加
-  if (state.nightSteps.wolf && state.nightWolfKill) {
-    const hasWolfKill = effects.some((e) => e.type === "kill" && e.source === "狼人刀人")
-    if (!hasWolfKill) {
-      effects.push({
-        type: "kill",
-        target: state.nightWolfKill,
-        source: "狼人刀人",
-      })
-    }
-  }
-
   // 按优先级排序：save > block > kill
   // save（女巫解药）优先级最高，block（守卫守护）次之，kill（狼刀/毒药）最后
   const priorityMap = { save: 0, block: 1, kill: 2 }

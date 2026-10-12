@@ -1,10 +1,11 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, DieEvent, ScoreEntry } from "./types"
+import type { RoleDef, DieEvent, ScoreEntry, Effect } from "./types"
 import { pushNightLog } from "../logic"
 
 /**
  * 狼王角色：被刀/放逐后可开枪带走一人（被毒不能开枪）。
+ * 同时作为狼人参与夜间刀人。
  */
 export class WolfKingRole extends BaseRole {
   readonly def: RoleDef = {
@@ -14,7 +15,19 @@ export class WolfKingRole extends BaseRole {
     emoji: "🔫🐺",
     short: "狼王",
     nightStep: { order: 12, key: "wolfking" },
-    intentKeys: [],
+    intentKeys: ["nightWolfKill"],
+  }
+
+  onNightResolve(state: GameState): Effect[] {
+    const effects: Effect[] = []
+    if (state.nightWolfKill) {
+      effects.push({
+        type: "kill",
+        target: state.nightWolfKill,
+        source: "狼人刀人",
+      })
+    }
+    return effects
   }
 
   /** 狼王死亡前：被毒时标记吞枪 */
