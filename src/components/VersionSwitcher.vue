@@ -9,6 +9,7 @@ const currentLabel = computed(() => parsed.value.label)
 const menuVisible = ref(false)
 
 // 底部半屏抽屉
+const RESULT_KEY = "werewolf_version_switch_result"
 const sheetVisible = ref(false)
 const sheetState = ref<"confirm" | "result">("confirm")
 const sheetTarget = ref("")
@@ -16,6 +17,20 @@ const switching = ref(false)
 
 onMounted(async () => {
   await Promise.all([fetchCurrent(), fetchVersions()])
+  // 切换成功后若页面被 HMR/刷新打断，恢复结果抽屉
+  try {
+    const saved = localStorage.getItem(RESULT_KEY)
+    if (saved) {
+      const { target, at } = JSON.parse(saved)
+      if (target && Date.now() - at < 10 * 60 * 1000) {
+        sheetTarget.value = target
+        sheetState.value = "result"
+        sheetVisible.value = true
+      } else {
+        localStorage.removeItem(RESULT_KEY)
+      }
+    }
+  } catch {}
 })
 
 function handleMenuVisibleChange(visible: boolean) {
@@ -37,6 +52,7 @@ async function confirmSwitch() {
   try {
     const res = await switchVersion(sheetTarget.value)
     if (res.needsRestart) {
+      localStorage.setItem(RESULT_KEY, JSON.stringify({ target: sheetTarget.value, at: Date.now() }))
       sheetState.value = "result"
     } else {
       message.error(res.error || "切换失败")
@@ -52,9 +68,11 @@ async function confirmSwitch() {
 
 function closeSheet() {
   sheetVisible.value = false
+  localStorage.removeItem(RESULT_KEY)
 }
 
 function reload() {
+  localStorage.removeItem(RESULT_KEY)
   window.location.reload()
 }
 
