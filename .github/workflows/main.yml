@@ -24,6 +24,13 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # 打印用于注入版本号的 git describe 结果，便于排查线上版本号
+      - name: Show version
+        run: |
+          git fetch --tags --force
+          echo "describe: $(git describe --tags --always --dirty)"
+          echo "tags:"; git tag -l
+
       # 安装 Bun 环境
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
