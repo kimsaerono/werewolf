@@ -80,6 +80,13 @@ app.post("/api/version/switch", async (c) => {
     const target = body?.target
     if (!target) return c.json({ success: false, error: "target 不能为空" }, 400)
     const result = switchVersion(target)
+    if (result.success && result.needsRestart && !process.env.NO_AUTO_RESTART) {
+      // 响应先发回客户端，随后由 supervisor 拉起新进程（退出码 42 为重启信号）
+      setTimeout(() => {
+        console.log("♻️  版本已切换，服务正在重启...")
+        process.exit(42)
+      }, 600)
+    }
     return c.json(result)
   } catch (e) {
     return c.json({ success: false, error: (e as Error).message }, 500)

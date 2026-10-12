@@ -8,29 +8,16 @@ const { currentVersion, availableVersions, loading, parsed, fetchVersions, fetch
 const currentLabel = computed(() => parsed.value.label)
 const menuVisible = ref(false)
 
-// 底部半屏抽屉
-const RESULT_KEY = "werewolf_version_switch_result"
+// 底部半屏抽屉：确认 → 重启中 →（超时）手动兜底
 const sheetVisible = ref(false)
-const sheetState = ref<"confirm" | "result">("confirm")
+const sheetState = ref<"confirm" | "restarting" | "timeout">("confirm")
 const sheetTarget = ref("")
 const switching = ref(false)
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
 onMounted(async () => {
   await Promise.all([fetchCurrent(), fetchVersions()])
-  // 切换成功后若页面被 HMR/刷新打断，恢复结果抽屉
-  try {
-    const saved = localStorage.getItem(RESULT_KEY)
-    if (saved) {
-      const { target, at } = JSON.parse(saved)
-      if (target && Date.now() - at < 10 * 60 * 1000) {
-        sheetTarget.value = target
-        sheetState.value = "result"
-        sheetVisible.value = true
-      } else {
-        localStorage.removeItem(RESULT_KEY)
-      }
-    }
-  } catch {}
 })
 
 function handleMenuVisibleChange(visible: boolean) {
@@ -52,8 +39,8 @@ async function confirmSwitch() {
   try {
     const res = await switchVersion(sheetTarget.value)
     if (res.needsRestart) {
-      localStorage.setItem(RESULT_KEY, JSON.stringify({ target: sheetTarget.value, at: Date.now() }))
-      sheetState.value = "result"
+      sheetState.value = "restarting"
+      waitForRestart()
     } else {
       message.error(res.error || "切换失败")
       sheetVisible.value = false
@@ -66,13 +53,28 @@ async function confirmSwitch() {
   }
 }
 
+/** 轮询直到服务重新响应，再刷新页面加载新版本 */
+async function waitForRestart() {
+  await sleep(1800) // 旧进程退出 + supervisor 拉起新进程
+  const deadline = Date.now() + 30000
+  while (Date.now() < deadline) {
+    const up = await fetch("/api/health", { cache: "no-store" })
+      .then(() => true)
+      .catch(() => false)
+    if (up) {
+      window.location.reload()
+      return
+    }
+    await sleep(700)
+  }
+  sheetState.value = "timeout"
+}
+
 function closeSheet() {
   sheetVisible.value = false
-  localStorage.removeItem(RESULT_KEY)
 }
 
 function reload() {
-  localStorage.removeItem(RESULT_KEY)
   window.location.reload()
 }
 
@@ -117,7 +119,7 @@ function handleRefresh() {
   <a-drawer
     v-model:open="sheetVisible"
     placement="bottom"
-    :height="sheetState === 'confirm' ? 260 : 340"
+    :height="sheetState === 'confirm' ? 260 : 300"
     :closable="false"
     root-class-name="version-sheet"
     :body-style="{ padding: 0 }"
@@ -131,7 +133,7 @@ function handleRefresh() {
         <div class="sheet-desc">
           确定切换到 <b class="hl">{{ sheetTarget }}</b> ？
           <br />
-          切换后需<b>重启服务</b>才能生效。
+          切换后服务将<b>自动重启并刷新</b>。
         </div>
         <div class="sheet-actions">
           <a-button block size="large" @click="closeSheet">取消</a-button>
@@ -139,20 +141,32 @@ function handleRefresh() {
         </div>
       </template>
 
-      <!-- 完成 -->
-      <template v-else>
-        <div class="sheet-title">✅ 切换完成</div>
+      <!-- 重启中 -->
+      <template v-else-if="sheetState === 'restarting'">
+        <div class="sheet-title">
+          <span class="spin"></span> 正在重启服务
+        </div>
         <div class="sheet-desc">
-          已切换到 <b class="hl">{{ sheetTarget }}</b>，代码已更新。
+          已切换到 <b class="hl">{{ sheetTarget }}</b>，服务重启中，页面将自动刷新…
+        </div>
+        <div class="sheet-actions">
+          <a-button block size="large" disabled loading>请稍候</a-button>
+        </div>
+      </template>
+
+      <!-- 超时兜底 -->
+      <template v-else>
+        <div class="sheet-title">⚠️ 自动重启未完成</div>
+        <div class="sheet-desc">
+          已切换到 <b class="hl">{{ sheetTarget }}</b>，但未能自动检测到服务恢复。
         </div>
         <div class="sheet-steps">
           <div class="sheet-steps-title">请手动重启服务：</div>
           <div class="sheet-step">1. 在终端按 <kbd>Ctrl+C</kbd> 停止当前服务</div>
-          <div class="sheet-step">2. 重新运行 <code>bun run server</code></div>
-          <div class="sheet-step-hint">重启后版本将生效，对局状态会自动恢复。</div>
+          <div class="sheet-step">2. 重新运行 <code>bun run dev</code></div>
         </div>
         <div class="sheet-actions">
-          <a-button block size="large" type="primary" @click="reload">知道了，刷新页面</a-button>
+          <a-button block size="large" type="primary" @click="reload">刷新页面</a-button>
         </div>
       </template>
     </div>
@@ -292,6 +306,22 @@ function handleRefresh() {
 
 .sheet-actions :deep(.ant-btn) {
   flex: 1;
+}
+
+.spin {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(77, 155, 255, 0.3);
+  border-top-color: #4d9bff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>
 
