@@ -285,9 +285,9 @@ describe("预言家/狼人/女巫标记", () => {
 })
 
 describe("算分引擎", () => {
-  it("预言家首夜验狼+警徽=1.0", () => {
+  it("预言家验狼+警徽=0.5", () => {
     const st = setup()
-    g(st, "P3").mark.prophetFirstDayWolf = true
+    g(st, "P3").mark.prophetCheckWolf = 1
     st.jingHui = "P3"
     recalcScore(st)
     expect(g(st, "P3").scoreRound).toBe(1)

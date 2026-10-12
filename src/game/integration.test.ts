@@ -479,7 +479,7 @@ describe("MVP/SVP 边界", () => {
     // 狼人高光（使用正确的 mark 字段）
     g(st, "P0").mark.wolfSelfKillCheat = true
     // 好人高光（使用正确的 mark 字段）
-    g(st, "P3").mark.prophetFirstDayWolf = true
+    g(st, "P3").mark.prophetCheckWolf = 1
     // 先算分
     recalcScore(st)
     // 手动增加分数以确保分差 >= 2

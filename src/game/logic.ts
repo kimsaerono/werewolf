@@ -92,7 +92,7 @@ export function boardShortName(board: string): string {
 
 export interface Mark {
   prophetFirstDayWolf: boolean
-  prophetCheckWolf: boolean
+  prophetCheckWolf: number
   prophetCheckGood: boolean
   prophetNoCheckCount: number
   witchSaveGood: boolean
@@ -245,7 +245,7 @@ export interface GameState {
 export function defaultMark(): Mark {
   return {
     prophetFirstDayWolf: false,
-    prophetCheckWolf: false,
+    prophetCheckWolf: 0,
     prophetCheckGood: false,
     prophetNoCheckCount: 0,
     witchSaveGood: false,
@@ -1009,7 +1009,7 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
   pushFlow(state, "预言家验人", sel, isWolf ? "狼" : "好")
   // 记录验人结果用于记分（预言家存活时才记分）
   if (prophet && prophet.alive) {
-    if (isWolf) prophet.mark.prophetCheckWolf = true
+    if (isWolf) prophet.mark.prophetCheckWolf = (prophet.mark.prophetCheckWolf || 0) + 1
     else prophet.mark.prophetCheckGood = true
   }
   // 首夜验狼额外加分

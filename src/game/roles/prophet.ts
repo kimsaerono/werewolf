@@ -17,7 +17,6 @@ export class ProphetRole extends BaseRole {
   }
 
   onNightResolve(state: GameState): Effect[] {
-    // 预言家没有直接的夜晚效果（验人只是获取信息，不产生 kill/save/block）
     return []
   }
 
@@ -30,16 +29,11 @@ export class ProphetRole extends BaseRole {
       entries.push({ reason: "拿警徽", delta: 0.5 })
     }
 
-    // 预言家死亡后，验人相关分数不再计算（仅流程性验人）
     if (player.alive) {
-      // 验狼
-      if (m.prophetCheckWolf) {
-        entries.push({ reason: "验狼", delta: 0.5 })
-      }
-
-      // 首夜验狼
-      if (m.prophetFirstDayWolf) {
-        entries.push({ reason: "首夜验狼", delta: 0.5 })
+      // 验狼：每只 +0.5，不封顶
+      const wolfCount = (m.prophetCheckWolf as number) || 0
+      if (wolfCount > 0) {
+        entries.push({ reason: `验狼×${wolfCount}`, delta: 0.5 * wolfCount })
       }
 
       // 未验人扣分
@@ -53,6 +47,6 @@ export class ProphetRole extends BaseRole {
   }
 
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
-    return !!player.mark.prophetFirstDayWolf
+    return ((player.mark.prophetCheckWolf as number) || 0) > 0
   }
 }
