@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { Camp, RoleDef, ScoreEntry } from "./types"
+import type { Camp, RoleDef, ScoreEntry, RoleSolverState } from "./types"
 import { isWolfRole } from "../logic"
 import { getRoleInstance } from "./builtin"
 
@@ -66,5 +66,10 @@ export class CupidRole extends BaseRole {
 
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
     return []
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    // 丘比特无特殊状态，仅计数（情侣关系由 state.lovers 体现）
+    return {}
   }
 }

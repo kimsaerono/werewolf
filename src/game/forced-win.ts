@@ -81,6 +81,10 @@ interface GoodNode {
   hasWk: boolean
   /** 白狼王存活：白天可自爆带走一人 */
   hasWwk: boolean
+  /** 动态角色计数：roleId -> count（Phase 3：动态化） */
+  roles: Record<string, number>
+  /** 特殊状态：roleId -> 任意状态（Phase 3：动态化） */
+  specialStates: Record<string, unknown>
 }
 
 interface Result {
@@ -662,6 +666,27 @@ function toNode(state: GameState): GoodNode {
     }
   }
 
+  // Phase 3：动态化 roles 和 specialStates
+  const roles: Record<string, number> = {}
+  const specialStates: Record<string, unknown> = {}
+  for (const p of alive) {
+    const roleInstance = getRoleInstance(p.role)
+    if (roleInstance) {
+      const roleId = roleInstance.def.id
+      roles[roleId] = (roles[roleId] || 0) + 1
+      // 调用角色的 extractState 获取特殊状态
+      if (roleInstance.extractState) {
+        const extracted = roleInstance.extractState(
+          { name: p.name, role: p.role, alive: p.alive, mark: p.mark as unknown as Record<string, unknown> },
+          state
+        )
+        if (extracted && Object.keys(extracted).length > 0) {
+          specialStates[roleId] = extracted
+        }
+      }
+    }
+  }
+
   return {
     w: alive.filter((p) => isWolfRole(p.role)).length,
     g,
@@ -679,6 +704,8 @@ function toNode(state: GameState): GoodNode {
     knight: !!knightP && !state.knightDuelUsed,
     hasWk: !!wkP && !wkP.mark.wolfKingIsPoisoned,
     hasWwk: !!wwkP,
+    roles,
+    specialStates,
   }
 }
 

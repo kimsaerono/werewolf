@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { DieReason, RoleDef, DieEvent, ScoreEntry } from "./types"
+import type { DieReason, RoleDef, DieEvent, ScoreEntry, RoleSolverState } from "./types"
 import { pushGlobalLog, pushFlow } from "../logic"
 
 /**
@@ -33,5 +33,12 @@ export class IdiotRole extends BaseRole {
 
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
     return []
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    if (!player.alive) return {}
+    return {
+      flipped: !!player.mark.idiotFlipped,
+    }
   }
 }

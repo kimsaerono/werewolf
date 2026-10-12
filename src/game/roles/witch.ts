@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, Effect, ScoreEntry } from "./types"
+import type { RoleDef, Effect, ScoreEntry, RoleSolverState } from "./types"
 
 /**
  * 女巫角色：每晚可救/毒一人。
@@ -54,5 +54,14 @@ export class WitchRole extends BaseRole {
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     const m = player.mark
     return !!(m.witchPoWolf || m.witchPoisonWolf || m.witchSaveGood || m.witchSave)
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    if (!player.alive) return {}
+    return {
+      antidote: !state.witchSaveUsed,
+      poison: !state.witchPoisonUsed,
+      selfSave: state.round <= 1,
+    }
   }
 }

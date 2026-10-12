@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, Effect, ScoreEntry } from "./types"
+import type { RoleDef, Effect, ScoreEntry, RoleSolverState } from "./types"
 
 /**
  * 预言家角色：每晚可查验一人阵营。
@@ -48,5 +48,10 @@ export class ProphetRole extends BaseRole {
 
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     return ((player.mark.prophetCheckWolf as number) || 0) > 0
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    // 预言家无特殊状态，仅计数
+    return {}
   }
 }

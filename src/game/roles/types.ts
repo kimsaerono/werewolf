@@ -30,6 +30,11 @@ export interface ScoreEntry {
   delta: number
 }
 
+/** 求解器角色状态（Phase 3：GoodNode 动态化） */
+export interface RoleSolverState {
+  [key: string]: unknown
+}
+
 /**
  * 角色定义：新增角色只需注册一条 RoleDef，核心流程代码零改动。
  * 各生命周期钩子均为可选，未实现的角色无需实现空方法。

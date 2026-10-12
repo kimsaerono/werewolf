@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, ScoreEntry } from "./types"
+import type { RoleDef, ScoreEntry, RoleSolverState } from "./types"
 
 /**
  * 骑士角色：白天可决斗一人（每局一次），戳狼则狼死，戳好人则自己出局。
@@ -27,5 +27,12 @@ export class KnightRole extends BaseRole {
 
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     return !!player.mark.hunterKillWolf
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    if (!player.alive) return {}
+    return {
+      duelUsed: state.knightDuelUsed,
+    }
   }
 }

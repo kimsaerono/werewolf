@@ -2,6 +2,15 @@ import type { GameState } from "../logic"
 import type { Camp, DieReason, RoleDef, DieEvent, Effect, ScoreEntry } from "./types"
 
 /**
+ * 求解器需要的特殊状态（Phase 3：动态化 GoodNode）
+ * 各角色通过 extractState 返回其特有状态
+ */
+export interface RoleSolverState {
+  /** 角色特有的求解器状态键值对 */
+  [key: string]: unknown
+}
+
+/**
  * 角色基类：提供生命周期钩子的默认空实现。
  * 新增角色只需继承此类，覆盖需要的方法即可。
  */
@@ -48,5 +57,14 @@ export abstract class BaseRole {
    */
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     return false
+  }
+
+  /**
+   * 提取求解器状态（Phase 3：GoodNode 动态化）
+   * 返回该角色特有的状态，用于求解器建模
+   * 默认返回空对象
+   */
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    return {}
   }
 }

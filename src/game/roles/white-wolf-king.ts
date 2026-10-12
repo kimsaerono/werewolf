@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, ScoreEntry, Effect } from "./types"
+import type { RoleDef, ScoreEntry, Effect, RoleSolverState } from "./types"
 
 /**
  * 白狼王角色：狼人，白天可自爆带走一人。
@@ -40,5 +40,10 @@ export class WhiteWolfKingRole extends BaseRole {
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     const m = player.mark
     return !!(m.wolfHanTiaoJinghui || m.wolfSelfKillCheat)
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    // 白狼王无特殊状态，仅计数
+    return {}
   }
 }

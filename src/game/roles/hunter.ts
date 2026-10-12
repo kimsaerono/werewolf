@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, DieEvent, ScoreEntry } from "./types"
+import type { RoleDef, DieEvent, ScoreEntry, RoleSolverState } from "./types"
 import { pushNightLog } from "../logic"
 
 /**
@@ -64,5 +64,12 @@ export class HunterRole extends BaseRole {
 
   highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
     return !!player.mark.hunterKillWolf
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    if (!player.alive) return {}
+    return {
+      canShoot: !player.mark.hunterIsPoisoned,
+    }
   }
 }
