@@ -4,6 +4,7 @@ import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { roleShort, playerLabelShort } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
+import { getActiveStepKeys, NIGHT_ACTION_STEPS } from "@/components/nightActionRegistry"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -513,25 +514,12 @@ const stepKeys = computed(() => {
   if (state.finished) return ["end"]
   if (state.phase === "idle") return ["idle"]
   if (state.phase === "night") {
-    const ks: string[] = []
-    const roles = refs.getBoardRoles(state)
-    const wolfQuotaN = roles.filter((r) => refs.isWolfRole(r)).length
-    const wolfDone = state.players.filter((p) => refs.isWolfRole(p.role)).length >= wolfQuotaN
-    const aliveWolf = state.players.some((p) => p.alive && refs.isWolfRole(p.role))
-    // 行动顺序：丘比特(仅首夜) → 情侣认亲(仅首夜) → 守卫 → 狼人 → 女巫 → 预言家 → 白痴(仅首夜) → 骑士(仅首夜) → 猎人状态确认(每夜) → 竞选警长(首夜) → 天亮
-    if (state.round <= 1 && roles.includes("丘比特") && !uiDone.value.cupid) ks.push("cupid")
-    if (state.round <= 1 && state.lovers.length === 2 && !uiDone.value.loversMeet) ks.push("loversMeet")
-    if (roles.includes("守卫") && !state.nightSteps.guard && !uiDone.value.guard) ks.push("guard")
-    if (wolfQuotaN > 0 && (!wolfDone || aliveWolf) && !uiDone.value.wolf) ks.push("wolf")
-    if (roles.includes("女巫") && !state.nightSteps.witch && !uiDone.value.witch) ks.push("witch")
-    if (roles.includes("预言家") && !uiDone.value.prophet) ks.push("prophet")
-    if (state.round <= 1 && roles.includes("白痴") && !uiDone.value.idiotOpen) ks.push("idiotOpen")
-    if (state.round <= 1 && roles.includes("骑士") && !uiDone.value.knight) ks.push("knight")
-    if (roles.includes("猎人") && !uiDone.value.hunterOpen && (!hunterObj.value || hunterObj.value.alive)) ks.push("hunterOpen")
-    // 首夜所有角色睁眼后先竞选警长，再天亮公布死讯
-    if (state.round <= 1 && !uiDone.value.jinghui) ks.push("jinghui")
-    if (ks.length === 0) ks.push("dawn")
-    return ks
+    // 使用注册表动态获取夜间步骤（Phase 2.3）
+    const nightKeys = getActiveStepKeys(state)
+    // 兼容：首夜竞选警长在所有夜间步骤之后
+    if (state.round <= 1 && !uiDone.value.jinghui) nightKeys.push("jinghui")
+    if (nightKeys.length === 0) nightKeys.push("dawn")
+    return nightKeys
   }
   if (state.skipVote) {
     // 自爆跳过投票：但若存在待开枪（如白狼王带走猎人/狼王），先处理枪再入夜
