@@ -4,7 +4,7 @@ import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { roleShort, playerLabelShort } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
-import { getActiveNightStepKeys } from "@/components/nightActionRegistry"
+import { computeStepKeys } from "@/game/step-flow"
 import { playSfx, type SfxName } from "@/utils/sfx"
 import { startCountdown, stopCountdown } from "@/utils/countdown"
 import SeatBoard from "@/components/SeatBoard.vue"
@@ -521,43 +521,7 @@ function markDoneStep(key: string) {
   markDone(key)
 }
 
-const stepKeys = computed(() => {
-  if (state.finished) return ["end"]
-  if (state.phase === "idle") return ["idle"]
-  if (state.phase === "night") {
-    // 夜间步骤顺序见 nightActionRegistry（须与历史行为一致）
-    const ks = getActiveNightStepKeys({
-      boardRoles: refs.getBoardRoles(state),
-      uiDone: uiDone.value,
-      nightSteps: state.nightSteps,
-      round: state.round,
-      lovers: state.lovers,
-      isWolfRole: refs.isWolfRole,
-      players: state.players,
-      hunterExists: !!hunterObj.value,
-      hunterAlive: !!hunterObj.value?.alive,
-    })
-    // 首夜所有角色睁眼后先竞选警长，再天亮公布死讯
-    if (state.round <= 1 && !uiDone.value.jinghui) ks.push("jinghui")
-    if (ks.length === 0) ks.push("dawn")
-    return ks
-  }
-  if (state.skipVote) {
-    // 自爆跳过投票：但若存在待开枪（如白狼王带走猎人/狼王），先处理枪再入夜
-    if (state.wolfKingShotPending) return ["wolfkingShot"]
-    if (state.hunterShotPending) return ["hunter"]
-    return ["night"]
-  }
-  const ks: string[] = []
-  const roles = refs.getBoardRoles(state)
-  if (state.wolfKingShotPending) ks.push("wolfkingShot")
-  if (state.hunterShotPending) ks.push("hunter")
-  if (state.round <= 1 && roles.includes("预言家") && !uiDone.value.prophetReport) ks.push("prophetReport")
-  if (!uiDone.value.speech) ks.push("speech")
-  if (!uiDone.value.vote) ks.push("vote")
-  ks.push("night")
-  return ks
-})
+const stepKeys = computed(() => computeStepKeys(state))
 
 const currentStep = computed(() => {
   if (state.finished) return "end"
