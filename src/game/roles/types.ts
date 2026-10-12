@@ -47,7 +47,7 @@ export interface RoleDef {
   short: string
 
   /** 夜晚行动步骤（Phase 4a 起驱动流程编排） */
-  nightStep?: {
+  nightStep: {
     /** 行动顺序，数字小者先行动（替代 stepKeys 硬编码推送位置） */
     order: number
     /** 完成标记键（写入 state.uiDone[key]） */
@@ -58,7 +58,7 @@ export interface RoleDef {
   /** 夜晚结算优先级（Phase 4a 起驱动 resolveOrder 结算） */
   resolveOrder?: number
   /** 该角色夜晚意图字段名（Phase 4a 起声明式重置） */
-  intentKeys?: readonly string[]
+  intentKeys: readonly string[]
 
   /** 自定胜负规则（Phase 4a 起参与 checkWin 规则管线） */
   winRule?: {

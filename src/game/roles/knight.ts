@@ -12,6 +12,8 @@ export class KnightRole extends BaseRole {
     unique: true,
     emoji: "⚔️",
     short: "骑",
+    nightStep: { order: 40, key: "knight" },
+    intentKeys: [],
   }
 
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {

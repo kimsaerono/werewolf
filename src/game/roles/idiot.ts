@@ -13,6 +13,8 @@ export class IdiotRole extends BaseRole {
     unique: true,
     emoji: "🙊",
     short: "痴",
+    nightStep: { order: 41, key: "idiotOpen" },
+    intentKeys: [],
   }
 
   /** 白痴被放逐时翻牌免死（仅一次） */

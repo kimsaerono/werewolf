@@ -19,17 +19,17 @@ import { onBeforeDeath, onAfterDeath } from "../logic"
  * 新增角色：往下方数组追加一条 RoleDef 即可，核心流程代码无需改动。
  */
 export const BUILTIN_ROLES: RoleDef[] = [
-  { id: "狼人", camp: "wolf", unique: false, emoji: "🐺", short: "狼" },
-  { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼" },
-  { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王" },
-  { id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预" },
-  { id: "女巫", camp: "god", unique: true, emoji: "🧙", short: "巫" },
-  { id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎" },
-  { id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守" },
-  { id: "骑士", camp: "god", unique: true, emoji: "⚔️", short: "骑" },
-  { id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴" },
-  { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民" },
-  { id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘" },
+  { id: "狼人", camp: "wolf", unique: false, emoji: "🐺", short: "狼", nightStep: { order: 10, key: "wolf" }, intentKeys: ["nightWolfKill"] },
+  { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", nightStep: { order: 11, key: "whitewolfking" }, intentKeys: [] },
+  { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王", nightStep: { order: 12, key: "wolfking" }, intentKeys: [] },
+  { id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", nightStep: { order: 15, key: "prophet" }, intentKeys: ["nightProphetCheck"] },
+  { id: "女巫", camp: "god", unique: true, emoji: "🧙", short: "巫", nightStep: { order: 30, key: "witch" }, intentKeys: ["nightWitchSave", "nightWitchPoison", "nightUsedDrug"] },
+  { id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", nightStep: { order: 35, key: "hunterOpen" }, intentKeys: [] },
+  { id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守", nightStep: { order: 20, key: "guard" }, intentKeys: ["nightGuardTarget"] },
+  { id: "骑士", camp: "god", unique: true, emoji: "⚔️", short: "骑", nightStep: { order: 40, key: "knight" }, intentKeys: [] },
+  { id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", nightStep: { order: 41, key: "idiotOpen" }, intentKeys: [] },
+  { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", nightStep: { order: 50, key: "villager" }, intentKeys: [] },
+  { id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘", nightStep: { order: 5, key: "cupid" }, intentKeys: ["lovers"] },
 ]
 
 // ===================== 角色实例注册（Phase 2：行为迁移）=====================

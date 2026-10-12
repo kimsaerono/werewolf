@@ -13,6 +13,8 @@ export class WolfKingRole extends BaseRole {
     unique: true,
     emoji: "🔫🐺",
     short: "狼王",
+    nightStep: { order: 12, key: "wolfking" },
+    intentKeys: [],
   }
 
   /** 狼王死亡前：被毒时标记吞枪 */

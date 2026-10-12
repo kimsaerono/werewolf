@@ -12,6 +12,8 @@ export class VillagerRole extends BaseRole {
     unique: false,
     emoji: "👤",
     short: "民",
+    nightStep: { order: 50, key: "villager" },
+    intentKeys: [],
   }
 
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
