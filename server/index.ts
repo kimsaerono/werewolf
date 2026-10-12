@@ -16,6 +16,7 @@ import {
   legacyBuildMonthInitOps
 } from "./recordBlock"
 import { quarterKeyOf, quarterLater, quarterBefore, rankHasHistory, readConfigSeason, archiveRowFor, rankResetRows, archiveHeaderRow, CONFIG_SEASON_CELL, CONFIG_SEASON_LABEL } from "./seasonArchive"
+import { getCurrentVersion, listVersions, switchVersion } from "./version"
 
 const PORT = Number(process.env.PORT || 3457)
 
@@ -61,6 +62,29 @@ function runLark(args: string[]): Promise<LarkResult> {
 }
 
 app.get("/api/health", (c) => c.json({ ok: true }))
+
+// ===== 版本管理 API =====
+app.get("/api/version/current", (c) => {
+  const v = getCurrentVersion()
+  return c.json(v)
+})
+
+app.get("/api/version/list", (c) => {
+  const list = listVersions()
+  return c.json(list)
+})
+
+app.post("/api/version/switch", async (c) => {
+  try {
+    const body = await c.req.json()
+    const target = body?.target
+    if (!target) return c.json({ success: false, error: "target 不能为空" }, 400)
+    const result = switchVersion(target)
+    return c.json(result)
+  } catch (e) {
+    return c.json({ success: false, error: (e as Error).message }, 500)
+  }
+})
 
 // 测试同步：不改数据，仅确认服务可达
 app.post("/api/sync-test", (c) => c.json({ ok: true, test: true }))
