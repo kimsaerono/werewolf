@@ -2,6 +2,8 @@ name: Deploy Pages
 on:
   push:
     branches: [ master, main ]
+    # 打稳定版标签也自动部署：否则标签晚于上次部署创建，线上版本号会停留在旧 tag
+    tags: [ 'stable-v*' ]
   workflow_dispatch:
 permissions:
   contents: read
