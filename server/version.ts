@@ -5,7 +5,6 @@ export interface VersionInfo {
   commit: string
   dirty: boolean
   date?: string
-  isBranch?: boolean
   current?: boolean
 }
 
@@ -51,7 +50,6 @@ export function listVersions(): VersionInfo[] {
         commit: commit.slice(0, 7),
         dirty: false,
         date,
-        isBranch: false,
         current: commit === headCommit,
       })
     }

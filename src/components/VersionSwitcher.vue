@@ -11,18 +11,8 @@ onMounted(async () => {
   await Promise.all([fetchCurrent(), fetchVersions()])
 })
 
-async function handleSwitch(target: string) {
-  if (target === currentVersion.value) return
-
+async function doSwitch(target: string) {
   try {
-    await Modal.confirm({
-      title: "确认切换版本",
-      content: `确定切换到版本 ${target}？切换后需重启服务才能生效。`,
-      okText: "切换",
-      cancelText: "取消",
-      okType: "danger",
-    })
-
     const res = await switchVersion(target)
     if (res.needsRestart) {
       Modal.info({
@@ -46,8 +36,21 @@ async function handleSwitch(target: string) {
       })
     }
   } catch (e: any) {
-    if (e !== "cancel") message.error(e.message || "切换失败")
+    message.error(e.message || "切换失败")
   }
+}
+
+function handleSwitch(target: string) {
+  if (target === currentVersion.value) return
+
+  Modal.confirm({
+    title: "确认切换版本",
+    content: `确定切换到版本 ${target}？切换后需重启服务才能生效。`,
+    okText: "切换",
+    cancelText: "取消",
+    okType: "danger",
+    onOk: () => doSwitch(target),
+  })
 }
 
 function handleMenuVisibleChange(visible: boolean) {

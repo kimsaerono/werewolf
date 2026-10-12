@@ -4,8 +4,7 @@
  *
  * 用法：
  *   bun run version                 # 显示当前版本 + 可用版本
- *   bun run version stable-v1.2     # 切换到指定 tag/分支
- *   bun run version main            # 切回 main
+ *   bun run version stable-v1.2     # 切换到指定 tag
  */
 import { execSync } from "node:child_process"
 
@@ -32,13 +31,7 @@ function list(): string[] {
   const head = run("git rev-parse HEAD")
   for (const tag of run("git tag -l 'stable-v*' --sort=-v:refname").split("\n").filter(Boolean)) {
     const commit = run(`git rev-list -1 ${tag}`)
-    out.push(`${tag === "" ? tag : tag}  ${commit.slice(0, 7)}${commit === head ? "  ← 当前" : ""}`)
-  }
-  for (const name of ["main", "master"]) {
-    try {
-      const commit = run(`git rev-parse ${name}`)
-      out.push(`${name}  ${commit.slice(0, 7)}${commit === head ? "  ← 当前" : ""}`)
-    } catch {}
+    out.push(`${tag}  ${commit.slice(0, 7)}${commit === head ? "  ← 当前" : ""}`)
   }
   return out
 }
@@ -51,7 +44,7 @@ function main() {
     console.log(`当前版本: ${c.version} (${c.commit})${c.dirty ? " [有未提交变更]" : ""}`)
     console.log("\n可用版本:")
     for (const line of list()) console.log("  " + line)
-    console.log("\n用法: bun run version <tag|branch>")
+    console.log("\n用法: bun run version <tag>")
     return
   }
 
