@@ -10,6 +10,8 @@ const currentInfo = ref<CurrentInfo>({ version: "", commit: "", dirty: false })
 const availableVersions = ref<Array<{ label: string; value: string; commit: string; current: boolean }>>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
+/** 本地版本服务是否可用：null=未知，true=可用（可切换），false=不可用（静态托管，仅只读展示） */
+const apiAvailable = ref<boolean | null>(null)
 
 /**
  * 把 git describe 输出拆成「版本号 + 提交」：
@@ -39,8 +41,10 @@ export function useVersion() {
         commit: v.commit || "",
         current: !!v.current,
       }))
+      apiAvailable.value = true
     } catch (e) {
       error.value = (e as Error).message
+      apiAvailable.value = false
     } finally {
       loading.value = false
     }
@@ -52,8 +56,11 @@ export function useVersion() {
       if (!res.ok) throw new Error("获取当前版本失败")
       const data = await res.json()
       currentInfo.value = { version: data.version, commit: data.commit || "", dirty: !!data.dirty }
+      if (apiAvailable.value === null) apiAvailable.value = true
     } catch {
+      // 静态托管（GitHub Pages）无本地服务：回退到构建时注入的版本号，仅只读展示
       currentInfo.value = { version: __APP_VERSION__ || "unknown", commit: "", dirty: false }
+      if (apiAvailable.value === null) apiAvailable.value = false
     }
   }
 
@@ -92,6 +99,7 @@ export function useVersion() {
     availableVersions,
     loading,
     error,
+    apiAvailable,
     parsed,
     fetchVersions,
     fetchCurrent,

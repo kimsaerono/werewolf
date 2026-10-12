@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from "vue"
 import { useVersion } from "@/composables/useVersion"
 import { message } from "ant-design-vue"
 
-const { currentVersion, availableVersions, loading, parsed, fetchVersions, fetchCurrent, switchVersion } = useVersion()
+const { currentVersion, availableVersions, loading, parsed, apiAvailable, fetchVersions, fetchCurrent, switchVersion } = useVersion()
 
 const currentLabel = computed(() => parsed.value.label)
 const menuVisible = ref(false)
@@ -84,7 +84,17 @@ function handleRefresh() {
 </script>
 
 <template>
+  <!-- 无本地服务（如 GitHub Pages 静态托管）：只读版本徽标 -->
+  <a-tooltip v-if="apiAvailable !== true" title="当前为静态部署，版本切换需在本地运行服务（bun run dev）">
+    <a-tag class="version-badge">
+      <span class="breath-dot"></span>
+      <span class="version-text">{{ currentLabel || "加载中..." }}</span>
+    </a-tag>
+  </a-tooltip>
+
+  <!-- 本地服务可用：可切换下拉 -->
   <a-dropdown
+    v-else
     :trigger="['click']"
     :open="menuVisible"
     @openChange="handleMenuVisibleChange"
@@ -174,6 +184,14 @@ function handleRefresh() {
 </template>
 
 <style scoped>
+.version-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  cursor: default;
+}
+
 .version-trigger {
   display: inline-flex;
   align-items: center;
