@@ -57,24 +57,6 @@ export function listVersions(): VersionInfo[] {
     }
   } catch {}
 
-  try {
-    const branches = run("git branch -l --format='%(refname:short) %(objectname)'")
-    for (const line of branches.split("\n").filter(Boolean)) {
-      const [name, commit] = line.split(" ")
-      if (name === "main" || name === "master") {
-        const date = run(`git log -1 --format=%ci ${name}`)
-        result.push({
-          version: name,
-          commit: commit.slice(0, 7),
-          dirty: false,
-          date,
-          isBranch: true,
-          current: commit === headCommit,
-        })
-      }
-    }
-  } catch {}
-
   return result
 }
 

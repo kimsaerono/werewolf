@@ -7,7 +7,6 @@ const { currentVersion, availableVersions, loading, error, parsed, fetchVersions
 
 const showDirty = computed(() => parsed.value.dirty)
 const currentLabel = computed(() => parsed.value.label)
-const currentCommit = computed(() => parsed.value.commit)
 const menuVisible = ref(false)
 
 onMounted(async () => {
@@ -71,14 +70,13 @@ function handleRefresh() {
     :open="menuVisible"
     @openChange="handleMenuVisibleChange"
   >
-    <a-button type="primary" :loading="loading" class="version-trigger">
+    <a-button type="primary" size="small" :loading="loading" class="version-trigger">
       <span v-if="showDirty" class="dirty-badge">●</span>
       <span class="version-text">{{ currentLabel || "加载中..." }}</span>
-      <span class="commit-hash">({{ currentCommit }})</span>
       <span class="arrow">▼</span>
     </a-button>
     <template #overlay>
-      <a-menu :style="{ width: 220 }">
+      <a-menu :style="{ width: 200 }">
         <a-menu-item
           v-for="v in availableVersions"
           :key="v.value"
@@ -86,6 +84,7 @@ function handleRefresh() {
           @click="handleSwitch(v.value)"
         >
           <span class="item-label">{{ v.label }}</span>
+          <span class="item-commit">{{ v.commit }}</span>
           <span v-if="v.current" class="current-tag">当前</span>
         </a-menu-item>
         <a-menu-divider />
@@ -102,25 +101,17 @@ function handleRefresh() {
 .version-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-width: 180px;
-  justify-content: flex-start;
+  gap: 5px;
 }
 
 .version-text {
   font-family: monospace;
   font-size: 12px;
   font-weight: 500;
+  max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 150px;
-}
-
-.commit-hash {
-  font-family: monospace;
-  font-size: 11px;
-  opacity: 0.7;
 }
 
 .dirty-badge {
@@ -135,7 +126,7 @@ function handleRefresh() {
 }
 
 .arrow {
-  font-size: 10px;
+  font-size: 9px;
   opacity: 0.7;
 }
 
@@ -147,6 +138,13 @@ function handleRefresh() {
 .item-label {
   font-family: monospace;
   font-size: 12px;
+}
+
+.item-commit {
+  margin-left: 8px;
+  font-family: monospace;
+  font-size: 11px;
+  opacity: 0.45;
 }
 
 .current-tag {

@@ -7,7 +7,7 @@ interface CurrentInfo {
 }
 
 const currentInfo = ref<CurrentInfo>({ version: "", commit: "", dirty: false })
-const availableVersions = ref<Array<{ label: string; value: string; current: boolean }>>([])
+const availableVersions = ref<Array<{ label: string; value: string; commit: string; current: boolean }>>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -36,6 +36,7 @@ export function useVersion() {
       availableVersions.value = data.map((v: any) => ({
         label: v.isBranch ? `${v.version} (分支)` : v.version,
         value: v.version,
+        commit: v.commit || "",
         current: !!v.current,
       }))
     } catch (e) {
