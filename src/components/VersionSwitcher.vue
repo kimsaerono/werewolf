@@ -1,63 +1,61 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useVersion } from "@/composables/useVersion"
-import { message, Modal } from "ant-design-vue"
+import { message } from "ant-design-vue"
 
-const { currentVersion, availableVersions, loading, error, parsed, fetchVersions, fetchCurrent, switchVersion } = useVersion()
+const { currentVersion, availableVersions, loading, parsed, fetchVersions, fetchCurrent, switchVersion } = useVersion()
 
 const currentLabel = computed(() => parsed.value.label)
 const menuVisible = ref(false)
+
+// 底部半屏抽屉
+const sheetVisible = ref(false)
+const sheetState = ref<"confirm" | "result">("confirm")
+const sheetTarget = ref("")
+const switching = ref(false)
+
 onMounted(async () => {
   await Promise.all([fetchCurrent(), fetchVersions()])
 })
 
-async function doSwitch(target: string) {
+function handleMenuVisibleChange(visible: boolean) {
+  menuVisible.value = visible
+  if (visible) fetchVersions()
+}
+
+/** 点击 tag：先收起下拉，再滑出底部确认抽屉 */
+function handleSwitch(target: string) {
+  if (target === currentVersion.value) return
+  menuVisible.value = false
+  sheetTarget.value = target
+  sheetState.value = "confirm"
+  sheetVisible.value = true
+}
+
+async function confirmSwitch() {
+  switching.value = true
   try {
-    const res = await switchVersion(target)
+    const res = await switchVersion(sheetTarget.value)
     if (res.needsRestart) {
-      Modal.info({
-        title: "切换完成，需重启服务",
-        width: "min(560px, 92vw)",
-        content: h("div", { style: "line-height: 1.8; font-size: 13px" }, [
-          h("p", null, [
-            "已切换到 ",
-            h("b", null, target),
-            "，代码已更新。",
-          ]),
-          h("p", { style: "margin-top: 8px" }, [h("b", null, "请手动重启服务：")]),
-          h("ol", { style: "margin: 4px 0 0 18px; padding: 0" }, [
-            h("li", null, ["在终端按 ", h("kbd", null, "Ctrl+C"), " 停止当前服务"]),
-            h("li", null, ["重新运行 ", h("code", null, "bun run server")]),
-          ]),
-          h("p", { style: "margin-top: 8px; color: #888" }, "重启后版本将生效，对局状态会自动恢复。"),
-        ]),
-        okText: "知道了",
-        onOk: () => window.location.reload(),
-      })
+      sheetState.value = "result"
+    } else {
+      message.error(res.error || "切换失败")
+      sheetVisible.value = false
     }
   } catch (e: any) {
     message.error(e.message || "切换失败")
+    sheetVisible.value = false
+  } finally {
+    switching.value = false
   }
 }
 
-function handleSwitch(target: string) {
-  if (target === currentVersion.value) return
-
-  Modal.confirm({
-    title: "确认切换版本",
-    content: `确定切换到版本 ${target}？切换后需重启服务才能生效。`,
-    okText: "切换",
-    cancelText: "取消",
-    okType: "danger",
-    onOk: () => doSwitch(target),
-  })
+function closeSheet() {
+  sheetVisible.value = false
 }
 
-function handleMenuVisibleChange(visible: boolean) {
-  menuVisible.value = visible
-  if (visible) {
-    fetchVersions()
-  }
+function reload() {
+  window.location.reload()
 }
 
 function handleRefresh() {
@@ -96,6 +94,51 @@ function handleRefresh() {
       </a-menu>
     </template>
   </a-dropdown>
+
+  <!-- 底部上滑半屏抽屉 -->
+  <a-drawer
+    v-model:open="sheetVisible"
+    placement="bottom"
+    :height="sheetState === 'confirm' ? 260 : 340"
+    :closable="false"
+    root-class-name="version-sheet"
+    :body-style="{ padding: 0 }"
+  >
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+
+      <!-- 确认 -->
+      <template v-if="sheetState === 'confirm'">
+        <div class="sheet-title">确认切换版本</div>
+        <div class="sheet-desc">
+          确定切换到 <b class="hl">{{ sheetTarget }}</b> ？
+          <br />
+          切换后需<b>重启服务</b>才能生效。
+        </div>
+        <div class="sheet-actions">
+          <a-button block size="large" @click="closeSheet">取消</a-button>
+          <a-button block size="large" type="primary" danger :loading="switching" @click="confirmSwitch">切换</a-button>
+        </div>
+      </template>
+
+      <!-- 完成 -->
+      <template v-else>
+        <div class="sheet-title">✅ 切换完成</div>
+        <div class="sheet-desc">
+          已切换到 <b class="hl">{{ sheetTarget }}</b>，代码已更新。
+        </div>
+        <div class="sheet-steps">
+          <div class="sheet-steps-title">请手动重启服务：</div>
+          <div class="sheet-step">1. 在终端按 <kbd>Ctrl+C</kbd> 停止当前服务</div>
+          <div class="sheet-step">2. 重新运行 <code>bun run server</code></div>
+          <div class="sheet-step-hint">重启后版本将生效，对局状态会自动恢复。</div>
+        </div>
+        <div class="sheet-actions">
+          <a-button block size="large" type="primary" @click="reload">知道了，刷新页面</a-button>
+        </div>
+      </template>
+    </div>
+  </a-drawer>
 </template>
 
 <style scoped>
@@ -164,5 +207,84 @@ function handleRefresh() {
   color: #1677ff;
   background: rgba(22, 119, 255, 0.1);
   border-radius: 3px;
+}
+
+/* ===== 底部抽屉内容 ===== */
+.sheet {
+  padding: 8px 22px 26px;
+}
+
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(140, 140, 140, 0.4);
+  margin: 6px auto 16px;
+}
+
+.sheet-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 10px;
+}
+
+.sheet-desc {
+  font-size: 14px;
+  line-height: 1.7;
+  color: #bbb;
+}
+
+.sheet-desc .hl {
+  color: #4d9bff;
+  font-family: monospace;
+}
+
+.sheet-steps {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sheet-steps-title {
+  font-size: 13px;
+  color: #ddd;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.sheet-step {
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.9;
+}
+
+.sheet-step-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #888;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.sheet-actions :deep(.ant-btn) {
+  flex: 1;
+}
+</style>
+
+<style>
+/* 抽屉需挂到 body，用全局样式圆角 + 深色底 */
+.version-sheet .ant-drawer-content {
+  border-radius: 18px 18px 0 0;
+  background: #171b28;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
+}
+.version-sheet .ant-drawer-header {
+  display: none;
 }
 </style>
