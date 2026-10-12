@@ -34,7 +34,7 @@ export function useVersion() {
       if (!res.ok) throw new Error("获取版本列表失败")
       const data = await res.json()
       availableVersions.value = data.map((v: any) => ({
-        label: v.isBranch ? `${v.version} (分支)` : v.version,
+        label: v.version,
         value: v.version,
         commit: v.commit || "",
         current: !!v.current,

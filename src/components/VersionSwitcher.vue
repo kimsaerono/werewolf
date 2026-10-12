@@ -5,10 +5,8 @@ import { message, Modal } from "ant-design-vue"
 
 const { currentVersion, availableVersions, loading, error, parsed, fetchVersions, fetchCurrent, switchVersion } = useVersion()
 
-const showDirty = computed(() => parsed.value.dirty)
 const currentLabel = computed(() => parsed.value.label)
 const menuVisible = ref(false)
-
 onMounted(async () => {
   await Promise.all([fetchCurrent(), fetchVersions()])
 })
@@ -71,7 +69,7 @@ function handleRefresh() {
     @openChange="handleMenuVisibleChange"
   >
     <a-button type="primary" size="small" :loading="loading" class="version-trigger">
-      <span v-if="showDirty" class="dirty-badge">●</span>
+      <span class="breath-dot"></span>
       <span class="version-text">{{ currentLabel || "加载中..." }}</span>
       <span class="arrow">▼</span>
     </a-button>
@@ -114,15 +112,24 @@ function handleRefresh() {
   white-space: nowrap;
 }
 
-.dirty-badge {
-  color: #ff4d4f;
-  font-size: 10px;
-  animation: pulse 1.5s infinite;
+.breath-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #52c41a;
+  box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.6);
+  animation: breath 1.6s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+@keyframes breath {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.5);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px rgba(82, 196, 26, 0);
+  }
 }
 
 .arrow {
