@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { execSync } from "node:child_process"
-import { existsSync, mkdirSync, writeFileSync, cpSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync, cpSync, rmSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 
 function run(cmd: string, cwd?: string) {
@@ -36,6 +36,9 @@ async function main() {
   const currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim()
   const currentCommit = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim()
 
+  // 暂存工作区变更，避免切分支冲突
+  run("git stash push -u -m 'build-all-versions auto-stash'")
+
   const versions: { version: string; path: string; tag: string; date: string }[] = []
 
   // 1. 构建 main 分支（最新版）-> dist/
@@ -50,17 +53,25 @@ async function main() {
   // 2. 构建每个 stable-v* 标签 -> dist/vX.Y/
   for (const tag of tags) {
     const version = getVersionFromTag(tag)
+    const tempDir = join(repoRoot, `dist-temp-${version}`)
     const outDir = join(distDir, version)
+
     console.log(`\n=== Building ${tag} -> ${outDir} ===`)
 
     run(`git checkout ${tag}`)
     run("bun install")
     const base = `/werewolf/${version}/`
-    run(`VITE_BASE=${base} bun run build`)
+    // 直接构建到临时目录，避免污染主 dist/
+    run(`VITE_BASE=${base} bun run build --outDir ${tempDir}`)
 
-    // 复制产物到 dist/vX.Y/
+    // 将临时目录内容复制到最终位置
     if (existsSync(outDir)) rmSync(outDir, { recursive: true })
-    cpSync(join(repoRoot, "dist"), outDir, { recursive: true })
+    mkdirSync(outDir, { recursive: true })
+    for (const file of readdirSync(tempDir)) {
+      cpSync(join(tempDir, file), join(outDir, file), { recursive: true })
+    }
+    // 清理临时目录
+    rmSync(tempDir, { recursive: true })
 
     // 记录版本信息
     const tagDate = execSync(`git log -1 --format=%cI ${tag}`, { encoding: "utf-8" }).trim()
@@ -78,6 +89,8 @@ async function main() {
 
   // 4. 切回原分支
   run(`git checkout ${currentBranch}`)
+  // 恢复暂存的变更
+  run("git stash pop || true")
 
   console.log("\n✅ All versions built to dist/")
 }
