@@ -92,6 +92,7 @@ onMounted(() => {
             :key="v.version"
             :disabled="isCurrent(v)"
             @click="navigateToVersion(v)"
+            :class="{ 'current-version': isCurrent(v) }"
           >
             <span class="item-label">{{ getVersionLabel(v) }}</span>
             <span v-if="isCurrent(v)" class="current-tag">当前</span>
@@ -179,5 +180,12 @@ onMounted(() => {
   color: #1677ff;
   background: rgba(22, 119, 255, 0.1);
   border-radius: 3px;
+}
+.current-version .item-label {
+  color: #888;
+}
+.current-version .current-tag {
+  background: rgba(255, 255, 255, 0.1);
+  color: #999;
 }
 </style>

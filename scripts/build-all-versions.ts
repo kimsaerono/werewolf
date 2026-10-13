@@ -79,9 +79,19 @@ async function main() {
   }
 
   // 3. 生成 versions.json 清单
+  // 去重：如果 main 的版本号与最新 tag 相同，只保留 tag 条目
+  const uniqueVersions = versions.filter((v, i, arr) => {
+    // 如果是 main 且版本号与某个 tag 条目相同，去掉 main
+    if (v.tag === "main") {
+      const tagEntry = arr.find(x => x.tag !== "main" && x.version === v.version)
+      return !tagEntry
+    }
+    return true
+  })
+
   const manifest = {
     latest: mainVersion,
-    versions: versions.sort((a, b) => b.date.localeCompare(a.date)),
+    versions: uniqueVersions.sort((a, b) => b.date.localeCompare(a.date)),
   }
   writeFileSync(join(distDir, "versions.json"), JSON.stringify(manifest, null, 2))
   console.log("\n=== versions.json ===")
