@@ -44,6 +44,22 @@ export abstract class BaseRole {
   }
 
   /**
+   * 是否视为"神牌"（狼王枪带人计分口径）。
+   * 默认取 def.countsAsGod，未显式声明时按 camp === "god" 判定。
+   */
+  countsAsGod(): boolean {
+    return this.def.countsAsGod ?? this.def.camp === "god"
+  }
+
+  /**
+   * 被白狼王自爆带走时，给白狼王带来的计分条目（null = 不计分）。
+   * 默认不计分；女巫/守卫/未开技能骑士等角色按规则覆盖。
+   */
+  selfBombScore(state: GameState): ScoreEntry | null {
+    return null
+  }
+
+  /**
    * 胜负判定：返回该角色的胜负判定结果。
    * 返回 null 表示该角色不参与胜负判定（由其他角色或默认规则决定）。
    */

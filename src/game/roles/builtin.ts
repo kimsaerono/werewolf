@@ -27,7 +27,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
   { id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", nightStep: { order: 35, key: "hunterOpen" }, intentKeys: [] },
   { id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守", nightStep: { order: 20, key: "guard" }, intentKeys: ["nightGuardTarget"] },
   { id: "骑士", camp: "god", unique: true, emoji: "⚔️", short: "骑", nightStep: { order: 40, key: "knight" }, intentKeys: [] },
-  { id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", nightStep: { order: 41, key: "idiotOpen" }, intentKeys: [] },
+  { id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", countsAsGod: false, nightStep: { order: 41, key: "idiotOpen" }, intentKeys: [] },
   { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", nightStep: { order: 50, key: "villager" }, intentKeys: [] },
   { id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘", nightStep: { order: 5, key: "cupid" }, intentKeys: ["lovers"] },
 ]

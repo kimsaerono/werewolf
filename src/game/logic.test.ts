@@ -355,6 +355,123 @@ describe("算分引擎", () => {
   })
 })
 
+describe("狼王枪计分（神牌+0.5 / 狼-1 / 其余不加分）", () => {
+  function withWolfKing() {
+    const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "平民", "平民"])
+    started(st)
+    const wk = byRole(st, "狼王")!
+    wk.alive = false
+    st.wolfKingShotPending = true
+    return { st, wk }
+  }
+
+  it("枪带神牌（预言家）+0.5", () => {
+    const { st, wk } = withWolfKing()
+    const tar = byRole(st, "预言家")!
+    expect(wolfKingShootConfirm(st, tar.name)).toBeNull()
+    recalcScore(st)
+    expect(wk.scoreRound).toBe(0.5)
+  })
+
+  it("枪带狼人 -1", () => {
+    const { st, wk } = withWolfKing()
+    expect(wolfKingShootConfirm(st, byRole(st, "狼人")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wk.scoreRound).toBe(-1)
+  })
+
+  it("枪带平民 不加分", () => {
+    const { st, wk } = withWolfKing()
+    expect(wolfKingShootConfirm(st, byRole(st, "平民")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wk.scoreRound).toBe(0)
+  })
+
+  it("枪带白痴（名义神职但不计神牌）不加分", () => {
+    const { st, wk } = withWolfKing()
+    expect(wolfKingShootConfirm(st, byRole(st, "白痴")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wk.scoreRound).toBe(0)
+  })
+
+  it("枪带第三方（丘比特）不加分", () => {
+    const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
+    started(st)
+    const wk = byRole(st, "狼王")!
+    wk.alive = false
+    st.wolfKingShotPending = true
+    expect(wolfKingShootConfirm(st, byRole(st, "丘比特")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wk.scoreRound).toBe(0)
+  })
+})
+
+describe("白狼王自爆带人计分（带药女巫/守卫/未开技能骑士+0.5，其余不加分）", () => {
+  function withWWK() {
+    const st = setup(["白狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "骑士", "平民", "平民", "平民"])
+    started(st)
+    const wwk = byRole(st, "白狼王")!
+    return { st, wwk }
+  }
+
+  it("带未用药女巫 +0.5，且算分不改动女巫药状态", () => {
+    const { st, wwk } = withWWK()
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "女巫")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0.5)
+    expect(st.witchSaveUsed).toBe(false)
+    expect(st.witchPoisonUsed).toBe(false)
+  })
+
+  it("带只剩一瓶药的女巫 +0.5", () => {
+    const { st, wwk } = withWWK()
+    st.witchSaveUsed = true
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "女巫")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0.5)
+  })
+
+  it("带两瓶药都用完的女巫 不加分", () => {
+    const { st, wwk } = withWWK()
+    st.witchSaveUsed = true
+    st.witchPoisonUsed = true
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "女巫")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0)
+  })
+
+  it("带守卫 +0.5", () => {
+    const { st, wwk } = withWWK()
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "守卫")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0.5)
+  })
+
+  it("带未开技能骑士 +0.5", () => {
+    const { st, wwk } = withWWK()
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "骑士")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0.5)
+  })
+
+  it("带已开技能骑士 不加分", () => {
+    const { st, wwk } = withWWK()
+    st.knightDuelUsed = true
+    expect(wolfKingBaoZha(st, wwk.name, byRole(st, "骑士")!.name)).toBeNull()
+    recalcScore(st)
+    expect(wwk.scoreRound).toBe(0)
+  })
+
+  it("带预言家/猎人/平民 不加分", () => {
+    for (const role of ["预言家", "猎人", "平民"]) {
+      const { st, wwk } = withWWK()
+      expect(wolfKingBaoZha(st, wwk.name, byRole(st, role)!.name)).toBeNull()
+      recalcScore(st)
+      expect(wwk.scoreRound).toBe(0)
+    }
+  })
+})
+
 describe("胜负判定", () => {
   it("空对局不误判", () => {
     const st = defaultState()

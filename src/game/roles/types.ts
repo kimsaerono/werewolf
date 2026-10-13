@@ -50,8 +50,14 @@ export interface RoleDef {
   emoji: string
   /** 角色简写（替代 ROLE_SHORT） */
   short: string
+  /**
+   * 是否视为"神牌"（狼王枪带人计分口径）。
+   * 默认取 camp === "god"；白痴等名义神职但按口径不算神牌的角色显式设为 false。
+   */
+  countsAsGod?: boolean
 
   /** 夜晚行动步骤（Phase 4a 起驱动流程编排） */
+
   nightStep: {
     /** 行动顺序，数字小者先行动（替代 stepKeys 硬编码推送位置） */
     order: number

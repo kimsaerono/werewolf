@@ -41,6 +41,11 @@ export class GuardRole extends BaseRole {
     return ((player.mark.guardHitCount as number) || 0) > 0
   }
 
+  /** 被白狼王自爆带走：守卫视为关键神职，白狼王 +0.5 */
+  selfBombScore(_state: GameState): ScoreEntry | null {
+    return { reason: "自爆带守卫", delta: 0.5 }
+  }
+
   extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
     if (!player.alive) return {}
     // 计算 guardLast（上晚守的是哪一类）

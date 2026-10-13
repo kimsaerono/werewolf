@@ -56,6 +56,12 @@ export class WitchRole extends BaseRole {
     return !!(m.witchPoWolf || m.witchPoisonWolf || m.witchSaveGood || m.witchSave)
   }
 
+  /** 被白狼王自爆带走：仍有至少一瓶药才计分（只读状态，不改动女巫技能） */
+  selfBombScore(state: GameState): ScoreEntry | null {
+    const hasDrug = !state.witchSaveUsed || !state.witchPoisonUsed
+    return hasDrug ? { reason: "自爆带药女巫", delta: 0.5 } : null
+  }
+
   extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
     if (!player.alive) return {}
     return {

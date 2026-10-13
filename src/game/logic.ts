@@ -104,6 +104,8 @@ export interface Mark {
   wolfKingShotGood: boolean
   wolfKingShotWolf: boolean
   wolfKingIsPoisoned: boolean
+  /** 白狼王自爆带走的目标名（用于自爆带人计分，空=未自爆带人） */
+  wolfBombTarget: string
   guardHitCount: number
   guardSameSaveKill: boolean
   wolfHanTiaoJinghui: boolean
@@ -257,6 +259,7 @@ export function defaultMark(): Mark {
     wolfKingShotGood: false,
     wolfKingShotWolf: false,
     wolfKingIsPoisoned: false,
+    wolfBombTarget: "",
     guardHitCount: 0,
     guardSameSaveKill: false,
     wolfHanTiaoJinghui: false,
@@ -1217,12 +1220,12 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   if (!tarName) return "请选择被带走目标"
   const target = state.players.find((p) => p.name === tarName)
   if (!target) return "未找到目标玩家"
-  killPlayer(state, tarName, "shot")
-  if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
-  else wk.mark.wolfKingShotGood = true
-  // 狼枪带走猎人：猎人依然可开枪（非被毒）
-  // 使用角色系统判断目标是否为猎人
   const targetRole = getRoleInstance(target.role)
+  killPlayer(state, tarName, "shot")
+  // 计分口径：带狼 -1；带神牌 +0.5；带平民/白痴/第三方不加分
+  if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
+  else if (targetRole?.countsAsGod()) wk.mark.wolfKingShotGood = true
+  // 狼枪带走猎人：猎人依然可开枪（非被毒）
   if (targetRole && targetRole.def.id === "猎人" && !target.mark.hunterIsPoisoned) {
     state.hunterShotPending = true
     pushGlobalLog(state, `🔫猎人${tarName}被狼王带走，可开枪`)
@@ -1348,6 +1351,8 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   if (t.name === p.name) return "不能带走自己"
   killPlayer(state, sel, "selfBomb")
   killPlayer(state, tar, "other")
+  // 记录自爆带走目标，供计分判定（女巫有药 / 守卫 / 未开技能骑士 +0.5）
+  p.mark.wolfBombTarget = tar
   state.skipVote = true
   // 白狼王自爆带走：被带走的猎人/狼王不开枪；若白狼王是警长则警徽流失
   if (state.jingHui === sel) loseBadge(state, sel, "自爆")

@@ -70,7 +70,7 @@ export class WolfKingRole extends BaseRole {
   scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
     const entries: ScoreEntry[] = []
     const m = player.mark
-    if (m.wolfKingShotGood) entries.push({ reason: "枪带好人", delta: 1 })
+    if (m.wolfKingShotGood) entries.push({ reason: "枪带神牌", delta: 0.5 })
     if (m.wolfKingShotWolf) entries.push({ reason: "枪带狼人", delta: -1 })
     return entries
   }

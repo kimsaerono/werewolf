@@ -13,6 +13,8 @@ export class IdiotRole extends BaseRole {
     unique: true,
     emoji: "🙊",
     short: "痴",
+    // 名义神职，但狼王枪带人计分口径中不算"神牌"（见 RuleDef.countsAsGod）
+    countsAsGod: false,
     nightStep: { order: 41, key: "idiotOpen" },
     intentKeys: [],
   }

@@ -29,6 +29,12 @@ export class KnightRole extends BaseRole {
     return !!player.mark.hunterKillWolf
   }
 
+  /** 被白狼王自爆带走时：尚未开技能才算带走关键神（已决斗过则不计） */
+  selfBombScore(state: GameState): ScoreEntry | null {
+    if (state.knightDuelUsed) return null
+    return { reason: "自爆带骑士", delta: 0.5 }
+  }
+
   extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
     if (!player.alive) return {}
     return {
