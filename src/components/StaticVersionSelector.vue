@@ -35,8 +35,8 @@ function isCurrent(v: VersionInfo): boolean {
 async function loadManifest() {
   loading.value = true
   try {
-    const base = import.meta.env.BASE_URL || "/werewolf/"
-    const manifestUrl = `${base}versions.json`
+    // 始终从根路径读取完整版本清单，不依赖当前页面的 BASE_URL
+    const manifestUrl = "/werewolf/versions.json"
     const resp = await fetch(manifestUrl, { cache: "no-store" })
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const manifest: Manifest = await resp.json()
