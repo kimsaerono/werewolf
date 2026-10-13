@@ -1,27 +1,17 @@
 import type { GameState } from "./logic"
 import { getBoardRoles, isWolfRole, getRoleInstance } from "./logic"
+import { getRole, roleIds } from "./roles/registry"
+import type { NightStepCtx, RoleDef } from "./roles/types"
+
+export type { NightStepCtx } from "./roles/types"
 
 /**
  * 夜晚/白天「当前步骤」编排（纯函数，便于测试）。
  *
- * 重要：夜晚步骤的顺序与启用条件必须与历史 UI 行为**逐字一致**，
- * 因为夜晚行动顺序直接影响游戏流程。顺序为：
- *   丘比特 → 情侣认亲 → 守卫 → 狼人 → 女巫 → 预言家 → 白痴 → 骑士 → 猎人 → 警长 → 天亮
+ * 夜晚步骤顺序与启用条件由**角色注册表派生**（新增角色只要声明 nightStep 即自动纳入），
+ * 与角色无关的特殊步骤（情侣认亲）单独列出。
+ * 顺序为：丘比特 → 情侣认亲 → 守卫 → 狼人 → 女巫 → 预言家 → 白痴 → 骑士 → 猎人 → 警长 → 天亮
  */
-
-export interface NightStepCtx {
-  /** 板子角色列表（getBoardRoles，非玩家已分配角色） */
-  boardRoles: string[]
-  uiDone: Record<string, boolean>
-  nightSteps: Record<string, boolean>
-  round: number
-  lovers: string[]
-  isWolfRole: (role: string) => boolean
-  players: { role: string; alive: boolean }[]
-  /** 场上是否存在猎人玩家（可能尚未分配） */
-  hunterExists: boolean
-  hunterAlive: boolean
-}
 
 interface NightStep {
   key: string
@@ -30,38 +20,53 @@ interface NightStep {
   enabled: (c: NightStepCtx) => boolean
 }
 
-/** 夜间行动步骤（数组顺序即执行顺序，务必与历史保持一致） */
-export const NIGHT_ACTION_STEPS: NightStep[] = [
-  { key: "cupid", label: "丘比特连人", emoji: "💘", enabled: (c) => c.round <= 1 && c.boardRoles.includes("丘比特") },
-  { key: "loversMeet", label: "情侣认亲", emoji: "💑", enabled: (c) => c.round <= 1 && c.lovers.length === 2 },
-  { key: "guard", label: "守卫守人", emoji: "🛡️", enabled: (c) => c.boardRoles.includes("守卫") && !c.nightSteps.guard },
-  {
-    key: "wolf",
-    label: "狼人刀人",
-    emoji: "🌑",
-    enabled: (c) => {
-      const quota = c.boardRoles.filter(c.isWolfRole).length
-      const confirmed = c.players.filter((p) => c.isWolfRole(p.role)).length >= quota
-      const aliveWolf = c.players.some((p) => p.alive && c.isWolfRole(p.role))
-      return quota > 0 && (!confirmed || aliveWolf)
-    },
-  },
-  { key: "witch", label: "女巫操作", emoji: "🧪", enabled: (c) => c.boardRoles.includes("女巫") && !c.nightSteps.witch },
-  { key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
-  { key: "idiotOpen", label: "白痴睁眼", emoji: "🙊", enabled: (c) => c.round <= 1 && c.boardRoles.includes("白痴") },
-  { key: "knight", label: "骑士睁眼", emoji: "⚔️", enabled: (c) => c.round <= 1 && c.boardRoles.includes("骑士") },
-  {
-    key: "hunterOpen",
-    label: "猎人睁眼",
-    emoji: "🔫",
-    enabled: (c) => c.boardRoles.includes("猎人") && (!c.hunterExists || c.hunterAlive),
-  },
+type OrderedNightStep = NightStep & { order: number }
+
+/** 与角色无关的特殊夜间步骤 */
+const SPECIAL_NIGHT_STEPS: OrderedNightStep[] = [
+  { key: "loversMeet", label: "情侣认亲", emoji: "💑", order: 15, enabled: (c) => c.round <= 1 && c.lovers.length === 2 },
 ]
+
+/** 特殊步骤占用的顺序号（查重测试用，避免角色 order 与之相撞） */
+export const SPECIAL_NIGHT_STEP_ORDERS: readonly number[] = SPECIAL_NIGHT_STEPS.map((s) => s.order)
+
+/** 缺省启用条件：板子含此角色，且该步骤尚未完成 */
+function defaultStepEnabled(def: RoleDef): (c: NightStepCtx) => boolean {
+  const key = def.nightStep!.key
+  return (c) => c.boardRoles.includes(def.id) && !c.nightSteps[key]
+}
+
+/** 从角色注册表派生夜间步骤 */
+function buildRoleNightSteps(): OrderedNightStep[] {
+  const steps: OrderedNightStep[] = []
+  for (const id of roleIds()) {
+    const def = getRole(id)
+    if (!def?.nightStep) continue
+    steps.push({
+      key: def.nightStep.key,
+      label: def.nightStep.label ?? def.id,
+      emoji: def.nightStep.emoji ?? def.emoji,
+      order: def.nightStep.order,
+      enabled: def.nightStep.enabled ?? defaultStepEnabled(def),
+    })
+  }
+  return steps
+}
+
+/** 计算夜间步骤（每次从注册表重建，支持运行时动态注册角色） */
+export function getNightActionSteps(): NightStep[] {
+  return [...SPECIAL_NIGHT_STEPS, ...buildRoleNightSteps()]
+    .sort((a, b) => a.order - b.order)
+    .map(({ order: _order, ...step }) => step)
+}
+
+/** 夜间行动步骤快照（顺序 = order 升序，务必与历史流程一致） */
+export const NIGHT_ACTION_STEPS: NightStep[] = getNightActionSteps()
 
 /** 获取当前应执行的夜间步骤键（顺序即数组顺序，取「已启用且未完成」） */
 export function getActiveNightStepKeys(ctx: NightStepCtx): string[] {
   const keys: string[] = []
-  for (const step of NIGHT_ACTION_STEPS) {
+  for (const step of getNightActionSteps()) {
     if (step.enabled(ctx) && !ctx.uiDone[step.key]) keys.push(step.key)
   }
   return keys

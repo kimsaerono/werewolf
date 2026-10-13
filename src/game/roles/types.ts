@@ -35,6 +35,21 @@ export interface RoleSolverState {
   [key: string]: unknown
 }
 
+/** 夜间步骤编排上下文（step-flow 计算「当前步骤」用） */
+export interface NightStepCtx {
+  /** 板子角色列表（getBoardRoles，非玩家已分配角色） */
+  boardRoles: string[]
+  uiDone: Record<string, boolean>
+  nightSteps: Record<string, boolean>
+  round: number
+  lovers: string[]
+  isWolfRole: (role: string) => boolean
+  players: { role: string; alive: boolean }[]
+  /** 场上是否存在猎人玩家（可能尚未分配） */
+  hunterExists: boolean
+  hunterAlive: boolean
+}
+
 /**
  * 角色定义：新增角色只需注册一条 RoleDef，核心流程代码零改动。
  * 各生命周期钩子均为可选，未实现的角色无需实现空方法。
@@ -56,17 +71,28 @@ export interface RoleDef {
    */
   countsAsGod?: boolean
 
-  /** 夜晚行动步骤（Phase 4a 起驱动流程编排） */
-
-  nightStep: {
-    /** 行动顺序，数字小者先行动（替代 stepKeys 硬编码推送位置） */
+  /**
+   * 夜晚行动步骤（Phase 4a 起驱动流程编排）。
+   * 仅「拥有独立夜间 UI 步骤」的角色需要声明；其 key 必须出现在
+   * step-flow 的 NIGHT_ACTION_STEPS 中，否则由 parity 测试拦截（防静默漏接）。
+   * 与狼人共用同一刀人步骤的角色（白狼王/狼王）以及无夜间行动的角色（平民）无需声明。
+   */
+  nightStep?: {
+    /** 行动顺序，数字小者先行动（step-flow 按此排序） */
     order: number
-    /** 完成标记键（写入 state.uiDone[key]） */
+    /** 完成标记键（对应 step-flow 步骤 key / state.uiDone[key]） */
     key: string
-    /** 仅首夜出现 */
-    firstNightOnly?: boolean
+    /** 步骤显示名（缺省取角色 id） */
+    label?: string
+    /** 步骤图标（缺省取角色 emoji） */
+    emoji?: string
+    /**
+     * 该步骤是否启用。缺省为「板子含此角色且未完成」。
+     * 需要更复杂条件（首夜限定 / 存活校验 / 狼人配额）的角色在此覆盖。
+     */
+    enabled?: (ctx: NightStepCtx) => boolean
   }
-  /** 夜晚结算优先级（Phase 4a 起驱动 resolveOrder 结算） */
+  /** 夜晚结算优先级（预留字段，当前流程未读取，勿依赖） */
   resolveOrder?: number
   /** 该角色夜晚意图字段名（Phase 4a 起声明式重置） */
   intentKeys: readonly string[]

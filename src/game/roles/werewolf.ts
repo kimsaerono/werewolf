@@ -12,7 +12,6 @@ export class WerewolfRole extends BaseRole {
     unique: false,
     emoji: "🐺",
     short: "狼",
-    nightStep: { order: 10, key: "wolf" },
     intentKeys: ["nightWolfKill"],
   }
 

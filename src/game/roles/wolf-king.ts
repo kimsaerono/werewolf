@@ -14,7 +14,6 @@ export class WolfKingRole extends BaseRole {
     unique: true,
     emoji: "🔫🐺",
     short: "狼王",
-    nightStep: { order: 12, key: "wolfking" },
     intentKeys: ["nightWolfKill"],
   }
 
@@ -54,16 +53,14 @@ export class WolfKingRole extends BaseRole {
       return
     }
 
-    // 被刀可开枪（夜晚语境，记入夜晚日志）
-    if (evt.reason === "wolfKill") {
+    // 被刀/被枪/被放逐可开枪
+    if (evt.reason === "wolfKill" || evt.reason === "shot" || evt.reason === "vote") {
       state.wolfKingShotPending = true
-      pushNightLog(state, `🔫狼王${evt.name}被刀，可开枪`)
-      return
-    }
-
-    // 被放逐可开枪（白天语境，播报由 finishVote 负责）
-    if (evt.reason === "vote") {
-      state.wolfKingShotPending = true
+      if (evt.reason === "wolfKill") {
+        pushNightLog(state, `🔫狼王${evt.name}被刀，可开枪`)
+      } else if (evt.reason === "shot") {
+        pushNightLog(state, `🔫狼王${evt.name}被枪带走，可开枪`)
+      }
     }
   }
 

@@ -15,7 +15,6 @@ export class CupidRole extends BaseRole {
     unique: true,
     emoji: "💘",
     short: "丘",
-    nightStep: { order: 5, key: "cupid" },
     intentKeys: ["lovers"],
     winRule: { priority: 0, judge: () => null }, // 优先级最高
   }

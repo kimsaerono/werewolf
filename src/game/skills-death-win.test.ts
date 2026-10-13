@@ -238,7 +238,7 @@ describe("死亡先后顺序 · 殉情连锁", () => {
 })
 
 describe("死亡先后顺序 · 开枪连锁与吞枪", () => {
-  it("猎人开枪带走狼王：狼王不触发开枪（shot 死因无开枪权）", () => {
+  it("猎人开枪带走狼王：狼王触发开枪（shot 死因有开枪权）", () => {
     const st = setup()
     const hunter = byRole(st, "猎人")
     const wk = byRole(st, "狼人")
@@ -247,8 +247,8 @@ describe("死亡先后顺序 · 开枪连锁与吞枪", () => {
     st.hunterShotPending = true
     expect(hunterShootConfirm(st, wk.name)).toBeNull()
     expect(wk.alive).toBe(false)
-    expect(st.wolfKingShotPending).toBe(false)
-    expect(wolfKingShootConfirm(st, "P7")).toContain("没有开枪时机")
+    expect(st.wolfKingShotPending).toBe(true)
+    expect(wolfKingShootConfirm(st, "P7")).toBeNull()
   })
 
   it("白狼王带走猎人：猎人无开枪权（对照：被狼王枪杀则有）", () => {

@@ -11,6 +11,7 @@ import SeatBoard from "@/components/SeatBoard.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import FullscreenPicker from "@/components/FullscreenPicker.vue"
 import WinPredictorPanel from "@/components/WinPredictorPanel.vue"
+import { STEP_META } from "@/game/ui/step-meta"
 import type { Game } from "@/types"
 import type { Player } from "@/game/logic"
 
@@ -111,6 +112,10 @@ const roleConfirmLabel = computed(() => {
   return p ? refs.playerLabel(p) : rc.name
 })
 const roleConfirmColor = computed(() => (roleConfirm.value ? roleColor(roleConfirm.value.role) : "#fff"))
+
+// ===== 通用底部上滑确认（本轮不守 / 不竞选 / 无人出局等） =====
+const confirmSheet = ref<{ title: string; content: string; onOk: () => void } | null>(null)
+const confirmSheetVisible = ref(false)
 
 // ===== 遗言计时（白天出局玩家） =====
 const LAST_WORDS_SECONDS = 35
@@ -423,28 +428,6 @@ const wwkBoomTarOptions = computed(() =>
 
 // ===== 单步向导 =====
 
-const STEP_META: Record<string, { label: string; emoji: string }> = {
-  idle: { label: "开始游戏", emoji: "🚀" },
-  cupid: { label: "丘比特连人", emoji: "💘" },
-  loversMeet: { label: "情侣认亲", emoji: "💑" },
-  guard: { label: "守卫守人", emoji: "🛡️" },
-  wolf: { label: "狼人刀人", emoji: "🌑" },
-  prophet: { label: "预言家验人", emoji: "🔮" },
-  witch: { label: "女巫操作", emoji: "🧪" },
-  knight: { label: "骑士睁眼", emoji: "⚔️" },
-  knight_close: { label: "骑士闭眼", emoji: "⚔️" },
-  hunterOpen: { label: "猎人睁眼", emoji: "🔫" },
-  idiotOpen: { label: "白痴睁眼", emoji: "🙊" },
-  dawn: { label: "天亮", emoji: "🌅" },
-  hunter: { label: "猎人开枪", emoji: "🔫" },
-  wolfkingShot: { label: "狼王开枪", emoji: "🔫" },
-  jinghui: { label: "竞选警长", emoji: "📢" },
-  prophetReport: { label: "报验人", emoji: "🔮" },
-  speech: { label: "发言环节", emoji: "🗣️" },
-  vote: { label: "放逐投票", emoji: "🗳️" },
-  night: { label: "进入夜晚", emoji: "🌙" },
-  end: { label: "本局结束", emoji: "🏁" },
-}
 const STEP_VOICE: Record<string, string> = {
   guard: "guard",
   wolf: "wolf",
@@ -925,14 +908,18 @@ function doWolfKingGiveUp() {
   })
 }
 function confirmSkip(title: string, content: string, fn: () => void) {
-  modal.confirm({
-    title,
-    content,
-    okText: "确认",
-    okButtonProps: { danger: true },
-    cancelText: "取消",
-    onOk: fn,
-  })
+  confirmSheet.value = { title, content, onOk: fn }
+  confirmSheetVisible.value = true
+}
+function cancelConfirmSheet() {
+  confirmSheetVisible.value = false
+  confirmSheet.value = null
+}
+function doConfirmSheet() {
+  const c = confirmSheet.value
+  confirmSheetVisible.value = false
+  confirmSheet.value = null
+  c?.onOk()
 }
 function doJingHui(v: string) {
   snapshot()
@@ -1463,23 +1450,25 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">发言环节</h3>
           <p class="small" style="text-align: center">{{ speechOrderHint }}（计时 {{ SPEECH_SECONDS }}s）</p>
 
-          <div class="speech-timer-box">
-            <span class="countdown" :class="{ warning: speechRunning && speechLeft <= 7 }">
-              {{ speechRunning ? `${speechLeft}s` : "待开始" }}
-            </span>
-            <a-button type="primary" size="large" block @click="speechRunning ? stopSpeech() : startSpeech()">
-              {{ speechRunning ? "⏹ 停止 / 重置" : "▶ 开始计时" }}
-            </a-button>
-          </div>
-
-          <div v-if="!state.jingHui" class="speech-rand-box">
-            <div class="speech-rand-title">🎲 无警长 · 随机发言顺序</div>
-            <div v-if="randNo" class="speech-rand-result">
-              <span class="speech-rand-num">{{ randNo }}</span>
-              <span class="speech-rand-hint">号玩家先发言<template v-if="randPlayer">（{{ randPlayer.name }}）</template></span>
+          <div class="speech-main-row">
+            <div class="speech-timer-box">
+              <span class="countdown" :class="{ warning: speechRunning && speechLeft <= 7 }">
+                {{ speechRunning ? `${speechLeft}s` : "待开始" }}
+              </span>
+              <a-button type="primary" size="default" block @click="speechRunning ? stopSpeech() : startSpeech()">
+                {{ speechRunning ? "⏹ 停止/重置" : "▶ 开始计时" }}
+              </a-button>
             </div>
-            <div v-else class="speech-rand-hint">抽一个号决定谁先发言</div>
-            <a-button type="dashed" size="large" block @click="rollRand">🎲 {{ randNo ? "重新抽随机发言" : "抽随机发言" }}</a-button>
+
+            <div v-if="!state.jingHui" class="speech-rand-box">
+              <div class="speech-rand-title">🎲 无警长 · 随机发言顺序</div>
+              <div v-if="randNo" class="speech-rand-result">
+                <span class="speech-rand-num">{{ randNo }}</span>
+                <span class="speech-rand-hint">号先发言<template v-if="randPlayer">（{{ randPlayer.name }}）</template></span>
+              </div>
+              <div v-else class="speech-rand-hint">抽号决定先后</div>
+              <a-button type="dashed" size="default" block @click="rollRand">{{ randNo ? "重新抽号" : "抽随机号" }}</a-button>
+            </div>
           </div>
 
           <a-button type="primary" size="large" style="margin-top: 6px" @click="finishSpeech">💬 发言结束，进入投票</a-button>
@@ -1807,6 +1796,26 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div class="role-sheet-actions">
           <a-button block size="large" @click="cancelConfirmRole">🔄 重新选择</a-button>
           <a-button block size="large" type="primary" @click="doConfirmRole">✅ 确认</a-button>
+        </div>
+      </div>
+    </a-drawer>
+
+    <!-- 通用确认：底部上滑半屏 -->
+    <a-drawer
+      v-model:open="confirmSheetVisible"
+      placement="bottom"
+      :height="260"
+      :closable="false"
+      root-class-name="role-confirm-sheet"
+      :body-style="{ padding: 0 }"
+    >
+      <div v-if="confirmSheet" class="role-sheet">
+        <div class="role-sheet-handle"></div>
+        <div class="confirm-sheet-title">{{ confirmSheet.title }}</div>
+        <div class="role-sheet-desc">{{ confirmSheet.content }}</div>
+        <div class="role-sheet-actions">
+          <a-button block size="large" @click="cancelConfirmSheet">取消</a-button>
+          <a-button block size="large" danger @click="doConfirmSheet">确认</a-button>
         </div>
       </div>
     </a-drawer>
@@ -2240,14 +2249,22 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   gap: 12px;
   flex-wrap: wrap;
 }
+.speech-main-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  width: 100%;
+  max-width: 850px;
+}
 .speech-timer-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 360px;
-  padding: 16px;
+  gap: 8px;
+  flex: 1 1 200px;
+  max-width: 400px;
+  min-width: 0;
+  padding: 12px;
   border-radius: 12px;
   background: #1d2233;
   border: 1px solid #333c55;
@@ -2256,33 +2273,34 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 360px;
-  padding: 16px;
+  gap: 8px;
+  flex: 1 1 200px;
+  max-width: 400px;
+  min-width: 0;
+  padding: 12px;
   border-radius: 12px;
   background: #2a200f;
   border: 1px dashed #ffa50288;
 }
 .speech-rand-title {
-  font-size: 13px;
+  font-size: 12px;
   color: #ffa502;
   font-weight: 700;
 }
 .speech-rand-result {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
 }
 .speech-rand-num {
-  font-size: 46px;
+  font-size: 36px;
   font-weight: 800;
   color: #ffa502;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .speech-rand-hint {
-  font-size: 13px;
+  font-size: 12px;
   color: #bbb;
 }
 /* 右侧：toggle 固定底部 */
@@ -2494,6 +2512,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   line-height: 1.25;
   letter-spacing: 1px;
   margin-top: 6px;
+}
+.confirm-sheet-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 1px;
+  margin-top: 4px;
 }
 .role-sheet-desc {
   font-size: 14px;

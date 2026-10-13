@@ -13,7 +13,6 @@ export class GuardRole extends BaseRole {
     unique: true,
     emoji: "🛡️",
     short: "守",
-    nightStep: { order: 20, key: "guard" },
     intentKeys: ["nightGuardTarget"],
   }
 

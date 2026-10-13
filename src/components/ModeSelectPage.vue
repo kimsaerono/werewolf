@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue"
+import { ref, onMounted, onBeforeUnmount, computed } from "vue"
 import type { Game } from "@/types"
 import VersionSwitcher from "@/components/VersionSwitcher.vue"
+import StaticVersionSelector from "@/components/StaticVersionSelector.vue"
 
 const props = defineProps<{ game: Game }>()
 const { state, actions } = props.game
 
 const sel = ref<"real" | "sim">(state.simMode ? "sim" : "real")
 const entering = ref(false)
+
+const isLocalHost = computed(() => {
+  const hostname = window.location.hostname
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname.startsWith("192.168.") || hostname.startsWith("10.")
+})
 
 const opts = [
   {
@@ -150,7 +156,8 @@ interface Particle {
 <template>
   <div class="mode-page">
     <div class="mode-version">
-      <VersionSwitcher />
+      <StaticVersionSelector v-if="!isLocalHost" />
+      <VersionSwitcher v-else />
     </div>
     <div class="mode-hero">
       <div class="mode-logo">🐺</div>
@@ -168,12 +175,10 @@ interface Particle {
         ref="cardRefs"
       >
         <div class="mode-card-emoji">{{ o.emoji }}</div>
-<div class="mode-card-title">
-  {{ o.title }}
-</div>
+        <div class="mode-card-title">{{ o.title }}</div>
         <div class="mode-card-desc">{{ o.desc }}</div>
 
-        <!-- 对比详情表格 -->
+        <!-- 对比详情：横向紧凑 -->
         <div class="mode-card-details" v-if="sel === o.key">
           <div class="detail-row" v-for="d in o.details" :key="d.label">
             <span class="detail-icon">{{ d.icon }}</span>
@@ -253,7 +258,7 @@ interface Particle {
 .mode-cards {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
   justify-content: center;
   max-width: 720px;
   width: 100%;
@@ -265,12 +270,12 @@ interface Particle {
   background: #171b28;
   border: 2px solid #2b3145;
   border-radius: 16px;
-  padding: 24px 20px;
+  padding: 20px 16px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.15s;
   position: relative;
   overflow: hidden;
@@ -325,17 +330,17 @@ interface Particle {
   color: #fff;
 }
 .mode-card-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: #bbb;
-  line-height: 1.6;
-  min-height: 40px;
+  line-height: 1.5;
+  min-height: 36px;
 }
 .mode-card-details {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid rgba(255,255,255,.08);
   width: 100%;
-  animation: slideDown 0.3s ease-out;
+  animation: slideDown 0.2s ease-out;
 }
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-8px); }
@@ -344,23 +349,23 @@ interface Particle {
 .detail-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  font-size: 12px;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11px;
 }
-.detail-row:not(:last-child) { border-bottom: 1px solid rgba(255,255,255,.05); }
-.detail-icon { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
-.detail-label { color: #888; font-size: 12px; flex-shrink: 0; width: 48px; }
-.detail-value { color: #ddd; font-size: 12px; font-weight: 500; flex: 1; text-align: right; }
+.detail-row:not(:last-child) { border-bottom: 1px solid rgba(255,255,255,.04); }
+.detail-icon { font-size: 12px; flex-shrink: 0; width: 18px; text-align: center; }
+.detail-label { color: #888; font-size: 11px; flex-shrink: 0; width: 44px; }
+.detail-value { color: #ddd; font-size: 11px; font-weight: 500; flex: 1; text-align: right; }
 .mode-card-check {
-  font-size: 13px;
+  font-size: 12px;
   color: #66bb6a;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .mode-enter {
-  height: 52px;
-  min-width: 220px;
-  font-size: 18px;
+  height: 48px;
+  min-width: 200px;
+  font-size: 16px;
   transition: all 0.2s;
 }
 .mode-enter:hover:not(:disabled) {
@@ -368,4 +373,66 @@ interface Particle {
   box-shadow: 0 8px 24px rgba(22,104,220,.4);
 }
 .mode-enter:active { transform: scale(0.98); }
+
+/* 手机端：压缩到一屏 */
+@media (max-width: 480px) {
+  .mode-page {
+    gap: 16px;
+    padding: 16px 12px;
+  }
+  .mode-hero {
+    gap: 4px;
+  }
+  .mode-logo {
+    font-size: 48px;
+  }
+  .mode-title {
+    font-size: 22px;
+  }
+  .mode-sub {
+    font-size: 12px;
+  }
+  .mode-cards {
+    gap: 8px;
+  }
+  .mode-card {
+    flex: 1 1 100%;
+    max-width: 100%;
+    padding: 16px 12px;
+    gap: 6px;
+  }
+  .mode-card-emoji {
+    font-size: 36px;
+  }
+  .mode-card-title {
+    font-size: 18px;
+  }
+  .mode-card-desc {
+    font-size: 11px;
+    min-height: 28px;
+  }
+  .mode-card-details {
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+  .detail-row {
+    gap: 6px;
+    padding: 3px 0;
+    font-size: 10px;
+  }
+  .detail-icon { font-size: 11px; width: 16px; }
+  .detail-label { font-size: 10px; width: 40px; }
+  .detail-value { font-size: 10px; }
+  .mode-card-check {
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .mode-enter {
+    height: 44px;
+    min-width: 180px;
+    font-size: 15px;
+    width: 100%;
+    max-width: 280px;
+  }
+}
 </style>

@@ -54,6 +54,16 @@ export const ROLE_SHORT: Record<string, string> = Object.fromEntries(
   roleIds().map((id) => [id, getRole(id)?.short ?? id]),
 )
 
+/** 夜间步骤完成标记初始值（由注册表派生；新增带夜间步骤的角色自动纳入） */
+export function freshNightSteps(): Record<string, boolean> {
+  const steps: Record<string, boolean> = {}
+  for (const id of roleIds()) {
+    const key = getRole(id)?.nightStep?.key
+    if (key) steps[key] = false
+  }
+  return steps
+}
+
 /** 角色简写；未收录时回退为完整名（实时查注册表，动态注册的角色同样生效） */
 export function roleShort(role?: string): string {
   if (role) {
@@ -292,7 +302,7 @@ export function defaultState(): GameState {
     nightWitchPoison: "",
     nightWitchSave: "",
     nightSameSaveKill: false,
-    nightSteps: { guard: false, wolf: false, prophet: false, witch: false },
+    nightSteps: freshNightSteps(),
     guardLastTarget: "",
     hunterShotPending: false,
     hunterShotDone: false,
@@ -575,7 +585,7 @@ export function startNewGame(state: GameState): void {
   state.nightWitchPoison = ""
   state.nightWitchSave = ""
   state.nightSameSaveKill = false
-  state.nightSteps = { guard: false, wolf: false, prophet: false, witch: false }
+  state.nightSteps = freshNightSteps()
   state.guardLastTarget = ""
   state.hunterShotPending = false
   state.hunterShotDone = false
@@ -897,7 +907,7 @@ export function manualSaveRoles(state: GameState): string | null {
   state.nightWitchPoison = ""
   state.nightWitchSave = ""
   state.nightSameSaveKill = false
-  state.nightSteps = { guard: false, wolf: false, prophet: false, witch: false }
+  state.nightSteps = freshNightSteps()
   state.guardLastTarget = ""
   state.hunterShotPending = false
   state.hunterShotDone = false
@@ -928,7 +938,7 @@ export function nextNight(state: GameState): void {
   state.nightWitchPoison = ""
   state.nightWitchSave = ""
   state.nightSameSaveKill = false
-  state.nightSteps = { guard: false, wolf: false, prophet: false, witch: false }
+  state.nightSteps = freshNightSteps()
   state.hunterShotPending = false
   state.wolfKingShotPending = false
   state.prophetReport = ""

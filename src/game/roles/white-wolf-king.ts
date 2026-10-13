@@ -14,7 +14,6 @@ export class WhiteWolfKingRole extends BaseRole {
     unique: true,
     emoji: "❄️🐺",
     short: "白狼",
-    nightStep: { order: 11, key: "whitewolfking" },
     intentKeys: ["nightWolfKill"],
   }
 

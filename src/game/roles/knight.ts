@@ -12,7 +12,6 @@ export class KnightRole extends BaseRole {
     unique: true,
     emoji: "⚔️",
     short: "骑",
-    nightStep: { order: 40, key: "knight" },
     intentKeys: [],
   }
 

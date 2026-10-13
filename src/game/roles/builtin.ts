@@ -19,17 +19,49 @@ import { onBeforeDeath, onAfterDeath } from "../logic"
  * 新增角色：往下方数组追加一条 RoleDef 即可，核心流程代码无需改动。
  */
 export const BUILTIN_ROLES: RoleDef[] = [
-  { id: "狼人", camp: "wolf", unique: false, emoji: "🐺", short: "狼", nightStep: { order: 10, key: "wolf" }, intentKeys: ["nightWolfKill"] },
-  { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", nightStep: { order: 11, key: "whitewolfking" }, intentKeys: [] },
-  { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王", nightStep: { order: 12, key: "wolfking" }, intentKeys: [] },
-  { id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", nightStep: { order: 15, key: "prophet" }, intentKeys: ["nightProphetCheck"] },
-  { id: "女巫", camp: "god", unique: true, emoji: "🧙", short: "巫", nightStep: { order: 30, key: "witch" }, intentKeys: ["nightWitchSave", "nightWitchPoison", "nightUsedDrug"] },
-  { id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", nightStep: { order: 35, key: "hunterOpen" }, intentKeys: [] },
-  { id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守", nightStep: { order: 20, key: "guard" }, intentKeys: ["nightGuardTarget"] },
-  { id: "骑士", camp: "god", unique: true, emoji: "⚔️", short: "骑", nightStep: { order: 40, key: "knight" }, intentKeys: [] },
-  { id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", countsAsGod: false, nightStep: { order: 41, key: "idiotOpen" }, intentKeys: [] },
-  { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", nightStep: { order: 50, key: "villager" }, intentKeys: [] },
-  { id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘", nightStep: { order: 5, key: "cupid" }, intentKeys: ["lovers"] },
+  {
+    id: "狼人", camp: "wolf", unique: false, emoji: "🐺", short: "狼", intentKeys: ["nightWolfKill"],
+    nightStep: {
+      order: 30, key: "wolf", label: "狼人刀人", emoji: "🌑",
+      enabled: (c) => {
+        const quota = c.boardRoles.filter(c.isWolfRole).length
+        const confirmed = c.players.filter((p) => c.isWolfRole(p.role)).length >= quota
+        const aliveWolf = c.players.some((p) => p.alive && c.isWolfRole(p.role))
+        return quota > 0 && (!confirmed || aliveWolf)
+      },
+    },
+  },
+  { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", intentKeys: [] },
+  { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王", intentKeys: [] },
+  {
+    id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", intentKeys: ["nightProphetCheck"],
+    nightStep: { order: 50, key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
+  },
+  {
+    id: "女巫", camp: "god", unique: true, emoji: "🧙", short: "巫", intentKeys: ["nightWitchSave", "nightWitchPoison", "nightUsedDrug"],
+    nightStep: { order: 40, key: "witch", label: "女巫操作", emoji: "🧪" },
+  },
+  {
+    id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", intentKeys: [],
+    nightStep: { order: 80, key: "hunterOpen", label: "猎人睁眼", emoji: "🔫", enabled: (c) => c.boardRoles.includes("猎人") && (!c.hunterExists || c.hunterAlive) },
+  },
+  {
+    id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守", intentKeys: ["nightGuardTarget"],
+    nightStep: { order: 20, key: "guard", label: "守卫守人", emoji: "🛡️" },
+  },
+  {
+    id: "骑士", camp: "god", unique: true, emoji: "⚔️", short: "骑", intentKeys: [],
+    nightStep: { order: 70, key: "knight", label: "骑士睁眼", emoji: "⚔️", enabled: (c) => c.round <= 1 && c.boardRoles.includes("骑士") },
+  },
+  {
+    id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", countsAsGod: false, intentKeys: [],
+    nightStep: { order: 60, key: "idiotOpen", label: "白痴睁眼", emoji: "🙊", enabled: (c) => c.round <= 1 && c.boardRoles.includes("白痴") },
+  },
+  { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", intentKeys: [] },
+  {
+    id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘", intentKeys: ["lovers"],
+    nightStep: { order: 10, key: "cupid", label: "丘比特连人", emoji: "💘", enabled: (c) => c.round <= 1 && c.boardRoles.includes("丘比特") },
+  },
 ]
 
 // ===================== 角色实例注册（Phase 2：行为迁移）=====================

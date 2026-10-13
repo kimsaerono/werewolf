@@ -12,7 +12,6 @@ export class VillagerRole extends BaseRole {
     unique: false,
     emoji: "👤",
     short: "民",
-    nightStep: { order: 50, key: "villager" },
     intentKeys: [],
   }
 

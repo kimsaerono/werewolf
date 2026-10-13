@@ -1,5 +1,5 @@
 import type { GameState, Player } from "./logic"
-import { killPlayer, pushGlobalLog, pushNightLog, pushFlow } from "./logic"
+import { killPlayer, pushGlobalLog, pushNightLog, pushFlow, freshNightSteps } from "./logic"
 import type { DieReason, DieEvent, Effect, ScoreEntry } from "./roles/types"
 
 /**
@@ -241,7 +241,7 @@ export class GameContext {
     this.state.nightWitchPoison = ""
     this.state.nightWitchSave = ""
     this.state.nightSameSaveKill = false
-    this.state.nightSteps = { guard: false, wolf: false, prophet: false, witch: false }
+    this.state.nightSteps = freshNightSteps()
     this.state.hunterShotPending = false
     this.state.wolfKingShotPending = false
     this.state.prophetReport = ""

@@ -12,7 +12,6 @@ export class WitchRole extends BaseRole {
     unique: true,
     emoji: "🧙",
     short: "巫",
-    nightStep: { order: 30, key: "witch" },
     intentKeys: ["nightWitchSave", "nightWitchPoison", "nightUsedDrug"],
   }
 

@@ -13,7 +13,6 @@ export class HunterRole extends BaseRole {
     unique: true,
     emoji: "🔫",
     short: "猎",
-    nightStep: { order: 35, key: "hunterOpen" },
     intentKeys: [],
   }
 

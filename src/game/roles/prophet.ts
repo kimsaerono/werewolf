@@ -12,7 +12,6 @@ export class ProphetRole extends BaseRole {
     unique: true,
     emoji: "🔮",
     short: "预",
-    nightStep: { order: 15, key: "prophet" },
     intentKeys: ["nightProphetCheck"],
   }
 

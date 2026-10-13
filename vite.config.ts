@@ -15,8 +15,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "")
   // 开发代理目标：VITE_SYNC_PROXY_TARGET 优先，否则取 VITE_SYNC_URL 的源，兜底仓库默认
   const target = env.VITE_SYNC_PROXY_TARGET || (env.VITE_SYNC_URL || "").replace(/\/werewolf-sync\/?$/, "") || "https://hymallbosstest.heemoney.com"
+  // 基础路径可通过 VITE_BASE 注入，默认 /werewolf/；多版本部署时设为 /werewolf/vX.Y/
+  const base = env.VITE_BASE || "/werewolf/"
   return {
-    base: "/werewolf/",
+    base,
     plugins: [vue()],
     define: {
       __APP_VERSION__: JSON.stringify(getVersion()),
