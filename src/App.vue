@@ -11,7 +11,6 @@ import ModeSelectPage from "@/components/ModeSelectPage.vue"
 import SyncSettings from "@/components/SyncSettings.vue"
 import MusicPlayerDrawer from "@/components/MusicPlayerDrawer.vue"
 import { useMusicPlayer } from "@/composables/useMusicPlayer"
-import StaticVersionSelector from "@/components/StaticVersionSelector.vue"
 import loadingPng from "@/assets/roles/loading.png"
 
 const game = useGame()
@@ -124,7 +123,6 @@ function onTabChange(key: string) {
             :disabled="t.id === 'game' && !gameReady"
           />
         </a-tabs>
-        <StaticVersionSelector class="version-selector-float" />
       </div>
 
       <div class="page" :class="{ 'page-full': activeTab === 'score' || activeTab === 'record' }">
@@ -394,13 +392,6 @@ body .ant-card:has(.ant-card-head) > .ant-card-body {
 .sticky-tabs :deep(.ant-tabs-nav-list) {
   display: flex;
   width: 100%;
-}
-.version-selector-float {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 10;
 }
 .panel {
   margin-bottom: 14px;
