@@ -50,11 +50,10 @@ async function main() {
 
   const versions: { version: string; path: string; tag: string; date: string }[] = []
 
-  const mainCommit = execSync("git rev-parse main", { encoding: "utf-8" }).trim()
-
   // 1. 构建 main 分支（最新版）-> dist/ 根目录
   console.log("\n=== Building main (latest) ===")
   run("git checkout main")
+  const mainCommit = execSync("git rev-parse main", { encoding: "utf-8" }).trim()
   run("bun install")
   run("VITE_BASE=/werewolf/ bun run build")
   const mainDescribe = execSync("git describe --tags --always --dirty", { encoding: "utf-8" }).trim()
