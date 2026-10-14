@@ -69,48 +69,46 @@ onMounted(() => {
 </script>
 
 <template>
-  <a-tooltip :title="versions.length === 0 ? '单版本部署' : '点击切换已部署版本'">
-    <Dropdown
-      v-if="versions.length > 0 || loading"
-      :trigger="['click']"
+  <Dropdown
+    v-if="versions.length > 0 || loading"
+    :trigger="['click']"
+  >
+    <a-button
+      type="primary"
+      size="small"
+      :loading="loading"
+      class="version-trigger"
+      :disabled="versions.length === 0"
     >
-      <a-button
-        type="primary"
-        size="small"
-        :loading="loading"
-        class="version-trigger"
-        :disabled="versions.length === 0"
-      >
-        <span class="breath-dot"></span>
-        <span class="version-text">{{ currentLabel }}</span>
-        <span v-if="versions.length > 0" class="arrow">▼</span>
-      </a-button>
-      <template #overlay>
-        <Menu :style="{ width: 240 }">
-          <Menu.Item
-            v-for="v in versions"
-            :key="v.version"
-            :disabled="isCurrent(v)"
-            @click="navigateToVersion(v)"
-            :class="{ 'current-version': isCurrent(v) }"
-          >
-            <span class="item-label">{{ getVersionLabel(v) }}</span>
-            <span v-if="isCurrent(v)" class="current-tag">当前</span>
-          </Menu.Item>
-          <Menu.Divider v-if="versions.length > 0" />
-          <Menu.Item @click="loadManifest">
-            <span class="icon">↻</span>
-            <span>刷新版本列表</span>
-          </Menu.Item>
-        </Menu>
-      </template>
-    </Dropdown>
-
-    <a-tag v-else class="version-badge">
       <span class="breath-dot"></span>
-      <span class="version-text">{{ currentLabel || "加载中..." }}</span>
-    </a-tag>
-  </a-tooltip>
+      <span class="version-text">{{ currentLabel }}</span>
+      <span v-if="versions.length > 0" class="arrow">▼</span>
+    </a-button>
+    <template #overlay>
+      <Menu :style="{ width: 240 }">
+        <Menu.Item
+          v-for="v in versions"
+          :key="v.version"
+          :disabled="isCurrent(v)"
+          @click="navigateToVersion(v)"
+          :class="{ 'current-version': isCurrent(v) }"
+        >
+          <span class="item-label">{{ getVersionLabel(v) }}</span>
+          <span v-if="isCurrent(v)" class="current-tag">当前</span>
+        </Menu.Item>
+        <Menu.Divider v-if="versions.length > 0" />
+        <Menu.Item @click="loadManifest">
+          <span class="icon">↻</span>
+          <span>刷新版本列表</span>
+        </Menu.Item>
+      </Menu>
+    </template>
+  </Dropdown>
+
+  <a-tag v-else class="version-badge">
+    <span class="breath-dot"></span>
+    <span class="version-text">{{ currentLabel || "加载中..." }}</span>
+  </a-tag>
 </template>
 
 <style scoped>
