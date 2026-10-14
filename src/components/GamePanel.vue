@@ -114,7 +114,7 @@ const roleConfirmLabel = computed(() => {
 const roleConfirmColor = computed(() => (roleConfirm.value ? roleColor(roleConfirm.value.role) : "#fff"))
 
 // ===== 通用底部上滑确认（本轮不守 / 不竞选 / 无人出局等） =====
-const confirmSheet = ref<{ title: string; content: string; onOk: () => void } | null>(null)
+const confirmSheet = ref<{ title: string; content: string; onOk: () => void; okText?: string } | null>(null)
 const confirmSheetVisible = ref(false)
 
 // ===== 遗言计时（白天出局玩家） =====
@@ -586,15 +586,26 @@ watch(
     if (len <= old) return
     if (state.phase !== "day") return
     const added = state.globalLog.slice(Math.max(old, dawnLogSnapshot.value))
-    const names = added
-      .map((l) => {
-        const m = l.match(/💔(.+?)因情侣殉情出局/)
-        return m ? m[1] : ""
-      })
-      .filter(Boolean)
-    if (names.length) {
-      const nos = names.map((n) => noOf(n))
+    const loverNames: string[] = []
+    const charmNames: string[] = []
+    for (const l of added) {
+      const lm = l.match(/💔(.+?)因情侣殉情出局/)
+      if (lm) {
+        loverNames.push(lm[1])
+        continue
+      }
+      const cm = l.match(/💔(.+?)遭狼美人殉情出局/)
+      if (cm) charmNames.push(cm[1])
+    }
+    if (loverNames.length) {
+      const nos = loverNames.map((n) => noOf(n))
       const txt = `${nos.join("、")}对象没了，跟着殉情了，爱情的力量就是这么无情`
+      loverDeathMsg.value = txt
+      if (state.voiceEnabled) speak(txt)
+    }
+    if (charmNames.length) {
+      const nos = charmNames.map((n) => noOf(n))
+      const txt = `${nos.join("、")}失去理智，追随狼美人而去`
       loverDeathMsg.value = txt
       if (state.voiceEnabled) speak(txt)
     }
@@ -877,23 +888,22 @@ function doWitchPoison(v: string) {
   effect("witchPoison", "witch", t ? `毒药：${refs.playerLabel(t)}` : `毒药：${v}`)
 }
 function doWitchDone() {
-  // 解药毒药都用完时直接闭眼，不再二次确认
-  if (state.witchSaveUsed && state.witchPoisonUsed) {
+  // 女巫已出局 或 解药毒药都用完时直接闭眼，不再二次确认
+  if ((witchObj.value && !witchObj.value.alive) || (state.witchSaveUsed && state.witchPoisonUsed)) {
     markDoneStep("witch")
     playVoice("witch_close")
     return
   }
-  modal.confirm({
+  confirmSheet.value = {
     title: "本轮不开药？",
     content: "女巫本晚不使用解药和毒药，确认后闭眼",
     okText: "确认不开药",
-    okButtonProps: { danger: true },
-    cancelText: "取消",
     onOk() {
       markDoneStep("witch")
       playVoice("witch_close")
     },
-  })
+  }
+  confirmSheetVisible.value = true
 }
 function doKnightOpen() {
   markDoneStep("knight")
@@ -1789,30 +1799,55 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       <!-- 右侧：固定在底部的 toggle -->
       <a-button class="fab fab-toggle right-toggle" shape="circle" size="large" @click="rightActionsOpen = !rightActionsOpen">⋯</a-button>
 
-      <!-- 弹窗：警徽设置（移交警徽） -->
-      <a-modal v-model:open="jinghuiModal" title="👑 警徽设置" :footer="null" width="400px" :mask-closable="false">
-        <p class="small" style="margin-bottom: 12px">
-          当前警长：{{ jingHuiLabel }}｜选择新警长或保持现状
-        </p>
-        <div class="flow-row">
-          <span class="flow-row-label">移交警徽</span>
-          <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', aliveOptions, (v) => (jingHuiOwner = v))">👤 选择新警长</a-button>
-          <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="jingHuiOwner = ''">{{ labelOf(jingHuiOwner) }}</a-tag>
+      <!-- 底部上滑：警徽设置（移交警徽） -->
+      <a-drawer
+        v-model:open="jinghuiModal"
+        placement="bottom"
+        :height="330"
+        :closable="false"
+        root-class-name="role-confirm-sheet"
+        :body-style="{ padding: 0 }"
+      >
+        <div class="role-sheet sheet-form">
+          <div class="role-sheet-handle"></div>
+          <div class="confirm-sheet-title" style="text-align: center">👑 警徽设置</div>
+          <p class="small" style="margin: 12px 0">
+            当前警长：{{ jingHuiLabel }}｜选择新警长或保持现状
+          </p>
+          <div class="flow-row">
+            <span class="flow-row-label">移交警徽</span>
+            <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', aliveOptions, (v) => (jingHuiOwner = v))">👤 选择新警长</a-button>
+            <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="jingHuiOwner = ''">{{ labelOf(jingHuiOwner) }}</a-tag>
+          </div>
+          <div class="role-sheet-actions">
+            <a-button block size="large" @click="jinghuiModal = false">取消</a-button>
+            <a-button block size="large" type="primary" @click="finishJinghuiSetup">确认保存</a-button>
+          </div>
         </div>
-        <a-space style="width: 100%; margin-top: 14px">
-          <a-button type="primary" block @click="finishJinghuiSetup">确认保存</a-button>
-        </a-space>
-      </a-modal>
+      </a-drawer>
 
-      <!-- 弹窗：女巫解药 -->
-      <a-modal v-model:open="witchModal" title="💚 使用解药" :footer="null" width="380px" :mask-closable="false">
-        <p class="small" style="margin-bottom: 10px">
-          解药目标固定为本晚被刀者：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
-        </p>
-        <a-space style="width: 100%; margin-top: 12px">
-          <a-button type="primary" size="large" block @click="confirmWitch">确认解救</a-button>
-        </a-space>
-      </a-modal>
+      <!-- 女巫解药：底部上滑半屏 -->
+      <a-drawer
+        :open="witchModal === 'save'"
+        placement="bottom"
+        :height="260"
+        :closable="false"
+        root-class-name="role-confirm-sheet"
+        :body-style="{ padding: 0 }"
+        @close="witchModal = null"
+      >
+        <div class="role-sheet">
+          <div class="role-sheet-handle"></div>
+          <div class="confirm-sheet-title">💚 使用解药</div>
+          <div class="role-sheet-desc">
+            解药目标固定为本晚被刀者：<b class="key-name">{{ state.nightWolfKill || "尚未记录" }}</b>
+          </div>
+          <div class="role-sheet-actions">
+            <a-button block size="large" @click="witchModal = null">取消</a-button>
+            <a-button block size="large" type="primary" @click="confirmWitch">确认解救</a-button>
+          </div>
+        </div>
+      </a-drawer>
 
       <!-- 通用玩家选择（全屏卡片式：单选点选即确认；多选选满N个后确认） -->
       <Teleport to="body">
@@ -1833,15 +1868,17 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </Teleport>
 
       <!-- 弹窗：警长出局，警徽去留 -->
-      <a-modal v-model:open="sheriffDeathModal" title="👑 警长出局" :footer="null" width="420px" :mask-closable="false">
-        <p class="small" style="margin-bottom: 10px">
-          警长 {{ noOf(deadSheriff) }} 已出局，警徽如何处理？
-        </p>
-        <a-space direction="vertical" style="width: 100%">
-          <a-button block @click="onSheriffManual">手动移交警徽</a-button>
-          <a-button danger block @click="onSheriffLose">警徽流失（作废）</a-button>
-        </a-space>
-      </a-modal>
+      <a-drawer v-model:open="sheriffDeathModal" placement="bottom" :height="280" :closable="false" root-class-name="role-confirm-sheet" :body-style="{ padding: 0 }">
+        <div class="role-sheet">
+          <div class="role-sheet-handle"></div>
+          <div class="confirm-sheet-title">👑 警长出局</div>
+          <div class="role-sheet-desc">警长 {{ noOf(deadSheriff) }} 已出局，警徽如何处理？</div>
+          <div class="role-sheet-actions">
+            <a-button block size="large" type="primary" @click="onSheriffManual">手动移交警徽</a-button>
+            <a-button block size="large" danger @click="onSheriffLose">警徽流失（作废）</a-button>
+          </div>
+        </div>
+      </a-drawer>
     </a-card>
 
     <!-- 全局操作动画遮罩 -->
@@ -1896,7 +1933,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div class="role-sheet-desc">{{ confirmSheet.content }}</div>
         <div class="role-sheet-actions">
           <a-button block size="large" @click="cancelConfirmSheet">取消</a-button>
-          <a-button block size="large" danger @click="doConfirmSheet">确认</a-button>
+          <a-button block size="large" danger @click="doConfirmSheet">{{ confirmSheet.okText || "确认" }}</a-button>
         </div>
       </div>
     </a-drawer>
@@ -2631,6 +2668,12 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 }
 .role-sheet-actions :deep(.ant-btn) {
   flex: 1;
+}
+.role-sheet.sheet-form {
+  text-align: left;
+}
+.role-sheet.sheet-form .role-sheet-desc {
+  text-align: left;
 }
 </style>
 
