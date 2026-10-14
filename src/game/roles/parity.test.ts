@@ -103,6 +103,7 @@ describe("夜间步骤派生：顺序与元数据锁定", () => {
       "loversMeet",
       "guard",
       "wolf",
+      "charm",
       "witch",
       "prophet",
       "idiotOpen",

@@ -2,7 +2,8 @@
 import { computed, ref, onMounted } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
-import { roleShort, campPlayerCounts } from "@/game/logic"
+import { ROLE_EMOJI, roleShort, campPlayerCounts } from "@/game/logic"
+import { roleAvatar } from "@/assets/roles"
 
 const { message } = AntApp.useApp()
 
@@ -25,14 +26,21 @@ const finishStep = ref("")
 const timelineEvents = computed(() => {
   const events = []
   for (const f of state.flow) {
-    const emoji = {
+    let emoji: any = {
       "守卫守人": "🛡️", "狼人刀人": "🌑", "预言家验人": "🔮",
+      "狼美人魅惑": "🌹",
       "女巫解药": "💚", "女巫毒药": "☠️", "天亮": "🌅",
       "丘比特连人": "💘", "猎人开枪": "🔫", "猎人弃枪": "⏭️",
       "狼王开枪": "🔫", "狼王弃枪": "⏭️", "骑士决斗": "⚔️",
       "警徽": "📢", "放逐": "🗳️", "狼人自爆": "💥",
       "白狼王自爆": "💥", "情侣认亲": "💑", "白痴翻牌": "🙊"
     }[f.label] || "·"
+
+    if (f.label === "狼美人魅惑" && roleAvatar("狼美人")) {
+      emoji = { type: 'img', src: roleAvatar("狼美人"), alt: "狼美人魅惑" }
+    } else if (f.label === "狼人刀人" && roleAvatar("狼人")) {
+      emoji = { type: 'img', src: roleAvatar("狼人"), alt: "狼人" }
+    }
 
     let target = ""
     if (f.target) {
@@ -251,7 +259,12 @@ async function doFinish() {
         <div v-show="showTimeline" class="timeline-container">
           <div class="timeline" v-if="timelineEvents.length">
             <div class="timeline-item" v-for="(e, i) in timelineEvents" :key="i">
-              <div class="timeline-marker">{{ e.emoji }}</div>
+              <div class="timeline-marker">
+                <template v-if="typeof e.emoji === 'object' && e.emoji.type === 'img'">
+                  <img :src="e.emoji.src" class="timeline-role-img" :alt="e.emoji.alt" />
+                </template>
+                <template v-else>{{ e.emoji }}</template>
+              </div>
               <div class="timeline-content">
                 <div class="timeline-header">
                   <span class="timeline-night">第 {{ e.night }} 晚</span>
@@ -606,6 +619,12 @@ async function doFinish() {
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 12px;
+}
+.timeline-role-img {
+  height: clamp(16px, 2vw, 20px);
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
 }
 .progress-fill {
   height: 100%;

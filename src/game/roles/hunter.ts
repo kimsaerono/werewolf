@@ -1,7 +1,7 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
 import type { RoleDef, DieEvent, ScoreEntry, RoleSolverState } from "./types"
-import { pushNightLog } from "../logic"
+import { pushNightLog, pushGlobalLog } from "../logic"
 
 /**
  * 猎人角色：被刀/放逐后可开枪带走一人（被毒不能开枪）。
@@ -44,6 +44,14 @@ export class HunterRole extends BaseRole {
     if (evt.reason === "wolfKill") {
       state.hunterShotPending = true
       pushNightLog(state, `🔫猎人${evt.name}被刀，可开枪`)
+      return
+    }
+
+    // 被狼王枪带可开枪（非被毒）
+    if (evt.reason === "shot") {
+      state.hunterShotPending = true
+      pushNightLog(state, `🔫猎人${evt.name}被狼王带走，可开枪`)
+      pushGlobalLog(state, `🔫猎人${evt.name}被狼王带走，可开枪`)
       return
     }
 

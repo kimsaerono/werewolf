@@ -260,6 +260,12 @@ const witchObj = findPlayerByRoleId("女巫")
 const witchIsKillTarget = computed(() => !!witchObj.value && state.nightWolfKill === witchObj.value.name)
 const witchCanSelfSave = computed(() => state.round <= 1 || !witchIsKillTarget.value)
 const prophetObj = findPlayerByRoleId("预言家")
+const hasBeauty = hasRoleId("狼美人")
+const charmObj = findPlayerByRoleId("狼美人")
+/** 魅惑对象：存活且非狼美人自己 */
+const charmOptions = computed(() =>
+  aliveList.value.filter((p) => p.name !== charmObj.value?.name).map((p) => playerOption(p)),
+)
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
 const jingHuiLabel = computed(() =>
   jingHuiObj.value ? refs.playerLabel(jingHuiObj.value) : state.jingHui,
@@ -386,10 +392,16 @@ const guardOptions = computed(() =>
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
-/** 自爆选项：所有存活狼阵营（白狼王选中后走带人流程） */
+/** 自爆选项：所有存活狼阵营，排除狼美人（不能自爆） */
 const wolfPlainOptions = computed(() =>
   aliveList.value
-    .filter((p) => refs.isWolfRole(p.role))
+    .filter((p) => refs.isWolfRole(p.role) && getRoleInstance(p.role)?.def.id !== "狼美人")
+    .map((p) => playerOption(p)),
+)
+/** 狼刀目标：存活玩家，排除狼美人（禁止被刀） */
+const wolfKillOptions = computed(() =>
+  aliveList.value
+    .filter((p) => getRoleInstance(p.role)?.def.id !== "狼美人")
     .map((p) => playerOption(p)),
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
@@ -431,6 +443,7 @@ const wwkBoomTarOptions = computed(() =>
 const STEP_VOICE: Record<string, string> = {
   guard: "guard",
   wolf: "wolf",
+  charm: "charm",
   prophet: "prophet",
   witch: "witch",
   knight: "knight",
@@ -448,6 +461,7 @@ const STEP_VOICE: Record<string, string> = {
 const STEP_CLOSE: Record<string, string> = {
   guard: "guard_close",
   wolf: "wolf_close",
+  charm: "charm_close",
   prophet: "prophet_close",
   witch: "witch_close",
   knight: "knight_close",
@@ -463,6 +477,8 @@ const VOICE_LABEL: Record<string, string> = {
   lovers_meet: "情侣认亲",
   lovers_close: "情侣闭眼",
   wolf: "狼人睁眼",
+  charm: "狼美人睁眼",
+  charm_close: "狼美人闭眼",
   wolf_king_gesture: "狼王/白狼王举手示意",
   wolf_close: "狼人闭眼",
   prophet: "预言家睁眼",
@@ -622,12 +638,34 @@ function doWolfClose() {
   playVoice("wolf_close")
 }
 
+// ===== 狼美人魅惑 =====
+function doCharm(v: string) {
+  snapshot()
+  const err = actions.charmDo(v)
+  if (err) return message.error(err)
+  const target = state.players.find((x) => x.name === v)
+  effect("charm", undefined, target ? `狼美人魅惑：${refs.playerLabel(target)}` : `狼美人魅惑：${v}`)
+}
+function openCharm() {
+  openPicker(
+    '选择魅惑对象（出局时其殉情）',
+    charmOptions.value,
+    (v) => doCharm(v),
+    state.charmLastTarget ? { blockedValues: [state.charmLastTarget], blockedMsg: "上一夜已魅惑，不能连续两晚同一人" } : undefined,
+  )
+}
+function doCharmClose() {
+  markDoneStep("charm")
+  playVoice("charm_close")
+}
+
 // ===== 首夜睁眼认人：法官确认角色身份（二次确认，防选错） =====
 /** 角色配色：身份确认弹窗内玩家名字/身份按角色着色 */
 const ROLE_COLOR: Record<string, string> = {
   狼人: "#ff4d4f",
   白狼王: "#ff4d4f",
   狼王: "#ff4d4f",
+  狼美人: "#ff4d4f",
   预言家: "#40a9ff",
   女巫: "#73d13d",
   猎人: "#ffa940",
@@ -1115,6 +1153,7 @@ const overlay = ref<{ type: string; key: number; result?: string } | null>(null)
 let overlayTimer: ReturnType<typeof setTimeout> | null = null
 const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> = {
   wolf: { emoji: "🐺", bg: "rgba(160,20,20,.92)", label: "狼人出刀" },
+  charm: { emoji: "🌹", bg: "rgba(150,40,90,.92)", label: "狼美人魅惑" },
   prophet: { emoji: "🔮", bg: "rgba(80,50,150,.92)", label: "预言家查验" },
   guard: { emoji: "🛡️", bg: "rgba(30,80,150,.92)", label: "守卫守护" },
   witch: { emoji: "🧪", bg: "rgba(20,120,80,.92)", label: "女巫用药" },
@@ -1244,7 +1283,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
           <template v-else>
             <p class="small" style="text-align: center">狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）</p>
-            <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', aliveOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
+            <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', wolfKillOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
             <a-button v-if="!state.nightWolfKill" size="large" @click="doWolfEmptyKill">🈳 空刀（不刀人）</a-button>
             <div v-if="state.nightSteps.wolf && !state.nightWolfKill" class="prophet-result">
               <div class="prophet-result-main">
@@ -1258,6 +1297,45 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               </div>
               <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
             </div>
+          </template>
+        </div>
+
+        <!-- 狼美人魅惑 -->
+        <div v-else-if="currentStep === 'charm'" class="step-body">
+          <div class="step-emoji">
+            <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="step-role-img" alt="狼美人" />
+            <span v-else>🌹</span>
+          </div>
+          <h3 class="step-title">狼美人魅惑</h3>
+          <template v-if="!hasBeauty">
+            <p class="small" style="text-align: center">狼美人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认狼美人（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('狼美人', v))">
+              <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="role-btn-img" alt="狼美人" />
+              <span v-else>🌹</span>
+              确认狼美人
+            </a-button>
+          </template>
+          <template v-else>
+            <template v-if="charmObj && !charmObj.alive">
+              <p class="small" style="text-align: center; color: #ff7875">狼美人已出局，本晚不能魅惑（走流程）</p>
+              <a-button type="primary" size="large" @click="doCharmClose">已确认狼美人出局，进入下一步</a-button>
+            </template>
+            <template v-else>
+              <p class="small" style="text-align: center">每晚魅惑一人，被魅惑者在狼美人被票/毒/枪杀时殉情</p>
+              <a-button v-if="!state.nightSteps.charm" type="primary" size="large" @click="openCharm">
+                <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="role-btn-img" alt="狼美人" />
+                <span v-else>🌹</span>
+                选择魅惑对象
+              </a-button>
+              <div v-else class="prophet-result">
+                <div class="prophet-result-main">
+                  <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="role-btn-img" alt="狼美人" />
+                  <span v-else>🌹</span>
+                  已魅惑：{{ labelOf(state.charmedName) }}
+                </div>
+                <a-button type="primary" danger @click="doCharmClose">已确认狼美人闭眼</a-button>
+              </div>
+            </template>
           </template>
         </div>
 
@@ -1770,7 +1848,10 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
     <transition name="fx">
       <div v-if="overlay" :key="overlay.key" class="fx-overlay" :style="{ background: EFFECT_META[overlay.type]?.bg }">
         <div class="fx-inner">
-          <div class="fx-emoji">{{ EFFECT_META[overlay.type]?.emoji }}</div>
+          <div class="fx-emoji">
+            <img v-if="overlay.type === 'charm' && refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="fx-role-img" alt="狼美人" />
+            <span v-else>{{ EFFECT_META[overlay.type]?.emoji }}</span>
+          </div>
           <div class="fx-label">{{ EFFECT_META[overlay.type]?.label }}</div>
           <div v-if="overlay.result" class="fx-result">{{ overlay.result }}</div>
         </div>
@@ -2342,11 +2423,26 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   justify-content: center;
   padding: 0;
 }
-.fab-icon {
-  width: 30px;
-  height: 30px;
+.role-btn-img {
+  height: clamp(18px, 2.5vw, 22px);
+  width: auto;
   object-fit: contain;
-  pointer-events: none;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.step-role-img {
+  height: clamp(56px, 8vw, 80px);
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
+}
+.fx-role-img {
+  height: clamp(64px, 10vw, 96px);
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.35));
 }
 
 /* 右侧展开/收起动画 */

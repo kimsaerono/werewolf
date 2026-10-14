@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
+import { roleAvatar } from "@/assets/roles"
 import { ROLE_EMOJI } from "@/game/logic"
 
 const props = defineProps<{ roles: string[] }>()
@@ -19,6 +20,10 @@ const ROLE_INFO: Record<string, { play: string; score: string }> = {
   狼王: {
     play: "同狼人，被刀死或被放逐投票出局可开枪带走一人；被毒死、殉情、白狼王带走时不能开枪",
     score: "胜利+3｜枪带神牌+0.5、枪带狼-1｜悍跳拿警徽+0.5｜自刀骗解药+0.5",
+  },
+  狼美人: {
+    play: "同狼人，每晚魅惑一人（不可连续两晚同一人）；被票/毒/枪杀出局时被魅惑者殉情（殉情者不能开技能）。禁止被刀、禁止自爆；被决斗/被刀出局不触发殉情",
+    score: "胜利+3｜3狼存活+0.5、4狼存活+1｜悍跳拿警徽+0.5｜自刀骗解药+0.5",
   },
   预言家: {
     play: "每晚验一人，知晓其为狼人或好人阵营",
@@ -53,7 +58,7 @@ const ROLE_INFO: Record<string, { play: string; score: string }> = {
     score: "人人/狼狼恋好人胜+3｜人狼恋第三方胜+3",
   },
 }
-const ROLE_ORDER = ["狼人", "白狼王", "狼王", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"]
+const ROLE_ORDER = ["狼人", "白狼王", "狼王", "狼美人", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"]
 
 /** 通用计分规则 */
 const GENERAL_NOTE =
@@ -64,8 +69,8 @@ const GAME_RULES: { title: string; items: string[] }[] = [
   {
     title: "夜间流程",
     items: [
-      "首夜：丘比特睁眼→情侣互认→守卫→狼人→女巫→预言家→猎人状态→白痴/骑士睁眼→竞选警长→天亮",
-      "后续每夜：守卫→狼人→女巫→预言家→天亮",
+      "首夜：丘比特睁眼→情侣互认→守卫→狼人→狼美人→女巫→预言家→猎人状态→白痴/骑士睁眼→竞选警长→天亮",
+      "后续每夜：守卫→狼人→狼美人→女巫→预言家→天亮",
       "守卫：每晚守一人免刀，不能连续两晚守同一人；同守同救则该玩家死亡（奶穿）",
       "狼人：共同选一人刀杀，狼情侣不可互刀",
       "女巫：解药仅首夜可自救，之后只能救人；毒药第二夜起可毒一人；同夜只能用一瓶；被首杀时跳过女巫环节（奶穿）",
@@ -139,7 +144,10 @@ const shownRoles = computed(() => {
       </div>
       <div class="rh-list">
         <div v-for="r in shownRoles" :key="r" class="rh-item">
-          <span class="rh-emoji">{{ ROLE_EMOJI[r] || "🎭" }}</span>
+          <span class="rh-emoji">
+            <img v-if="roleAvatar(r)" :src="roleAvatar(r)" class="rh-role-img" :alt="r" />
+            <span v-else>{{ ROLE_EMOJI[r] || "🎭" }}</span>
+          </span>
           <div class="rh-body">
             <div class="rh-name">{{ r }}</div>
             <div class="rh-play">{{ ROLE_INFO[r]?.play || "" }}</div>
@@ -246,9 +254,14 @@ const shownRoles = computed(() => {
   padding-bottom: 0;
 }
 .rh-emoji {
-  font-size: 16px;
-  line-height: 1.6;
-  text-align: center;
+  font-size: clamp(18px, 2.5vw, 22px);
+  line-height: 1;
+}
+.rh-role-img {
+  height: clamp(40px, 4vw, 48px);
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
 }
 .rh-body {
   min-width: 0;

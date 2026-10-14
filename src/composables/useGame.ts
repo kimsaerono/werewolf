@@ -485,6 +485,11 @@ export function useGame() {
       refresh()
       return err
     },
+    charmDo(sel: string) {
+      const err = g.charmDo(state, sel)
+      refresh()
+      return err
+    },
     prophetCheck(sel: string) {
       const r = g.prophetCheck(state, sel)
       refresh()

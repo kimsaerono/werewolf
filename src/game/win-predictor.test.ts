@@ -227,6 +227,41 @@ describe("标准 9 人局：不该出现 1%/99% 极值", () => {
   })
 })
 
+describe("狼美人启发式建模", () => {
+  const build = () => {
+    const s = defaultState()
+    s.board = "9"
+    const roles = ["狼人", "狼人", "狼美人", "预言家", "女巫", "猎人", "平民", "平民", "平民"]
+    s.boardRoles = roles
+    roles.forEach((role, i) => {
+      const p = newPlayer(`P${i + 1}`)
+      p.role = role
+      s.players.push(p)
+    })
+    renumberPlayers(s)
+    return s
+  }
+
+  it("魅惑好人后狼人胜率不降并给出因子", () => {
+    const s = build()
+    clearForcedWinCache()
+    const r1 = predictWinRate(s)
+    s.charmedName = s.players.find((p) => p.role === "平民")!.name
+    clearForcedWinCache()
+    const r2 = predictWinRate(s)
+    expect(r2.rates.wolf).toBeGreaterThanOrEqual(r1.rates.wolf)
+    expect(r2.factors.some((f) => f.includes("已魅惑好人"))).toBe(true)
+  })
+
+  it("狼美人出局后给出因子", () => {
+    const s = build()
+    s.players.find((p) => p.role === "狼美人")!.alive = false
+    clearForcedWinCache()
+    const r = predictWinRate(s)
+    expect(r.factors.some((f) => f.includes("狼美人已出局"))).toBe(true)
+  })
+})
+
 describe("绝地翻盘：只有被持续压制过的阵营才算翻盘", () => {
   const ROLES = ["狼人", "预言家", "猎人", "平民", "平民"]
 

@@ -16,6 +16,7 @@ export const STEP_META: Record<string, StepMeta> = {
   loversMeet: { label: "情侣认亲", emoji: "💑" },
   guard: { label: "守卫守人", emoji: "🛡️" },
   wolf: { label: "狼人刀人", emoji: "🌑" },
+  charm: { label: "狼美人魅惑", emoji: "🌹" },
   prophet: { label: "预言家验人", emoji: "🔮" },
   witch: { label: "女巫操作", emoji: "🧪" },
   knight: { label: "骑士睁眼", emoji: "⚔️" },

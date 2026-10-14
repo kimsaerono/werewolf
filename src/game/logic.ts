@@ -155,6 +155,8 @@ export const DEFAULT_VOICES: Record<string, string> = {
   lovers_close: "情侣请闭眼。",
   wolf: "狼崽子睁眼！认认你的同伙，商量今晚刀哪个大冤种，密谋完赶紧闭眼装好人。",
   wolf_king_gesture: "狼王、白狼王请举手示意，法官确认！",
+  charm: "狼美人请睁眼！今晚魅惑一个人，让他与你生死相随，选好赶紧闭眼。",
+  charm_close: "狼美人请闭眼。",
   wolf_close: "狼人请闭眼。",
   prophet: "算命大仙请睁眼！扒开一位玩家的底牌，看完把嘴捂严实，闭眼！",
   prophet_close: "预言家请闭眼。",
@@ -237,6 +239,10 @@ export interface GameState {
   finished: boolean
   /** 丘比特首夜连的情侣（2 人名字，顺序无关） */
   lovers: string[]
+  /** 狼美人当前生效的被魅惑者（死亡时触发殉情；空串表示未魅惑） */
+  charmedName: string
+  /** 狼美人上一夜魅惑的对象（用于「不可连续两晚魅惑同一人」） */
+  charmLastTarget: string
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
   /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
@@ -325,6 +331,8 @@ export function defaultState(): GameState {
     beiguo: "",
     finished: false,
     lovers: [],
+    charmedName: "",
+    charmLastTarget: "",
     simMode: true,
     modeChosen: false,
     underdogs: [],
@@ -367,6 +375,8 @@ export function normalizeState(s: GameState): GameState {
   if (st.players.length > 0 && (st.round > 0 || st.phase !== "idle")) st.playersConfirmed = true
   if (!Array.isArray(st.flow)) st.flow = []
   if (!Array.isArray(st.lovers)) st.lovers = []
+  if (typeof st.charmedName !== "string") st.charmedName = ""
+  if (typeof st.charmLastTarget !== "string") st.charmLastTarget = ""
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   if (!Array.isArray(st.underdogs)) st.underdogs = []
@@ -721,6 +731,21 @@ export function applyLoverDeaths(state: GameState): string[] {
   return killed
 }
 
+/**
+ * 殉情死亡：直接置死、不触发角色技能钩子（猎人/狼王不开枪、白痴不翻牌）。
+ * 供情侣殉情与狼美人魅惑殉情共用；返回本次新增出局的名字（含被连带的伴侣）。
+ */
+export function killAsLover(state: GameState, name: string): string[] {
+  const p = state.players.find((x) => x.name === name)
+  if (!p || !p.alive) return []
+  p.alive = false
+  p.deathReason = "lover"
+  if (state.jingHui === name) state.badgePending = name
+  const killed = [name]
+  killed.push(...applyLoverDeaths(state))
+  return killed
+}
+
 /** 全局死亡前钩子（供角色系统扩展，如白痴翻牌免死） */
 const beforeDeathHooks: Array<(state: GameState, evt: { name: string; reason: DieReason }) => boolean> = []
 
@@ -938,6 +963,8 @@ export function nextNight(state: GameState): void {
   state.nightWitchPoison = ""
   state.nightWitchSave = ""
   state.nightSameSaveKill = false
+  // 狼美人：上一夜生效的魅惑对象落为「禁连选」基准，之后可重新魅惑
+  if (state.charmedName) state.charmLastTarget = state.charmedName
   state.nightSteps = freshNightSteps()
   state.hunterShotPending = false
   state.wolfKingShotPending = false
@@ -952,6 +979,8 @@ export function wolfKill(state: GameState, sel: string): string | null {
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为刀人对象`
+  // 狼美人禁止被刀（防止自刀触发殉情）
+  if (getRoleInstance(target.role)?.def.id === "狼美人") return `${sel}是狼美人，禁止被刀`
   const isSelf = isWolfRole(target.role)
   // 情侣不能互刀：狼恋人不可作为刀人目标
   if (isLover(state, sel) && isWolfRole(target.role)) {
@@ -996,6 +1025,25 @@ export function wolfEmptyKill(state: GameState): string | null {
   state.wolfSelfKill = false
   state.nightSteps.wolf = true
   pushFlow(state, "狼人刀人", "", "空刀")
+  return null
+}
+
+/** 狼美人夜间魅惑：选择一人，死亡时其殉情 */
+export function charmDo(state: GameState, sel: string): string | null {
+  const beauty = state.players.find((p) => getRoleInstance(p.role)?.def.id === "狼美人")
+  if (!beauty) return "本局没有狼美人"
+  if (!beauty.alive) return "狼美人已出局，本晚不能魅惑"
+  if (!sel) return "请选择魅惑对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为魅惑对象`
+  if (target.name === beauty.name) return "狼美人不能魅惑自己"
+  if (sel === state.charmLastTarget) return `不可连续两晚魅惑同一人（${sel}）`
+  state.charmedName = sel
+  state.nightSteps.charm = true
+  pushNightLog(state, `🌹狼美人魅惑：${sel}`)
+  pushGlobalLog(state, `🌹狼美人魅惑了 ${sel}`)
+  pushFlow(state, "狼美人魅惑", sel)
   return null
 }
 
@@ -1235,11 +1283,7 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   // 计分口径：带狼 -1；带神牌 +0.5；带平民/白痴/第三方不加分
   if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
   else if (targetRole?.countsAsGod()) wk.mark.wolfKingShotGood = true
-  // 狼枪带走猎人：猎人依然可开枪（非被毒）
-  if (targetRole && targetRole.def.id === "猎人" && !target.mark.hunterIsPoisoned) {
-    state.hunterShotPending = true
-    pushGlobalLog(state, `🔫猎人${tarName}被狼王带走，可开枪`)
-  }
+  // 被带走的猎人能否开枪，由 HunterRole.onAfterDeath 处理
   state.wolfKingShotPending = false
   state.wolfKingShotDone = true
   pushNightLog(state, `🔫狼王${wk.name}开枪带走${tarName}`)
@@ -1337,6 +1381,7 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   if (!p) return "未找到该玩家"
   if (!p.alive) return "该玩家已出局"
   if (!isWolfRole(p.role)) return "只能选择狼人/白狼王自爆"
+  if (getRoleInstance(p.role)?.def.id === "狼美人") return "狼美人不能自爆"
   killPlayer(state, sel, "selfBomb")
   state.skipVote = true
   // 自爆直接吞警徽：自爆者是警长则警徽流失

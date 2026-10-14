@@ -42,6 +42,7 @@ const BASE = {
   wolfSkill: {
     狼王: 3,
     白狼王: 4,
+    狼美人: 3,
   } as Record<string, number>,
   /** 出局/消耗增减（>0 表示对狼人有利） */
   delta: {
@@ -60,6 +61,8 @@ const BASE = {
     idiotDie: 2, // 白痴出局
     wolfKingDie: 3, // 狼王出局（开场加成消失）
     whiteWolfDie: 4, // 白狼王出局
+    wolfBeautyDie: 3, // 狼美人出局（开场加成消失）
+    charmActive: 2, // 狼美人已魅惑一名好人（被刀/票/毒/枪杀时其殉情，对狼人有利）
     edgeGodOneLeft: 15, // 神职仅剩 1 人 → 屠神在即
     edgeCivilOneLeft: 15, // 平民仅剩 1 人 → 屠民在即
   },
@@ -233,6 +236,21 @@ export function predictWinRate(state: GameState): WinPrediction {
     factors.push("💥 白狼王已出局")
   } else if (aliveRole("白狼王")) {
     factors.push("💥 白狼王在场")
+  }
+  const beauty = aliveRole("狼美人")
+  if (beauty) {
+    const charmed = state.charmedName
+      ? state.players.find((p) => p.name === state.charmedName)
+      : undefined
+    if (charmed && charmed.alive && !isWolfRole(charmed.role)) {
+      wolf += BASE.delta.charmActive
+      factors.push("🌹 狼美人已魅惑好人")
+    } else {
+      factors.push("🌹 狼美人在场")
+    }
+  } else if (boardRoles.includes("狼美人")) {
+    wolf -= BASE.delta.wolfBeautyDie
+    factors.push("🌹 狼美人已出局")
   }
 
   // ⑤ 涂边临近提示

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
 import { roleShort } from "@/game/logic"
+import { roleAvatar } from "@/assets/roles"
+import { ROLE_EMOJI as ROLE_EMOJI_CONST } from "@/game/logic"
 
 const props = withDefaults(
   defineProps<{
@@ -87,6 +89,7 @@ const ROLE_COLOR: Record<string, string> = {
   狼人: "#ff4d4f",
   白狼王: "#ff4d4f",
   狼王: "#ff4d4f",
+  狼美人: "#ff4d4f",
   预言家: "#40a9ff",
   女巫: "#73d13d",
   猎人: "#ffa940",
@@ -97,19 +100,7 @@ const ROLE_COLOR: Record<string, string> = {
   平民: "#bfbfbf",
 }
 const roleColor = (r?: string) => ROLE_COLOR[r || ""] || "#fff"
-const ROLE_EMOJI: Record<string, string> = {
-  狼人: "🐺",
-  白狼王: "❄️🐺",
-  狼王: "🔫🐺",
-  预言家: "🔮",
-  女巫: "🧙",
-  猎人: "🔫",
-  守卫: "🛡️",
-  骑士: "⚔️",
-  白痴: "🙊",
-  平民: "👤",
-  丘比特: "💘",
-}
+const ROLE_EMOJI = ROLE_EMOJI_CONST as Record<string, string>
 /** 选项是否已选中（多选用数组，单选用值） */
 const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.value.includes(opt.value) : single.value === opt.value)
 </script>
@@ -131,7 +122,11 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
           <div class="fp-name">{{ opt.name || opt.label }}</div>
-          <div class="fp-role" :style="{ color: roleColor(opt.role) }" :title="opt.role || ''">{{ ROLE_EMOJI[opt.role || ""] || "" }}{{ roleShort(opt.role) }}</div>
+          <div class="fp-role" :style="{ color: roleColor(opt.role) }" :title="opt.role || ''">
+            <img v-if="opt.role && roleAvatar(opt.role)" :src="roleAvatar(opt.role)" class="picker-role-img" :alt="opt.role" />
+            <span v-else>{{ ROLE_EMOJI[opt.role || ""] || "" }}</span>
+            {{ roleShort(opt.role) }}
+          </div>
           <div v-if="isBlocked(opt.value)" class="fp-blocked-badge">{{ blockedMsg }}</div>
         </template>
         <template v-else>
@@ -189,6 +184,13 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 .fp-card:hover {
   border-color: #2ed573;
   background: #232a3d;
+}
+.picker-role-img {
+  height: clamp(20px, 2.5vw, 24px);
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 .fp-card.active {
   border-color: #2ed573;
