@@ -132,7 +132,9 @@ function startLastWords() {
       lastWordsLeft.value = s
       if (s >= 1 && s <= 7 && lastBeep !== s) {
         lastBeep = s
-        playSfx("beep")
+        if (s <= 2) playSfx("urgentDouble")
+        else if (s <= 5) playSfx("urgent")
+        else playSfx("beep")
       }
       if (s <= 0) {
         playSfx("ding")
@@ -177,7 +179,9 @@ function startSpeech() {
       speechLeft.value = s
       if (s >= 1 && s <= 7 && lastBeep !== s) {
         lastBeep = s
-        playSfx("beep")
+        if (s <= 2) playSfx("urgentDouble")
+        else if (s <= 5) playSfx("urgent")
+        else playSfx("beep")
       }
       if (s <= 0) {
         playSfx("ding")
@@ -980,12 +984,14 @@ function doJingHui(v: string) {
   } else {
     message.success("警徽已设置")
   }
+  if (ownerP) effect("jinghui", undefined, `${refs.playerLabel(ownerP)} 成为警长`)
 }
 /** 两轮竞选平票：警徽永久流失，跳过竞选 */
 function doJingHuiLose() {
   snapshot()
   actions.setJingHui("", false)
   markDoneStep("jinghui")
+  effect("jinghuiLose", undefined, "两轮平票，警徽流失")
   message.warning("两轮竞选平票，警徽永久流失，本局无警长")
 }
 function openJinghuiModal() {
@@ -1006,6 +1012,7 @@ function finishJinghuiSetup() {
   } else {
     message.success("警徽设置已保存")
   }
+  if (ownerP) effect("jinghui", undefined, `${refs.playerLabel(ownerP)} 成为警长`)
 }
 /** 猎人可开枪时语音提示法官（唯一播报源，防重复）：pending 置真后延迟播一次 */
 let hunterPromptTimer: ReturnType<typeof setTimeout> | null = null
@@ -1021,6 +1028,7 @@ function promptHunterShot() {
 function onSheriffAuto() {
   sheriffDeathModal.value = false
   actions.loseJingHui()
+  effect("jinghuiLose", undefined, "警徽流失")
   message.warning("警徽流失")
 }
 function onSheriffManual() {
@@ -1030,6 +1038,7 @@ function onSheriffManual() {
 function onSheriffLose() {
   sheriffDeathModal.value = false
   actions.loseJingHui()
+  effect("jinghuiLose", undefined, "警徽流失")
   message.warning("警徽流失")
 }
 function doFinishVote(v: string) {
@@ -1048,6 +1057,7 @@ function doFinishVote(v: string) {
   }
   const err = actions.finishVote(v, false)
   if (err) return message.error(err)
+  effect("vote", undefined, `放逐出局：${refs.playerLabel(outP)}`)
   markDone("vote")
   // 放逐玩家有遗言，弹计时
   lastWordsName.value = v
@@ -1175,6 +1185,9 @@ const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> 
   knight: { emoji: "⚔️", bg: "rgba(120,120,150,.92)", label: "骑士决斗" },
   cupid: { emoji: "💘", bg: "rgba(190,60,110,.92)", label: "丘比特连人" },
   death: { emoji: "💀", bg: "rgba(70,70,90,.88)", label: "玩家出局" },
+  vote: { emoji: "⚖️", bg: "rgba(60,80,140,.92)", label: "放逐出局" },
+  jinghui: { emoji: "👑", bg: "rgba(200,160,30,.92)", label: "警徽易主" },
+  jinghuiLose: { emoji: "👑", bg: "rgba(110,90,60,.9)", label: "警徽流失" },
 }
 function effect(type: string, sfx?: SfxName, result?: string) {
   if (sfx) playSfx(sfx)

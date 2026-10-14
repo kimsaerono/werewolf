@@ -62,6 +62,8 @@ export type SfxName =
   | "explode" // 自爆
   | "sword" // 骑士决斗
   | "beep" // 倒计时滴
+  | "urgent" // 倒计时预警（5~3s）
+  | "urgentDouble" // 倒计时终极（2~1s，双击）
   | "ding" // 时间到
   | "death" // 出局
 
@@ -76,6 +78,8 @@ const SFX_DURATIONS: Record<SfxName, number> = {
   explode: 0.6,
   sword: 0.3,
   beep: 0.2,
+  urgent: 0.18,
+  urgentDouble: 0.35,
   ding: 0.6,
   death: 0.7,
 }
@@ -144,6 +148,18 @@ export function playSfx(name: SfxName): void {
       break
     case "beep":
       tone(c, 880, t, 0.12, "sine", 0.15)
+      break
+    case "urgent":
+      // 预警：方波、双音上行、音量略大、更短促
+      tone(c, 1000, t, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.04, 0.07, "square", 0.22)
+      break
+    case "urgentDouble":
+      // 终极：同音色、双击（0.15s 间隔）
+      tone(c, 1000, t, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.04, 0.07, "square", 0.22)
+      tone(c, 1000, t + 0.15, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.19, 0.07, "square", 0.22)
       break
     case "ding":
       tone(c, 880, t, 0.15, "sine", 0.18)

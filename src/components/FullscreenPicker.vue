@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
-import { roleShort } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
-import { ROLE_EMOJI as ROLE_EMOJI_CONST } from "@/game/logic"
 
 const props = withDefaults(
   defineProps<{
@@ -84,23 +82,8 @@ function confirm() {
   emit("confirmSingle", single.value)
 }
 const selected = computed(() => (props.multi ? multiSel.value : single.value))
-/** 角色配色（与 GamePanel 一致，用于姓名/角色着色） */
-const ROLE_COLOR: Record<string, string> = {
-  狼人: "#ff4d4f",
-  白狼王: "#ff4d4f",
-  狼王: "#ff4d4f",
-  狼美人: "#ff4d4f",
-  预言家: "#40a9ff",
-  女巫: "#73d13d",
-  猎人: "#ffa940",
-  守卫: "#36cfc9",
-  骑士: "#b37feb",
-  白痴: "#ffd666",
-  丘比特: "#ff85c0",
-  平民: "#bfbfbf",
-}
-const roleColor = (r?: string) => ROLE_COLOR[r || ""] || "#fff"
-const ROLE_EMOJI = ROLE_EMOJI_CONST as Record<string, string>
+/** 角色背景图：有对应头像则返回路径（用作卡片背景），否则空串 */
+const roleBg = (r?: string) => (r ? roleAvatar(r) : "")
 /** 选项是否已选中（多选用数组，单选用值） */
 const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.value.includes(opt.value) : single.value === opt.value)
 </script>
@@ -117,16 +100,13 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         :key="opt.value"
         class="fp-card"
         :class="{ active: isActive(opt), disabled: disabled(opt.value) || isBlocked(opt.value) }"
+        :title="opt.role || ''"
         @click="toggle(opt.value)"
       >
+        <img v-if="roleBg(opt.role)" class="fp-card-bg" :src="roleBg(opt.role)" :alt="opt.role" aria-hidden="true" />
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
           <div class="fp-name">{{ opt.name || opt.label }}</div>
-          <div class="fp-role" :style="{ color: roleColor(opt.role) }" :title="opt.role || ''">
-            <img v-if="opt.role && roleAvatar(opt.role)" :src="roleAvatar(opt.role)" class="picker-role-img" :alt="opt.role" />
-            <span v-else>{{ ROLE_EMOJI[opt.role || ""] || "" }}</span>
-            {{ roleShort(opt.role) }}
-          </div>
           <div v-if="isBlocked(opt.value)" class="fp-blocked-badge">{{ blockedMsg }}</div>
         </template>
         <template v-else>
@@ -173,52 +153,83 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   width: min(720px, 100%);
 }
 .fp-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
   background: #1d2233;
   border: 1px solid #2b3145;
   border-radius: 12px;
   padding: 12px 8px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 .fp-card:hover {
   border-color: #2ed573;
   background: #232a3d;
 }
-.picker-role-img {
-  height: clamp(20px, 2.5vw, 24px);
-  width: auto;
-  object-fit: contain;
-  vertical-align: middle;
-  margin-right: 4px;
+/* 角色头像作卡片背景（压暗，便于识别角色又不干扰文字） */
+.fp-card-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  filter: brightness(0.55) saturate(0.9);
+  pointer-events: none;
+  z-index: 0;
 }
 .fp-card.active {
   border-color: #2ed573;
   background: #2ed57314;
+  box-shadow: inset 0 0 0 3px #2ed573, 0 0 14px rgba(46, 213, 115, 0.6);
 }
 .fp-card.disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .fp-blocked-badge {
+  position: relative;
+  z-index: 1;
   font-size: 11px;
   color: #ff7875;
   margin-top: 4px;
   line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 .fp-no {
-  font-size: 18px;
-  font-weight: 700;
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: rgba(10, 14, 24, 0.78);
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
   color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 .fp-name {
-  font-size: 14px;
+  position: relative;
+  z-index: 1;
+  font-size: 18px;
   color: #eee;
   margin-top: 2px;
-}
-.fp-role {
-  font-size: 12px;
-  margin-top: 2px;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 .fp-actions {
   display: flex;
