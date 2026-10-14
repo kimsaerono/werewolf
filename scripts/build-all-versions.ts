@@ -21,6 +21,15 @@ function getVersionFromTag(tag: string): string {
   return tag.replace("stable-v", "")
 }
 
+// git describe 输出规范化：stable-v1.7 -> 1.7；领先最近 tag 时 stable-v1.7-3-gabc -> 1.7+dev
+function normalizeVersion(v: string): string {
+  const stripped = v.replace(/^stable-v/, "")
+  if (/-\d+-g[0-9a-f]+$/i.test(stripped)) {
+    return stripped.replace(/-\d+-g[0-9a-f]+$/i, "") + "+dev"
+  }
+  return stripped.replace(/-dirty$/, "")
+}
+
 async function main() {
   const repoRoot = process.cwd()
   const distDir = join(repoRoot, "dist")
@@ -41,18 +50,29 @@ async function main() {
 
   const versions: { version: string; path: string; tag: string; date: string }[] = []
 
-  // 1. 构建 main 分支（最新版）-> dist/
+  const mainCommit = execSync("git rev-parse main", { encoding: "utf-8" }).trim()
+
+  // 1. 构建 main 分支（最新版）-> dist/ 根目录
   console.log("\n=== Building main (latest) ===")
   run("git checkout main")
   run("bun install")
   run("VITE_BASE=/werewolf/ bun run build")
-  // 版本号
-  const mainVersion = execSync("git describe --tags --always --dirty", { encoding: "utf-8" }).trim()
-  versions.push({ version: mainVersion, path: "/werewolf/", tag: "main", date: new Date().toISOString() })
+  const mainDescribe = execSync("git describe --tags --always --dirty", { encoding: "utf-8" }).trim()
+  // root 展示版本号：若 main 与某个 tag 指向同一提交，用该 tag 的版本号（下方循环会覆盖）
+  let rootVersion = normalizeVersion(mainDescribe)
 
   // 2. 构建每个 stable-v* 标签 -> dist/vX.Y/
   for (const tag of tags) {
     const version = getVersionFromTag(tag)
+    const tagCommit = execSync(`git rev-list -n 1 ${tag}`, { encoding: "utf-8" }).trim()
+
+    if (tagCommit === mainCommit) {
+      // 该 tag 与 main 完全相同，root 已提供同一构建，跳过子目录，避免重复
+      console.log(`\n=== Skipping ${tag}: identical to main (root already serves it) ===`)
+      rootVersion = version
+      continue
+    }
+
     const tempDir = join(repoRoot, `dist-temp-${version}`)
     const outDir = join(distDir, version)
 
@@ -78,20 +98,12 @@ async function main() {
     versions.push({ version, path: base, tag, date: tagDate })
   }
 
-  // 3. 生成 versions.json 清单
-  // 去重：如果 main 的版本号与最新 tag 相同，只保留 tag 条目
-  const uniqueVersions = versions.filter((v, i, arr) => {
-    // 如果是 main 且版本号与某个 tag 条目相同，去掉 main
-    if (v.tag === "main") {
-      const tagEntry = arr.find(x => x.tag !== "main" && x.version === v.version)
-      return !tagEntry
-    }
-    return true
-  })
+  // 3. 生成 versions.json 清单（root 代表 main/最新版）
+  versions.push({ version: rootVersion, path: "/werewolf/", tag: "main", date: new Date().toISOString() })
 
   const manifest = {
-    latest: mainVersion,
-    versions: uniqueVersions.sort((a, b) => b.date.localeCompare(a.date)),
+    latest: rootVersion,
+    versions: versions.sort((a, b) => b.date.localeCompare(a.date)),
   }
   writeFileSync(join(distDir, "versions.json"), JSON.stringify(manifest, null, 2))
   console.log("\n=== versions.json ===")
