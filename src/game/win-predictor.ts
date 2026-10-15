@@ -62,7 +62,7 @@ const BASE = {
     wolfKingDie: 3, // 狼王出局（开场加成消失）
     whiteWolfDie: 4, // 白狼王出局
     wolfBeautyDie: 3, // 狼美人出局（开场加成消失）
-    charmActive: 2, // 狼美人已魅惑一名好人（被刀/票/毒/枪杀时其殉情，对狼人有利）
+    charmActive: 2, // 狼美人已魅惑一名好人（被票/枪杀时其殉情，对狼人有利）
     edgeGodOneLeft: 15, // 神职仅剩 1 人 → 屠神在即
     edgeCivilOneLeft: 15, // 平民仅剩 1 人 → 屠民在即
   },

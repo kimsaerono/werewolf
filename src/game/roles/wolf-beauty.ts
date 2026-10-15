@@ -4,11 +4,11 @@ import type { RoleDef, DieEvent, Effect, RoleSolverState } from "./types"
 import { killAsLover, pushNightLog, pushGlobalLog } from "../logic"
 
 /**
- * 狼美人角色：狼人，每晚魅惑一人；被投票/毒杀/猎人枪杀出局时，被魅惑者殉情。
+ * 狼美人角色：狼人，每晚魅惑一人；被投票/枪杀出局时，被魅惑者殉情。
  * 同时作为狼人参与夜间刀人。
  *
  * 规则要点：
- * - 触发死因：投票 / 毒杀 / 猎人枪杀；被刀（禁止）/ 决斗 / 自爆 / 殉情均不触发。
+ * - 触发死因：投票 / 猎人枪杀 / 狼王枪杀；毒杀 / 被刀（禁止）/ 决斗 / 自爆 / 殉情均不触发。
  * - 不可连续两晚魅惑同一人。
  * - 殉情者不能开技能（走 killAsLover，绕开死亡钩子）。
  * - 狼美人禁止被刀、禁止自爆（由 logic 的 wolfKill / wolfBaoZha 拦截）。
@@ -43,8 +43,8 @@ export class WolfBeautyRole extends BaseRole {
   }
 
   onAfterDeath(state: GameState, evt: DieEvent & { killed: string[] }): void {
-    // 仅投票 / 毒杀 / 猎人枪杀触发殉情
-    if (evt.reason !== "vote" && evt.reason !== "poison" && evt.reason !== "shot") return
+    // 仅投票 / 枪杀触发殉情（夜里被女巫毒死不触发）
+    if (evt.reason !== "vote" && evt.reason !== "shot") return
     const targetName = state.charmedName
     if (!targetName) return
     const target = state.players.find((x) => x.name === targetName)

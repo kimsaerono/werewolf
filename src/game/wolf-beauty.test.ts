@@ -104,7 +104,7 @@ describe("狼美人·禁刀 / 禁自爆", () => {
   })
 })
 
-describe("狼美人·殉情触发（vote/poison/shot）", () => {
+describe("狼美人·殉情触发（vote/shot）", () => {
   it("被放逐：被魅惑者殉情", () => {
     const st = setup()
     const beauty = byRole(st, "狼美人")
@@ -119,21 +119,6 @@ describe("狼美人·殉情触发（vote/poison/shot）", () => {
     expect(target.deathReason).toBe("lover")
     // 被魅惑者恰为警长：殉情后警徽待移交
     expect(st.badgePending).toBe(target.name)
-  })
-
-  it("被毒杀：被魅惑者殉情", () => {
-    const st = setup()
-    nextNight(st)
-    const beauty = byRole(st, "狼美人")
-    const target = byRole(st, "平民")
-    charmDo(st, target.name)
-    wolfKill(st, byRole(st, "狼人").name)
-    expect(witchPoison(st, beauty.name)).toBeNull()
-    resolveNightDeath(st)
-    expect(beauty.alive).toBe(false)
-    expect(beauty.deathReason).toBe("poison")
-    expect(target.alive).toBe(false)
-    expect(target.deathReason).toBe("lover")
   })
 
   it("被猎人枪杀：被魅惑者殉情", () => {
@@ -167,6 +152,21 @@ describe("狼美人·殉情触发（vote/poison/shot）", () => {
 })
 
 describe("狼美人·殉情不触发", () => {
+  it("夜里被女巫毒杀：狼美人出局但不触发殉情", () => {
+    const st = setup()
+    nextNight(st)
+    const beauty = byRole(st, "狼美人")
+    const target = byRole(st, "平民")
+    charmDo(st, target.name)
+    wolfKill(st, byRole(st, "狼人").name)
+    expect(witchPoison(st, beauty.name)).toBeNull()
+    resolveNightDeath(st)
+    expect(beauty.alive).toBe(false)
+    expect(beauty.deathReason).toBe("poison")
+    expect(target.alive).toBe(true)
+    expect(target.deathReason).not.toBe("lover")
+  })
+
   it("被决斗出局：不触发殉情", () => {
     const st = setup()
     const beauty = byRole(st, "狼美人")

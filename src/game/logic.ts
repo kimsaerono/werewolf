@@ -239,7 +239,7 @@ export interface GameState {
   finished: boolean
   /** 丘比特首夜连的情侣（2 人名字，顺序无关） */
   lovers: string[]
-  /** 狼美人当前生效的被魅惑者（死亡时触发殉情；空串表示未魅惑） */
+  /** 狼美人当前生效的被魅惑者（被票/枪出局时触发殉情；空串表示未魅惑） */
   charmedName: string
   /** 狼美人上一夜魅惑的对象（用于「不可连续两晚魅惑同一人」） */
   charmLastTarget: string
@@ -1028,7 +1028,7 @@ export function wolfEmptyKill(state: GameState): string | null {
   return null
 }
 
-/** 狼美人夜间魅惑：选择一人，死亡时其殉情 */
+/** 狼美人夜间魅惑：选择一人，被票/枪出局时其殉情 */
 export function charmDo(state: GameState, sel: string): string | null {
   const beauty = state.players.find((p) => getRoleInstance(p.role)?.def.id === "狼美人")
   if (!beauty) return "本局没有狼美人"

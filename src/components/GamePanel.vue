@@ -1344,7 +1344,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               <a-button type="primary" size="large" @click="doCharmClose">已确认狼美人出局，进入下一步</a-button>
             </template>
             <template v-else>
-              <p class="small" style="text-align: center">每晚魅惑一人，被魅惑者在狼美人被票/毒/枪杀时殉情</p>
+              <p class="small" style="text-align: center">每晚魅惑一人，被魅惑者在狼美人被票/枪杀时殉情</p>
               <a-button v-if="!state.nightSteps.charm" type="primary" size="large" @click="openCharm">
                 <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="role-btn-img" alt="狼美人" />
                 <span v-else>🌹</span>
@@ -2472,6 +2472,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   align-items: center;
   justify-content: center;
   padding: 0;
+  overflow: hidden;
+}
+.fab-icon {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  pointer-events: none;
 }
 .role-btn-img {
   height: clamp(18px, 2.5vw, 22px);
