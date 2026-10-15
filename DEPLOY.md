@@ -21,6 +21,7 @@
 | `stable-v1.10` | 狼美人夜间被女巫毒死不触发殉情；自爆悬浮按钮图标限定尺寸 | `6b5297c` |
 
 > v1.6 未发布独立 tag（跳过）；v1.0–v1.5 的 tag 已不在远程，仅作历史锚点记录。
+> 表中「对应提交」= 该版本的**发布内容提交**；对应 tag 可能包含其后的文档锚点提交（同一 SHA 才最干净，见下方发版顺序）。
 
 > **线上版本号**由构建时的 `git describe --tags` 注入（`vite.config.ts` 的 `__APP_VERSION__`）。
 > 所以「部署时能否看到某 tag」取决于**构建那一刻该 tag 是否已存在**，以及 CI 是否拉了 tag（workflow 已设 `fetch-depth: 0`）。
@@ -42,7 +43,7 @@ git push origin main stable-vX.Y   # 一次推送，tag 与提交同时到达
 ## 紧急回退流程（3 步）
 
 1. 打开仓库 → **Actions** → **Deploy Pages** 工作流
-2. **Run workflow** → Ref 下拉框选择 tag `stable-v1.0`（或输入分支/tag 名）→ 运行
+2. **Run workflow** → Ref 下拉框选择目标 tag（如 `stable-v1.10`，或输入任意分支/tag 名）→ 运行
 3. 构建完成后 Pages 原子替换为旧版构建，即完成回退
 
 > 本地命令行等价操作：`git push origin :refs/heads/main` 后从 tag 建分支推送，或直接在 UI 触发即可，无需本地构建。
