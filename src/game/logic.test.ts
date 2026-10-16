@@ -234,12 +234,12 @@ describe("预言家/狼人/女巫标记", () => {
     expect(st.globalLog.length).toBe(logs)
   })
 
-  it("首夜验狼标记", () => {
+  it("首夜验狼计入 prophetCheckWolf", () => {
     const st = setup()
     st.round = 1
     const r = prophetCheck(st, "P0")
     expect(r).toEqual({ name: "P0", isWolf: true })
-    expect(byRole(st, "预言家")!.mark.prophetFirstDayWolf).toBe(true)
+    expect(byRole(st, "预言家")!.mark.prophetCheckWolf).toBe(1)
   })
 
   it("预言家不验选项", () => {
@@ -291,6 +291,27 @@ describe("算分引擎", () => {
     st.jingHui = "P3"
     recalcScore(st)
     expect(g(st, "P3").scoreRound).toBe(1)
+  })
+
+  it("预言家已出局：狼胜仍按标记计验狼分（+0.5/只，不封顶）", () => {
+    const st = setup()
+    const prophet = byRole(st, "预言家")!
+    prophet.alive = false
+    prophet.mark.prophetCheckWolf = 2
+    st.winCamp = "wolf"
+    recalcScore(st)
+    expect(prophet.scoreRound).toBe(1)
+    expect(prophet.scoreDetail).toContain("验狼×2+1")
+  })
+
+  it("预言家已出局：仍按标记扣漏验分", () => {
+    const st = setup()
+    const prophet = byRole(st, "预言家")!
+    prophet.alive = false
+    prophet.mark.prophetNoCheckCount = 1
+    st.winCamp = "wolf"
+    recalcScore(st)
+    expect(prophet.scoreRound).toBe(-0.5)
   })
 
   it("女巫毒狼+1 猎人带狼+1", () => {

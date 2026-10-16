@@ -202,4 +202,30 @@ describe("狼美人·殉情者不能开技能", () => {
     // 殉情绕过死亡钩子：不置开枪时机
     expect(st.hunterShotPending).toBe(false)
   })
+
+  it("被魅惑的狼王殉情后不能开枪", () => {
+    const st = setup(["狼美人", "狼王", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民", "平民"])
+    const beauty = byRole(st, "狼美人")
+    const wk = byRole(st, "狼王")
+    nextNight(st)
+    charmDo(st, wk.name)
+    finishVote(st, beauty.name, false)
+    expect(wk.alive).toBe(false)
+    expect(wk.deathReason).toBe("lover")
+    // 殉情绕过死亡钩子：不置狼王开枪时机
+    expect(st.wolfKingShotPending).toBe(false)
+  })
+
+  it("被魅惑的白痴殉情后不翻牌", () => {
+    const st = setup(["狼美人", "狼人", "预言家", "女巫", "猎人", "白痴", "平民", "平民", "平民", "平民"])
+    const beauty = byRole(st, "狼美人")
+    const idiot = byRole(st, "白痴")
+    nextNight(st)
+    charmDo(st, idiot.name)
+    finishVote(st, beauty.name, false)
+    expect(idiot.alive).toBe(false)
+    expect(idiot.deathReason).toBe("lover")
+    // 殉情绕过死亡钩子：白痴不翻牌（翻牌仅在被放逐时触发）
+    expect(idiot.mark.idiotFlipped).toBe(false)
+  })
 })

@@ -101,7 +101,6 @@ export function boardShortName(board: string): string {
 }
 
 export interface Mark {
-  prophetFirstDayWolf: boolean
   prophetCheckWolf: number
   prophetCheckGood: boolean
   prophetNoCheckCount: number
@@ -262,7 +261,6 @@ export interface GameState {
 
 export function defaultMark(): Mark {
   return {
-    prophetFirstDayWolf: false,
     prophetCheckWolf: 0,
     prophetCheckGood: false,
     prophetNoCheckCount: 0,
@@ -1072,10 +1070,6 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
   if (prophet && prophet.alive) {
     if (isWolf) prophet.mark.prophetCheckWolf = (prophet.mark.prophetCheckWolf || 0) + 1
     else prophet.mark.prophetCheckGood = true
-  }
-  // 首夜验狼额外加分
-  if (state.round === 1 && isWolf) {
-    if (prophet && prophet.alive) prophet.mark.prophetFirstDayWolf = true
   }
   return { name: sel, isWolf }
 }

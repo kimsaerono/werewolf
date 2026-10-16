@@ -28,18 +28,16 @@ export class ProphetRole extends BaseRole {
       entries.push({ reason: "拿警徽", delta: 0.5 })
     }
 
-    if (player.alive) {
-      // 验狼：每只 +0.5，不封顶
-      const wolfCount = (m.prophetCheckWolf as number) || 0
-      if (wolfCount > 0) {
-        entries.push({ reason: `验狼×${wolfCount}`, delta: 0.5 * wolfCount })
-      }
+    // 验狼：每只 +0.5，不封顶（按标记计分，与存活/胜负方无关）
+    const wolfCount = (m.prophetCheckWolf as number) || 0
+    if (wolfCount > 0) {
+      entries.push({ reason: `验狼×${wolfCount}`, delta: 0.5 * wolfCount })
+    }
 
-      // 未验人扣分
-      const nc = (m.prophetNoCheckCount as number) || 0
-      if (nc > 0) {
-        entries.push({ reason: `未验人${nc}晚`, delta: -0.5 * nc })
-      }
+    // 未验人扣分：计数只在预言家存活时累加，故此处无需再判存活
+    const nc = (m.prophetNoCheckCount as number) || 0
+    if (nc > 0) {
+      entries.push({ reason: `未验人${nc}晚`, delta: -0.5 * nc })
     }
 
     return entries
