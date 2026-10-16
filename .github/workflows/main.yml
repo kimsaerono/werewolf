@@ -1,42 +1,75 @@
 name: Deploy Pages
 on:
   push:
-    branches: [ master, main ]
+    tags: [ 'stable-v*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to deploy (e.g. stable-v1.5), empty = current ref"
+        required: false
+        type: string
+      target:
+        description: "Deploy target: 'root' (main) or 'version' (subdirectory)"
+        required: false
+        type: choice
+        options: [ "root", "version" ]
+        default: "root"
+
 permissions:
   contents: read
   pages: write
   id-token: write
+
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
   build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
+      - name: Checkout source (full history + tags)
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      # 安装 Bun 环境
+      - name: Show version info
+        run: |
+          git fetch --tags --force
+          echo "describe: $(git describe --tags --always --dirty)"
+          echo "tags:"; git tag -l
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
-      # 安装依赖
-      - run: bun install
+      - name: 写入同步配置
+        run: |
+          echo "VITE_SYNC_URL=https://hymallbosstest.heemoney.com/werewolf-sync" > .env
 
-      # vite打包
-      - run: bun run build
+      - name: Build all versions (multi-version artifact)
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.target == 'root'
+        run: |
+          bun run scripts/build-all-versions.ts
 
-      # 上传dist产物（普通vite产物根目录dist）
+      - name: Build single version (manual dispatch to subdirectory)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'version'
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#stable-v}"
+          BASE="/werewolf/${VERSION}/"
+          echo "Building $VERSION with base $BASE"
+          bun install
+          VITE_BASE=$BASE bun run build
+          # 复制到 dist/$VERSION/ 以便统一上传
+          mkdir -p dist/$VERSION
+          cp -r dist/* dist/$VERSION/ 2>/dev/null || true
+
       - name: Upload dist artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: ./dist
 
-      # 部署 Pages
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4

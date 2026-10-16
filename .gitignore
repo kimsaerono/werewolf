@@ -2,3 +2,9 @@ node_modules/
 dist/
 *.log
 .DS_Store
+.env
+.env.local
+.env.*.local
+
+# 本地一次性调试/探针脚本残留（不入库）
+.wf-log*.mjs
