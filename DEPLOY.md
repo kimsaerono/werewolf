@@ -2,9 +2,10 @@
 
 ## 部署机制
 
-- 推送 `main` / `master` 分支 → GitHub Actions（`.github/workflows/main.yml`）自动 `bun install && bun run build` → 部署到 GitHub Pages
+- **打 tag 触发**：推送 `stable-v*` tag → GitHub Actions（`.github/workflows/main.yml`）构建**全部 tag**：
+  **最新 tag 构建到根目录 `/werewolf/`**，其余 tag 各构建到 `/werewolf/vX.Y/`，并生成 `versions.json` 版本清单
 - Pages 地址：`https://kimsaerono.github.io/werewolf/`
-- workflow 已开启 `workflow_dispatch`（手动触发，可指定任意 ref）
+- **main 分支推送不再自动部署**；如需发布/预览任意 ref，用 `workflow_dispatch`（手动触发，可指定任意分支/tag）
 
 ## 稳定版锚点
 
@@ -19,6 +20,7 @@
 | `stable-v1.8` | 狼美人完整实现 + 角色图片优先显示；弹窗改底部上滑 + 补齐殉情播报 | `2135531` |
 | `stable-v1.9` | 选人卡片角色背景+号码徽标、三阶段倒计时音效、白天流程全屏过场 | `1260168` |
 | `stable-v1.10` | 狼美人夜间被女巫毒死不触发殉情；自爆悬浮按钮图标限定尺寸 | `6b5297c` |
+| `stable-v1.11` | 预言家验狼分去除存活门控（狼胜仍计分）；补狼美人殉情不开枪/不翻牌用例 | `bf60e0e` |
 
 > v1.6 未发布独立 tag（跳过）；v1.0–v1.5 的 tag 已不在远程，仅作历史锚点记录。
 > 表中「对应提交」= 该版本的**发布内容提交**；对应 tag 可能包含其后的文档锚点提交（同一 SHA 才最干净，见下方发版顺序）。
@@ -29,16 +31,16 @@
 
 ### ⚠️ 发版顺序（重要）
 
-**先打 tag，再和分支一起 push**，确保 main 触发的那次构建能看见新 tag：
+**直接打 tag 并推送即可**（部署只由 tag 触发，根目录 = 最新 tag）：
 
 ```
 git tag stable-vX.Y
-git push origin main stable-vX.Y   # 一次推送，tag 与提交同时到达
+git push origin stable-vX.Y
 ```
 
-> **为什么不能先推 main 再单独推 tag**：GitHub Pages 对**同一个 commit（SHA）的重复部署不会覆盖**。
-> 先推 main 时构建看不到新 tag（版本号还是旧 tag）；随后单独推 tag 触发的部署因 SHA 相同被 Pages 忽略，
-> 线上版本号就会停留在旧 tag。v1.5 发版即踩到此坑。若已踩坑，补一个 main 提交（新 SHA）重新部署即可。
+> 因为 workflow 只在 `stable-v*` tag 推送时触发，tag 推送就是该 commit 的**首次部署**，
+> 天然规避「GitHub Pages 对同一 SHA 的重复部署不覆盖」的坑（旧模型下先推 main 再推 tag 会命中，v1.5 曾踩坑）。
+> 结果：根路径 `/werewolf/` 始终是**最新 tag**，下拉菜单列出全部 tag，当前项置灰、其余可切换。
 
 ## 紧急回退流程（3 步）
 

@@ -8,6 +8,7 @@ function run(cmd: string, cwd?: string) {
   execSync(cmd, { stdio: "inherit", cwd })
 }
 
+/** 所有 stable-v* tag，按版本号降序（v1.11 在 v1.9 之前） */
 function getTags(): string[] {
   try {
     const out = execSync("git tag -l 'stable-v*'", { encoding: "utf-8" })
@@ -21,15 +22,6 @@ function getVersionFromTag(tag: string): string {
   return tag.replace("stable-v", "")
 }
 
-// git describe 输出规范化：stable-v1.7 -> 1.7；领先最近 tag 时 stable-v1.7-3-gabc -> 1.7+dev
-function normalizeVersion(v: string): string {
-  const stripped = v.replace(/^stable-v/, "")
-  if (/-\d+-g[0-9a-f]+$/i.test(stripped)) {
-    return stripped.replace(/-\d+-g[0-9a-f]+$/i, "") + "+dev"
-  }
-  return stripped.replace(/-dirty$/, "")
-}
-
 async function main() {
   const repoRoot = process.cwd()
   const distDir = join(repoRoot, "dist")
@@ -40,38 +32,35 @@ async function main() {
 
   const tags = getTags()
   console.log(`Found tags: ${tags.join(", ") || "none"}`)
+  if (tags.length === 0) {
+    console.error("❌ 未找到 stable-v* tag，无法确定最新版本；请先打 tag 再部署。")
+    process.exit(1)
+  }
+  const newest = tags[0]
 
   // 记录当前分支，最后要切回来
   const currentBranch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim()
-  const currentCommit = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim()
 
   // 暂存工作区变更，避免切分支冲突
   run("git stash push -u -m 'build-all-versions auto-stash'")
 
   const versions: { version: string; path: string; tag: string; date: string }[] = []
 
-  // 1. 构建 main 分支（最新版）-> dist/ 根目录
-  console.log("\n=== Building main (latest) ===")
-  run("git checkout main")
-  const mainCommit = execSync("git rev-parse main", { encoding: "utf-8" }).trim()
+  // 1. 最新 tag 构建到根目录（/werewolf/ 即最新稳定版）
+  console.log(`\n=== Building ${newest} (latest) -> root ===`)
+  run(`git checkout ${newest}`)
   run("bun install")
   run("VITE_BASE=/werewolf/ bun run build")
-  const mainDescribe = execSync("git describe --tags --always --dirty", { encoding: "utf-8" }).trim()
-  // root 展示版本号：若 main 与某个 tag 指向同一提交，用该 tag 的版本号（下方循环会覆盖）
-  let rootVersion = normalizeVersion(mainDescribe)
+  versions.push({
+    version: getVersionFromTag(newest),
+    path: "/werewolf/",
+    tag: newest,
+    date: new Date().toISOString(),
+  })
 
-  // 2. 构建每个 stable-v* 标签 -> dist/vX.Y/
-  for (const tag of tags) {
+  // 2. 其余 tag 各构建到 dist/vX.Y/
+  for (const tag of tags.slice(1)) {
     const version = getVersionFromTag(tag)
-    const tagCommit = execSync(`git rev-list -n 1 ${tag}`, { encoding: "utf-8" }).trim()
-
-    if (tagCommit === mainCommit) {
-      // 该 tag 与 main 完全相同，root 已提供同一构建，跳过子目录，避免重复
-      console.log(`\n=== Skipping ${tag}: identical to main (root already serves it) ===`)
-      rootVersion = version
-      continue
-    }
-
     const tempDir = join(repoRoot, `dist-temp-${version}`)
     const outDir = join(distDir, version)
 
@@ -97,11 +86,8 @@ async function main() {
     versions.push({ version, path: base, tag, date: tagDate })
   }
 
-  // 3. 生成 versions.json 清单（root 代表 main/最新版）
-  versions.push({ version: rootVersion, path: "/werewolf/", tag: "main", date: new Date().toISOString() })
-
+  // 3. 生成 versions.json 清单（仅列 tag；root 代表最新 tag）
   const manifest = {
-    latest: rootVersion,
     versions: versions.sort((a, b) => b.date.localeCompare(a.date)),
   }
   writeFileSync(join(distDir, "versions.json"), JSON.stringify(manifest, null, 2))

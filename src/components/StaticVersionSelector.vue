@@ -10,7 +10,6 @@ interface VersionInfo {
 }
 
 interface Manifest {
-  latest: string
   versions: VersionInfo[]
 }
 
@@ -24,8 +23,7 @@ function getCurrentVersionPath(): string {
 }
 
 function getVersionLabel(v: VersionInfo): string {
-  if (v.tag === "main") return `latest (${v.version})`
-  return `v${v.version} (${v.tag})`
+  return `v${v.version}`
 }
 
 function isCurrent(v: VersionInfo): boolean {
@@ -57,10 +55,8 @@ function navigateToVersion(v: VersionInfo) {
 }
 
 const currentLabel = computed(() => {
-  const base = import.meta.env.BASE_URL || "/werewolf/"
-  if (base === "/werewolf/") return "latest"
-  const match = base.match(/\/werewolf\/([^/]+)\//)
-  return match ? `v${match[1]}` : "latest"
+  const cur = versions.value.find((v) => isCurrent(v))
+  return cur ? `v${cur.version}` : ""
 })
 
 onMounted(() => {

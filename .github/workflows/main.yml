@@ -1,7 +1,6 @@
 name: Deploy Pages
 on:
   push:
-    branches: [ master, main ]
     tags: [ 'stable-v*' ]
   workflow_dispatch:
     inputs:
