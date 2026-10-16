@@ -82,13 +82,13 @@ async function main() {
     rmSync(tempDir, { recursive: true })
 
     // 记录版本信息
-    const tagDate = execSync(`git log -1 --format=%cI ${tag}`, { encoding: "utf-8" }).trim()
+    const tagDate = new Date(execSync(`git log -1 --format=%cI ${tag}`, { encoding: "utf-8" }).trim()).toISOString()
     versions.push({ version, path: base, tag, date: tagDate })
   }
 
-  // 3. 生成 versions.json 清单（仅列 tag；root 代表最新 tag）
+  // 3. 生成 versions.json 清单（仅列 tag，按版本号降序；root 代表最新 tag）
   const manifest = {
-    versions: versions.sort((a, b) => b.date.localeCompare(a.date)),
+    versions: versions.sort((a, b) => b.tag.localeCompare(a.tag, undefined, { numeric: true })),
   }
   writeFileSync(join(distDir, "versions.json"), JSON.stringify(manifest, null, 2))
   console.log("\n=== versions.json ===")
