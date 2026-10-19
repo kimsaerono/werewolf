@@ -16,6 +16,8 @@ const props = withDefaults(
     blockedValues?: string[]
     /** 被禁点击时的提示文字 */
     blockedMsg?: string
+    /** 按值禁选：key=value，value=禁选原因文字（如 "已出局"、"不能自刀"） */
+    disabledMap?: Record<string, string>
   }>(),
   {
     multi: false,
@@ -24,6 +26,7 @@ const props = withDefaults(
     initial: () => [],
     blockedValues: () => [],
     blockedMsg: "不能选择该玩家",
+    disabledMap: () => ({}),
   },
 )
 const emit = defineEmits<{
@@ -56,9 +59,21 @@ function disabled(v: string): boolean {
 function isBlocked(v: string): boolean {
   return props.blockedValues.includes(v)
 }
+/** 卡片是否被 disabledMap 禁选（已出局/不符合条件等） */
+function isDisabledByMap(v: string): boolean {
+  return v in props.disabledMap
+}
+/** 该禁选是否为"已出局" */
+function isDead(v: string): boolean {
+  return props.disabledMap[v] === "已出局"
+}
+/** 卡片不可点击的完整原因（disabledMap 优先，其次 blockedMsg） */
+function disabledReason(v: string): string {
+  return props.disabledMap[v] || props.blockedMsg
+}
 function toggle(v: string) {
-  if (isBlocked(v)) {
-    blockedToast.value = props.blockedMsg
+  if (isBlocked(v) || isDisabledByMap(v)) {
+    blockedToast.value = disabledReason(v)
     setTimeout(() => (blockedToast.value = ""), 1500)
     return
   }
@@ -99,15 +114,16 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         v-for="opt in options"
         :key="opt.value"
         class="fp-card"
-        :class="{ active: isActive(opt), disabled: disabled(opt.value) || isBlocked(opt.value) }"
+        :class="{ active: isActive(opt), disabled: disabled(opt.value) || isBlocked(opt.value) || isDisabledByMap(opt.value) }"
         :title="opt.role || ''"
         @click="toggle(opt.value)"
       >
         <img v-if="roleBg(opt.role)" class="fp-card-bg" :src="roleBg(opt.role)" :alt="opt.role" aria-hidden="true" />
+        <div v-if="isDead(opt.value)" class="fp-out-stamp">OUT</div>
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
           <div class="fp-name">{{ opt.name || opt.label }}</div>
-          <div v-if="isBlocked(opt.value)" class="fp-blocked-badge">{{ blockedMsg }}</div>
+          <div v-if="isBlocked(opt.value) || (isDisabledByMap(opt.value) && !isDead(opt.value))" class="fp-blocked-badge">{{ disabledReason(opt.value) }}</div>
         </template>
         <template v-else>
           {{ opt.label }}
@@ -148,9 +164,11 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 }
 .fp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  width: min(720px, 100%);
+  width: min(480px, 100%);
+  max-height: 70vh;
+  overflow-y: auto;
 }
 .fp-card {
   position: relative;
@@ -161,7 +179,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   justify-content: center;
   min-height: 96px;
   background: #1d2233;
-  border: 1px solid #2b3145;
+  border: 1px solid #2ed57344;
   border-radius: 12px;
   padding: 12px 8px;
   text-align: center;
@@ -184,23 +202,43 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   pointer-events: none;
   z-index: 0;
 }
+@keyframes fp-flow {
+  0% { box-shadow: inset 0 0 0 3px #2ed573, 0 0 14px rgba(46, 213, 115, 0.6); }
+  50% { box-shadow: inset 0 0 0 3px #2ed573, 0 0 28px rgba(46, 213, 115, 1), 0 0 40px rgba(46, 213, 115, 0.8); }
+  100% { box-shadow: inset 0 0 0 3px #2ed573, 0 0 14px rgba(46, 213, 115, 0.6); }
+}
 .fp-card.active {
   border-color: #2ed573;
   background: #2ed57314;
   box-shadow: inset 0 0 0 3px #2ed573, 0 0 14px rgba(46, 213, 115, 0.6);
+  animation: fp-flow 2s ease-in-out infinite;
 }
 .fp-card.disabled {
-  opacity: 0.4;
   cursor: not-allowed;
+}
+.fp-card.disabled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 2;
 }
 .fp-blocked-badge {
   position: relative;
-  z-index: 1;
-  font-size: 11px;
-  color: #ff7875;
-  margin-top: 4px;
+  z-index: 5;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2ed573;
+  margin-top: 6px;
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.75);
+  border-radius: 999px;
+  border: 1px solid rgba(46, 213, 115, 0.6);
   line-height: 1.2;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 2px 12px rgba(46, 213, 115, 0.4);
 }
 .fp-no {
   position: absolute;
@@ -230,6 +268,30 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   color: #eee;
   margin-top: 2px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+/** 已出局玩家头像上的斜向 OUT 印章（正中间） */
+.fp-out-stamp {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-25deg);
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 30%, #ff4d4f, #b80000);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+  pointer-events: none;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
 }
 .fp-actions {
   display: flex;

@@ -32,6 +32,7 @@ const picker = ref<{
   initial?: string[]
   blockedValues?: string[]
   blockedMsg?: string
+  disabledMap?: Record<string, string>
   onConfirm?: (v: string) => void
   onConfirmMulti?: (v: string[]) => void
 } | null>(null)
@@ -42,7 +43,7 @@ function openPicker(
   title: string,
   options: { value: string; label: string }[],
   onConfirm: (v: string) => void,
-  opts?: { blockedValues?: string[]; blockedMsg?: string },
+  opts?: { blockedValues?: string[]; blockedMsg?: string; disabledMap?: Record<string, string> },
 ) {
   picker.value = { title, options, onConfirm, ...opts }
   pickerValue.value = ""
@@ -56,8 +57,9 @@ function openMultiPicker(
   min = 1,
   max = options.length,
   initial: string[] = [],
+  opts?: { blockedValues?: string[]; blockedMsg?: string; disabledMap?: Record<string, string> },
 ) {
-  picker.value = { title, options, multi: true, min, max, initial: [...initial], onConfirmMulti: onConfirm }
+  picker.value = { title, options, multi: true, min, max, initial: [...initial], onConfirmMulti: onConfirm, ...opts }
   pickerValue.value = ""
   pickerValues.value = [...initial]
 }
@@ -266,9 +268,13 @@ const witchCanSelfSave = computed(() => state.round <= 1 || !witchIsKillTarget.v
 const prophetObj = findPlayerByRoleId("预言家")
 const hasBeauty = hasRoleId("狼美人")
 const charmObj = findPlayerByRoleId("狼美人")
-/** 魅惑对象：存活且非狼美人自己 */
-const charmOptions = computed(() =>
-  aliveList.value.filter((p) => p.name !== charmObj.value?.name).map((p) => playerOption(p)),
+/** 魅惑对象：全员显示，已出局/狼美人自己禁选 */
+const charmPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === charmObj.value?.name) return "不能自魅"
+    return null
+  }),
 )
 const jingHuiObj = computed(() => state.players.find((p) => p.name === state.jingHui))
 const jingHuiLabel = computed(() =>
@@ -374,39 +380,83 @@ function playerOption(p: Player, extra = "") {
     role: p.role || "",
   }
 }
-const aliveOptions = computed(() => aliveList.value.map((p) => playerOption(p)))
-/** 放逐投票选项：排除已翻牌白痴（不可被放逐） */
-const voteOptions = computed(() =>
-  aliveList.value
-    .filter((p) => {
-      const role = getRoleInstance(p.role)
-      return !(role && role.def.id === "白痴" && p.mark.idiotFlipped)
-    })
-    .map((p) => playerOption(p)),
+/**
+ * 构建「全量玩家 + 禁选映射」的 picker 选项。
+ * getDisableReason 返回禁选原因字符串（该玩家不可选），返回 null 表示可选。
+ * 排序：左下角=1，右下角=最大号；右列自上而下增序。
+ * 视觉（n=6）：3 4 / 2 5 / 1 6  → DOM 按行交错填充 grid。
+ */
+function buildPickerOptions(
+  getDisableReason: (p: Player) => string | null,
+): { options: ReturnType<typeof playerOption>[]; disabledMap: Record<string, string> } {
+  const sorted = [...state.players].sort((a, b) => a.no - b.no)
+  const n = sorted.length
+  const mid = Math.ceil(n / 2)
+  const leftCol = sorted.slice(0, mid).reverse() // 自上而下: mid..1
+  const rightCol = sorted.slice(mid) // 自上而下: mid+1..n
+  const ordered: typeof sorted = []
+  for (let i = 0; i < mid; i++) {
+    ordered.push(leftCol[i])
+    if (i < rightCol.length) ordered.push(rightCol[i])
+  }
+  const options = ordered.map((p) => playerOption(p))
+  const disabledMap: Record<string, string> = {}
+  for (const p of state.players) {
+    const reason = getDisableReason(p)
+    if (reason) disabledMap[p.name] = reason
+  }
+  return { options, disabledMap }
+}
+/** 全员显示，已出局禁选 */
+const alivePicker = computed(() =>
+  buildPickerOptions((p) => (!p.alive ? "已出局" : null)),
 )
-/** 女巫毒药目标：排除女巫自己（不能对自己用毒） */
-const witchPoisonOptions = computed(() =>
-  aliveList.value.filter((p) => p.name !== witchObj.value?.name).map((p) => playerOption(p)),
+/** 放逐投票选项：全员显示，已出局/已翻牌白痴禁选 */
+const votePicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    const role = getRoleInstance(p.role)
+    if (role && role.def.id === "白痴" && p.mark.idiotFlipped) return "已翻牌"
+    return null
+  }),
+)
+/** 女巫毒药目标：全员显示，已出局/女巫自己禁选 */
+const witchPoisonPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === witchObj.value?.name) return "不能自毒"
+    return null
+  }),
 )
 const playerOptions = computed(() => state.players.map((p) => playerOption(p)))
-/** 守卫守人选项：全员显示，上局守护对象由 FullscreenPicker blockedValues 标记不可点击 */
-const guardOptions = computed(() =>
-  aliveList.value.map((p) => playerOption(p)),
+/** 守卫守人选项：全员显示，已出局禁选；上局守护由 blockedValues 处理 */
+const guardPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    return null
+  }),
 )
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
-/** 自爆选项：所有存活狼阵营，排除狼美人（不能自爆） */
-const wolfPlainOptions = computed(() =>
-  aliveList.value
-    .filter((p) => refs.isWolfRole(p.role) && getRoleInstance(p.role)?.def.id !== "狼美人")
-    .map((p) => playerOption(p)),
+/** 自爆选项：全员显示，已出局/非狼阵营/狼美人禁选 */
+const wolfPlainPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (!refs.isWolfRole(p.role)) return "非狼阵营"
+    if (getRoleInstance(p.role)?.def.id === "狼美人") return "不能自爆"
+    return null
+  }),
 )
-/** 狼刀目标：存活玩家，排除狼美人（禁止被刀） */
-const wolfKillOptions = computed(() =>
-  aliveList.value
-    .filter((p) => getRoleInstance(p.role)?.def.id !== "狼美人")
-    .map((p) => playerOption(p)),
+/** 狼刀目标：全员显示，已出局/狼美人/恶灵骑士禁选 */
+const wolfKillPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    const roleId = getRoleInstance(p.role)?.def.id
+    if (roleId === "狼美人") return "禁止被刀"
+    if (roleId === "恶灵骑士") return "不能自刀"
+    return null
+  }),
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
 const boardRolesArr = computed(() => refs.getBoardRoles(state))
@@ -434,12 +484,22 @@ const wolfCampUnconfirmed = computed(() =>
 const wolfCampSingleUnconfirmed = computed(() => wolfCampUnconfirmed.value.filter((r) => r !== "狼人"))
 const wolfNeed = computed(() => wolfCampStatus.value["狼人"]?.need || 0)
 const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
-/** 未确认身份且存活的玩家（用于睁眼认人） */
-const unassignedAliveOptions = computed(() => aliveList.value.filter((p) => !p.role).map((p) => playerOption(p)))
-/** 白狼王自爆带走目标：白狼王本人除外 */
+/** 未确认身份且存活的玩家（用于睁眼认人）：全员显示，已出局/已分配身份禁选 */
+const unassignedAlivePicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.role) return "已分配身份"
+    return null
+  }),
+)
+/** 白狼王自爆带走目标：全员显示，已出局/白狼王自己禁选 */
 const wwkObj = findPlayerByRoleId("白狼王")
-const wwkBoomTarOptions = computed(() =>
-  aliveList.value.filter((p) => p.name !== wwkObj.value?.name).map((p) => playerOption(p)),
+const wwkBoomTarPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === wwkObj.value?.name) return "自己不能被带走"
+    return null
+  }),
 )
 
 // ===== 单步向导 =====
@@ -556,6 +616,15 @@ watch(
     }
   },
 )
+// 预言家步骤开始时自动弹出查验选择器
+watch(
+  currentStep,
+  (key, old) => {
+    if (key === "prophet" && old !== "prophet" && hasProphet.value && prophetObj.value?.alive) {
+      openPicker("选择查验对象", alivePicker.value.options, doProphetCheck, alivePicker.value)
+    }
+  },
+)
 watch(
   () => state.phase,
   (ph) => {
@@ -664,9 +733,9 @@ function doCharm(v: string) {
 function openCharm() {
   openPicker(
     '选择魅惑对象（出局时其殉情）',
-    charmOptions.value,
+    charmPicker.value.options,
     (v) => doCharm(v),
-    state.charmLastTarget ? { blockedValues: [state.charmLastTarget], blockedMsg: "上一夜已魅惑，不能连续两晚同一人" } : undefined,
+    { ...charmPicker.value, ...(state.charmLastTarget ? { blockedValues: [state.charmLastTarget], blockedMsg: "上一夜已魅惑，不能连续两晚同一人" } : {}) },
   )
 }
 function doCharmClose() {
@@ -714,13 +783,18 @@ function cancelConfirmRole() {
   roleConfirmVisible.value = false
   roleConfirm.value = null
   if (role) {
-    openPicker(`确认${role}（睁眼认人）`, unassignedAliveOptions.value, (v2) => confirmRoleWithCheck(role, v2))
+    openPicker(`确认${role}（睁眼认人）`, unassignedAlivePicker.value.options, (v2) => confirmRoleWithCheck(role, v2), unassignedAlivePicker.value)
   }
 }
 function openWolfConfirm() {
+  const wolfPicker = buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.role && p.role !== "狼人") return "已分配身份"
+    return null
+  })
   openMultiPicker(
     "🐺 确认狼人（睁眼认人，勾选" + wolfNeed.value + "个）",
-    aliveList.value.filter((x) => !x.role || x.role === "狼人").map((p) => playerOption(p)),
+    wolfPicker.options,
     (sel) => {
       if (sel.length !== wolfNeed.value) {
         message.error(`本板子需要确认 ${wolfNeed.value} 个狼人，当前勾选 ${sel.length} 个`)
@@ -734,6 +808,7 @@ function openWolfConfirm() {
     wolfNeed.value,
     wolfNeed.value,
     state.players.filter((p) => p.role === "狼人").map((p) => p.name),
+    wolfPicker,
   )
 }
 
@@ -752,9 +827,10 @@ const chainText = computed(() => {
 const loversLabel = computed(() => state.lovers.map((n) => labelOf(n)).join(" ❤ ") || "")
 function openCupidConnect() {
   const initial = state.lovers.filter((n) => n)
+  const cupidPicker = buildPickerOptions((p) => (!p.alive ? "已出局" : null))
   openMultiPicker(
     "💘 丘比特连人（首夜，勾选 2 位）",
-    state.players.map((p) => playerOption(p)),
+    cupidPicker.options,
     (sel) => {
       if (sel.length !== 2) {
         message.error("请选择两位玩家作为情侣")
@@ -773,6 +849,7 @@ function openCupidConnect() {
     2,
     2,
     initial,
+    cupidPicker,
   )
 }
 /** 情侣已连：法官确认完成本步 */
@@ -819,9 +896,9 @@ function doProphetCheck(v: string) {
   if (typeof r === "string") return message.error(r)
   if (r) {
     const target = state.players.find((x) => x.name === r.name)
-    const lbl = target ? refs.playerLabel(target) : r.name
+    const lbl = target ? `${target.no} ${target.name}` : r.name
     const verdict = r.isWolf ? "狼人🐺" : "好人👼"
-    checkResult.value = `查验结果：${lbl} 是【${verdict}】`
+    checkResult.value = `${lbl} 是【${verdict}】`
     prophetReveal.value = { label: lbl, isWolf: r.isWolf }
   } else {
     message.info("本晚不验人，已记录")
@@ -841,7 +918,7 @@ function doGuard(v: string) {
   if (err) {
     undo()
     message.warning(err)
-    openPicker("选择守护对象", guardOptions.value, (v2) => doGuard(v2), state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: "上局守护，本局不能守护" } : undefined)
+    openPicker("选择守护对象", guardPicker.value.options, (v2) => doGuard(v2), { ...guardPicker.value, ...(state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: "上局守护，本局不能守护" } : {}) })
     return
   }
   const target = state.players.find((x) => x.name === v)
@@ -871,6 +948,13 @@ const nightKillObj = computed(() => state.players.find((p) => p.name === state.n
 const nightKillLabel = computed(() =>
   nightKillObj.value ? refs.playerLabel(nightKillObj.value) : state.nightWolfKill || "尚未记录",
 )
+/** 女巫面板：被刀者简化显示（号码 + 角色emoji） */
+const nightKillDisplay = computed(() => {
+  if (!nightKillObj.value) return { no: state.nightWolfKill || 0, roleEmoji: "", roleName: "" }
+  const p = nightKillObj.value
+  const roleEmoji = refs.ROLE_EMOJI[p.role] || ""
+  return { no: p.no, roleEmoji, roleName: p.role }
+})
 /** 女巫解药（全屏遮罩用，直接使用） */
 function doWitchSave() {
   if (!state.nightWolfKill) return message.warning("本晚还没有被刀者，无法使用解药")
@@ -1068,7 +1152,7 @@ function doWolfBaoZha(v: string) {
   const pRole = p ? getRoleInstance(p.role) : null
   // 白狼王：弹第二层选择带走目标
   if (pRole && pRole.def.id === "白狼王") {
-    openPicker("选择白狼王带走目标", wwkBoomTarOptions.value, (tar) => {
+    openPicker("选择白狼王带走目标", wwkBoomTarPicker.value.options, (tar) => {
       snapshot()
       stopSpeech()
       const err = actions.wolfKingBaoZha(v, tar)
@@ -1076,7 +1160,7 @@ function doWolfBaoZha(v: string) {
       message.success("白狼王自爆带人，直接进入黑夜")
       effect("explode", "explode")
       playVoice("wwk_boom")
-    })
+    }, wwkBoomTarPicker.value)
     return
   }
   snapshot()
@@ -1247,7 +1331,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">丘比特连人</h3>
           <template v-if="!hasCupid">
             <p class="small" style="text-align: center">丘比特睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认丘比特（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('丘比特', v))">💘 确认丘比特</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认丘比特（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('丘比特', v), unassignedAlivePicker)">💘 确认丘比特</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">
@@ -1277,7 +1361,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">守卫守人</h3>
           <template v-if="!hasGuard">
             <p class="small" style="text-align: center">守卫睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('守卫', v))">🛡️ 确认守卫</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认守卫（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('守卫', v), unassignedAlivePicker)">🛡️ 确认守卫</a-button>
           </template>
           <template v-else>
             <template v-if="guardObj && !guardObj.alive">
@@ -1289,7 +1373,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               守卫：{{ guardObj ? playerLabelShort(guardObj) : "-" }}
               <template v-if="state.guardLastTarget">｜上局守护 {{ labelOf(state.guardLastTarget) }}（不能同守）</template>
             </p>
-            <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardOptions, (v) => doGuard(v), state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: '上局守护，本局不能守护' } : undefined)">🛡️ 确认守人</a-button>
+            <a-button type="primary" size="large" @click="openPicker('选择守护对象', guardPicker.options, (v) => doGuard(v), { ...guardPicker, ...(state.guardLastTarget ? { blockedValues: [state.guardLastTarget], blockedMsg: '上局守护，本局不能守护' } : {}) })">🛡️ 确认守人</a-button>
             <a-button type="text" style="margin-top: 12px" @click="confirmSkip('本轮不守？', '守卫本晚不守护任何人，确认后进入下一步', () => markDoneStep('guard'))">本轮不守</a-button>
             </template>
           </template>
@@ -1302,11 +1386,11 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-if="!wolfAllConfirmed">
             <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
             <a-button v-if="(wolfCampStatus['狼人']?.have || 0) < (wolfCampStatus['狼人']?.need || 0)" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
-            <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAliveOptions, (v) => confirmRoleWithCheck(cr, v))">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
+            <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAlivePicker.options, (v) => confirmRoleWithCheck(cr, v), unassignedAlivePicker)">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）</p>
-            <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', wolfKillOptions, (v) => doWolfKill(v))">🌑 确认刀人</a-button>
+            <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', wolfKillPicker.options, (v) => doWolfKill(v), wolfKillPicker)">🌑 确认刀人</a-button>
             <a-button v-if="!state.nightWolfKill" size="large" @click="doWolfEmptyKill">🈳 空刀（不刀人）</a-button>
             <div v-if="state.nightSteps.wolf && !state.nightWolfKill" class="prophet-result">
               <div class="prophet-result-main">
@@ -1332,7 +1416,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">狼美人魅惑</h3>
           <template v-if="!hasBeauty">
             <p class="small" style="text-align: center">狼美人睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认狼美人（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('狼美人', v))">
+            <a-button type="primary" size="large" @click="openPicker('确认狼美人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('狼美人', v), unassignedAlivePicker)">
               <img v-if="refs.roleAvatar('狼美人')" :src="refs.roleAvatar('狼美人')" class="role-btn-img" alt="狼美人" />
               <span v-else>🌹</span>
               确认狼美人
@@ -1368,20 +1452,20 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">预言家验人</h3>
           <template v-if="!hasProphet">
             <p class="small" style="text-align: center">预言家睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('预言家', v))">🔮 确认预言家</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认预言家（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('预言家', v), unassignedAlivePicker)">🔮 确认预言家</a-button>
           </template>
           <template v-else>
             <template v-if="prophetObj && !prophetObj.alive">
               <p class="small" style="text-align: center; color: #ff7875">预言家已出局，本晚不能验人（走流程）</p>
               <a-button type="primary" size="large" @click="doProphetClose">已确认预言家出局，进入下一步</a-button>
             </template>
-            <template v-else>
-            <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...aliveOptions], (v) => doProphetCheck(v))">🔮 确认查验</a-button>
+<template v-else>
+            <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...alivePicker.options], (v) => doProphetCheck(v), alivePicker)">🔮 确认查验</a-button>
             <div v-else class="prophet-result">
-              <div class="prophet-result-main">{{ checkResult }}</div>
+              <p class="small" style="text-align: center; color: #888">查验完成，请在弹窗告知预言家</p>
               <a-button type="primary" danger @click="doProphetClose">已告知预言家，闭眼</a-button>
             </div>
-            </template>
+          </template>
           </template>
         </div>
 
@@ -1391,7 +1475,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">女巫操作</h3>
           <template v-if="!hasWitch">
             <p class="small" style="text-align: center">女巫睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('女巫', v))">🧙 确认女巫</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认女巫（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('女巫', v), unassignedAlivePicker)">🧙 确认女巫</a-button>
           </template>
           <template v-else>
           <template v-if="witchObj && !witchObj.alive">
@@ -1415,7 +1499,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <div
               class="witch-action witch-action-poison"
               :class="{ used: state.witchPoisonUsed }"
-              @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
+              @click="!state.witchPoisonUsed && openPicker('选择毒杀目标', witchPoisonPicker.options, (v) => doWitchPoison(v), witchPoisonPicker)"
             >
               <div class="witch-action-emoji">☠️</div>
               <div class="witch-action-name">用毒药</div>
@@ -1436,7 +1520,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">猎人睁眼</h3>
           <template v-if="!hasHunter">
             <p class="small" style="text-align: center">猎人睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('猎人', v))">🔫 确认猎人</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('猎人', v), unassignedAlivePicker)">🔫 确认猎人</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认你的枪状态，白天/夜里按规则触发开枪</p>
@@ -1457,7 +1541,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">白痴睁眼</h3>
           <template v-if="!hasIdiot">
             <p class="small" style="text-align: center">白痴睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认白痴（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('白痴', v))">🙊 确认白痴</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认白痴（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('白痴', v), unassignedAlivePicker)">🙊 确认白痴</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认身份，继续闭眼摸鱼</p>
@@ -1471,7 +1555,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <h3 class="step-title">骑士睁眼</h3>
           <template v-if="!hasKnight">
             <p class="small" style="text-align: center">骑士睁眼，法官确认其身份</p>
-            <a-button type="primary" size="large" @click="openPicker('确认骑士（睁眼认人）', unassignedAliveOptions, (v) => confirmRoleWithCheck('骑士', v))">⚔️ 确认骑士</a-button>
+            <a-button type="primary" size="large" @click="openPicker('确认骑士（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('骑士', v), unassignedAlivePicker)">⚔️ 确认骑士</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认身份后闭眼，白天可用「骑士决斗」</p>
@@ -1495,7 +1579,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <a-tag v-if="hunterStatus" :color="state.hunterShotPending ? 'error' : 'default'" size="large">
             状态：{{ hunterStatus }}
           </a-tag>
-          <a-button type="primary" size="large" @click="openPicker('选择带走目标', aliveOptions, (v) => doHunterShoot(v))">🔫 确认开枪带走</a-button>
+          <a-button type="primary" size="large" @click="openPicker('选择带走目标', alivePicker.options, (v) => doHunterShoot(v), alivePicker)">🔫 确认开枪带走</a-button>
           <a-button style="margin-top: 8px" @click="doHunterGiveUp">放弃开枪</a-button>
         </div>
 
@@ -1507,7 +1591,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <a-tag v-if="wolfKingStatus" :color="state.wolfKingShotPending ? 'error' : 'default'" size="large">
             状态：{{ wolfKingStatus }}
           </a-tag>
-          <a-button type="primary" danger size="large" @click="openPicker('选择狼王带走目标', aliveOptions, (v) => doWolfKingShoot(v))">🔫 确认开枪带走</a-button>
+          <a-button type="primary" danger size="large" @click="openPicker('选择狼王带走目标', alivePicker.options, (v) => doWolfKingShoot(v), alivePicker)">🔫 确认开枪带走</a-button>
           <a-button style="margin-top: 8px" @click="doWolfKingGiveUp">放弃开枪</a-button>
         </div>
 
@@ -1518,7 +1602,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-if="!jinghuiPk">
             <p class="choice-hint">按本轮实际情况，直接点对应按钮</p>
             <div class="choice-row">
-              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长', aliveOptions, (v) => doJingHui(v))">📢 设置警长</a-button>
+              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长', alivePicker.options, (v) => doJingHui(v), alivePicker)">📢 设置警长</a-button>
               <a-button size="large" class="choice-btn" @click="jinghuiPk = true">⚖️ 二次平票 PK</a-button>
               <a-button size="large" class="choice-btn" @click="confirmSkip('本轮不竞选？', '本局不竞选警长，确认后进入下一步', () => markDoneStep('jinghui'))">🚫 本轮不竞选</a-button>
             </div>
@@ -1526,7 +1610,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-else>
             <p class="choice-hint">第一轮投票平票，进入 PK 二次投票</p>
             <div class="choice-row">
-              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长（PK）', aliveOptions, (v) => doJingHui(v))">📢 设置警长（PK）</a-button>
+              <a-button type="primary" size="large" class="choice-btn" @click="openPicker('选择警长（PK）', alivePicker.options, (v) => doJingHui(v), alivePicker)">📢 设置警长（PK）</a-button>
               <a-button danger size="large" class="choice-btn" @click="doJingHuiLose">💔 二次仍平票 · 警徽流失</a-button>
               <a-button size="large" class="choice-btn" @click="jinghuiPk = false">↩️ 返回上一轮</a-button>
             </div>
@@ -1580,7 +1664,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <div class="step-emoji">🗳️</div>
           <h3 class="step-title">放逐投票</h3>
           <p class="small" style="text-align: center">选择本日被放逐出局的玩家</p>
-          <a-button danger type="primary" size="large" @click="openPicker('选择放逐出局对象', voteOptions, (v) => doFinishVote(v))">🗳️ 确认放逐</a-button>
+          <a-button danger type="primary" size="large" @click="openPicker('选择放逐出局对象', votePicker.options, (v) => doFinishVote(v), votePicker)">🗳️ 确认放逐</a-button>
           <a-button type="text" style="margin-top: 12px" @click="confirmSkip('无人出局？', '本日无人被放逐，确认后进入夜晚', () => markDoneStep('vote'))">无人出局，进入夜晚</a-button>
         </div>
 
@@ -1602,36 +1686,18 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         </div>
       </a-card>
 
-      <!-- 预言家全屏查验遮罩：点击玩家即揭示身份（预言家存活时才显示，死后走步骤卡片流程） -->
-      <div v-if="currentStep === 'prophet' && hasProphet && prophetObj?.alive" class="fullscreen-overlay">
-        <template v-if="!prophetReveal">
-          <div class="fs-title">🔮 预言家验人 —— 请选择要查验的玩家</div>
-          <div class="fs-grid">
-            <div v-for="p in aliveList" :key="p.name" class="fs-card" @click="doProphetCheck(p.name)">
-              <div class="fs-no">{{ p.no }}</div>
-              <div class="fs-name">{{ p.name }}</div>
-              <div class="fs-role" :style="{ color: roleColor(p.role) }" :title="p.role">{{ refs.ROLE_EMOJI[p.role] || "" }}{{ roleShort(p.role) }}</div>
-            </div>
-          </div>
-          <a-button size="large" @click="doProphetCheck(refs.NO_CHECK)">🙅 不验</a-button>
-        </template>
-        <template v-else>
-          <div class="fs-result prophet-reveal" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
-            <div class="fx-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
-            <div class="fx-result">
-              {{ prophetReveal.label }}{{ prophetReveal.isWolf === null ? "" : ` 是【${prophetReveal.isWolf ? "狼人" : "好人"}】` }}
-            </div>
-          </div>
-          <a-button type="primary" danger size="large" @click="doProphetClose">已告知预言家，闭眼</a-button>
-        </template>
-      </div>
-
       <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者（解药已用完时隐藏被刀者号码姓名） -->
       <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
         <div class="fs-title">🧪 女巫操作</div>
         <div v-if="!state.witchSaveUsed && witchObj?.alive" class="fs-death">
           <div class="fs-death-label">{{ witchIsKillTarget && !witchCanSelfSave ? '本晚被刀（女巫自己，非首夜不能自救）' : '本晚被刀' }}</div>
-          <div v-if="!witchIsKillTarget || witchCanSelfSave" class="fs-death-name">{{ nightKillLabel }}</div>
+          <div v-if="!witchIsKillTarget || witchCanSelfSave" class="fs-death-name">
+            <template v-if="nightKillObj">
+              <span class="night-kill-no">{{ nightKillDisplay.no }}</span>
+              <span class="night-kill-role" v-if="nightKillDisplay.roleEmoji">{{ nightKillDisplay.roleEmoji }}{{ nightKillDisplay.roleName }}</span>
+            </template>
+            <template v-else>{{ nightKillLabel }}</template>
+          </div>
         </div>
         <div v-else class="fs-death" style="border-color: #666">
           <div class="fs-death-label">{{ witchObj?.alive ? "无解药" : "女巫已出局" }}</div>
@@ -1649,7 +1715,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <div
             v-if="!state.witchPoisonUsed && state.nightUsedDrug === null && witchObj?.alive"
             class="witch-action witch-action-poison"
-            @click="openPicker('选择毒杀目标', witchPoisonOptions, (v) => doWitchPoison(v))"
+            @click="openPicker('选择毒杀目标', witchPoisonPicker.options, (v) => doWitchPoison(v), witchPoisonPicker)"
           >
             <div class="witch-action-emoji">☠️</div>
             <div class="witch-action-name">用毒药（选目标）</div>
@@ -1657,6 +1723,17 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         </div>
         <div class="witch-skip" @click="doWitchDone">🙅 不用药，闭眼</div>
         <div v-if="state.nightUsedDrug" class="fs-note">本晚已使用：{{ state.nightUsedDrug === "save" ? "解药" : "毒药" }}</div>
+      </div>
+
+      <!-- 预言家查验结果全屏展示：紫色背景、大字、emoji -->
+      <div v-if="prophetReveal" class="fullscreen-overlay prophet-result-overlay" style="z-index: 9999;">
+        <div class="fs-result prophet-reveal" :class="prophetReveal.isWolf === null ? 'none' : prophetReveal.isWolf ? 'wolf' : 'good'">
+          <div class="fs-result-emoji">{{ prophetReveal.isWolf === null ? "🙅" : prophetReveal.isWolf ? "🐺" : "👼" }}</div>
+          <div class="fs-result-text">
+            {{ prophetReveal.label }} 是【{{ prophetReveal.isWolf === null ? "未验人" : prophetReveal.isWolf ? "狼人" : "好人" }}】
+          </div>
+        </div>
+        <a-button type="primary" danger size="large" @click="doProphetClose">已告知预言家，闭眼</a-button>
       </div>
 
       <!-- 猎人可开枪全屏遮罩：法官提示处理枪 -->
@@ -1667,7 +1744,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <div class="fs-death-name" style="color: #ffa940">{{ hunterObj ? playerLabelShort(hunterObj) : "-" }}</div>
         </div>
         <div class="fs-actions">
-          <a-button type="primary" size="large" @click="openPicker('选择带走目标', aliveOptions, (v) => doHunterShoot(v))">🔫 确认开枪带走</a-button>
+          <a-button type="primary" size="large" @click="openPicker('选择带走目标', alivePicker.options, (v) => doHunterShoot(v), alivePicker)">🔫 确认开枪带走</a-button>
           <a-button size="large" @click="doHunterGiveUp">放弃开枪</a-button>
         </div>
       </div>
@@ -1794,13 +1871,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       <!-- 悬浮按钮（右侧）：展开的功能项 -->
       <TransitionGroup name="fab-pop-right" tag="div" class="right-actions-items">
         <a-tooltip v-if="rightActionsOpen && !state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）" key="explode">
-          <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainOptions, (v) => doWolfBaoZha(v))"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
+          <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainPicker.options, (v) => doWolfBaoZha(v), wolfPlainPicker)"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && state.jingHui && !state.finished" title="警徽设置（移交）" key="jinghui">
           <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）" key="knight">
-          <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', aliveOptions, (v) => doKnightDuel(v))">⚔️</a-button>
+          <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', alivePicker.options, (v) => doKnightDuel(v), alivePicker)">⚔️</a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && canUndo" title="回退上一步" key="undo">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="doUndo">↩️</a-button>
@@ -1829,7 +1906,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </p>
           <div class="flow-row">
             <span class="flow-row-label">移交警徽</span>
-            <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', aliveOptions, (v) => (jingHuiOwner = v))">👤 选择新警长</a-button>
+            <a-button v-if="!jingHuiOwner" type="dashed" block @click="openPicker('选择新警长', alivePicker.options, (v) => (jingHuiOwner = v), alivePicker)">👤 选择新警长</a-button>
             <a-tag v-else closable color="gold" style="font-size: 14px; padding: 4px 12px" @close="jingHuiOwner = ''">{{ labelOf(jingHuiOwner) }}</a-tag>
           </div>
           <div class="role-sheet-actions">
@@ -1874,6 +1951,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           :initial="picker?.initial || []"
           :blocked-values="picker?.blockedValues || []"
           :blocked-msg="picker?.blockedMsg || '不能选择该玩家'"
+          :disabled-map="picker?.disabledMap || {}"
           @confirm-single="onPickerSingle"
           @confirm-multi="onPickerMulti"
           @cancel="picker = null"
@@ -2552,39 +2630,6 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   color: #fff;
   text-align: center;
 }
-.fs-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 10px;
-  width: min(720px, 100%);
-}
-.fs-card {
-  background: #1d2233;
-  border: 1px solid #2b3145;
-  border-radius: 12px;
-  padding: 12px 8px;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-.fs-card:hover {
-  border-color: #2ed573;
-  background: #232a3d;
-}
-.fs-no {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
-}
-.fs-name {
-  font-size: 14px;
-  color: #eee;
-  margin-top: 2px;
-}
-.fs-role {
-  font-size: 12px;
-  margin-top: 2px;
-}
 .fs-result {
   text-align: center;
   padding: 24px 32px;
@@ -2630,6 +2675,16 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   font-weight: 700;
   color: #ff6b6b;
   margin-top: 6px;
+}
+.night-kill-no {
+  font-size: 36px;
+  font-weight: 800;
+  color: #ff6b6b;
+  margin-right: 8px;
+}
+.night-kill-role {
+  font-size: 20px;
+  color: #ffd666;
 }
 .fs-actions {
   display: flex;

@@ -15,6 +15,8 @@ export type DieReason =
 export interface DieEvent {
   name: string
   reason: DieReason
+  /** 死因来源（如 "恶灵骑士反伤"），可选，旧调用不传 */
+  source?: string
 }
 
 /** 夜晚结算产出（Phase 4a 统一结算用） */

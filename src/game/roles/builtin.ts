@@ -5,6 +5,7 @@ import { WerewolfRole } from "./werewolf"
 import { WhiteWolfKingRole } from "./white-wolf-king"
 import { WolfKingRole } from "./wolf-king"
 import { WolfBeautyRole } from "./wolf-beauty"
+import { DreadKnightRole } from "./dread-knight"
 import { ProphetRole } from "./prophet"
 import { WitchRole } from "./witch"
 import { HunterRole } from "./hunter"
@@ -38,6 +39,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
     id: "狼美人", camp: "wolf", unique: true, emoji: "🌹", short: "狼美", intentKeys: ["nightWolfKill", "charmedName"],
     nightStep: { order: 35, key: "charm", label: "狼美人魅惑", emoji: "🌹", enabled: (c) => c.boardRoles.includes("狼美人") },
   },
+  { id: "恶灵骑士", camp: "wolf", unique: true, emoji: "🛡️🐺", short: "恶骑", intentKeys: ["nightWolfKill"] },
   {
     id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", intentKeys: ["nightProphetCheck"],
     nightStep: { order: 50, key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
@@ -87,6 +89,7 @@ export function initBuiltinRoles(): void {
     new WhiteWolfKingRole(),
     new WolfKingRole(),
     new WolfBeautyRole(),
+    new DreadKnightRole(),
     new ProphetRole(),
     new WitchRole(),
     new HunterRole(),

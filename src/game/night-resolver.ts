@@ -46,9 +46,22 @@ export function resolveNightEffects(state: GameState): string | null {
         blocked.set(effect.target, effect.source)
         break
       case "kill": {
-        const reason: DieReason = effect.source === "女巫毒药" ? "poison" : "wolfKill"
-        // 毒药优先于狼刀（如果同一目标既有狼刀又有毒药，以毒药为准）
-        if (!killed.has(effect.target) || reason === "poison") {
+        // 恶灵骑士毒药免疫：女巫毒他时毒药消耗但不产生击杀效果
+        if (effect.source === "女巫毒药") {
+          const targetPlayer = state.players.find((x) => x.name === effect.target)
+          if (targetPlayer && getRoleInstance(targetPlayer.role)?.def.id === "恶灵骑士") {
+            break
+          }
+        }
+        const reason: DieReason =
+          effect.source === "女巫毒药" ? "poison" :
+          effect.source === "恶灵骑士反伤" ? "other" :
+          "wolfKill"
+        // 毒药优先于狼刀；反伤优先于狼刀（同一目标）
+        const existing = killed.get(effect.target)
+        const existingPriority = existing ? (existing.reason === "poison" ? 3 : existing.reason === "other" ? 2 : 1) : -1
+        const newPriority = reason === "poison" ? 3 : reason === "other" ? 2 : 1
+        if (!existing || newPriority >= existingPriority) {
           killed.set(effect.target, { source: effect.source, reason })
         }
         break
@@ -91,20 +104,27 @@ export function resolveNightEffects(state: GameState): string | null {
     }
   }
 
-  // 解药判定：目标被 save 且被 kill
+  // 解药判定：目标被 save 且被 kill（只解狼刀，不解毒药/反伤）
   for (const target of saved) {
-    if (killed.has(target)) {
+    const killInfo = killed.get(target)
+    if (killInfo && killInfo.reason === "wolfKill") {
       killed.delete(target)
     }
   }
 
   // 执行死亡（猎人/狼王开枪判定由各自的 onAfterDeath 钩子在 killPlayer 内触发）
   const deathList: string[] = []
-  for (const [name, { reason }] of killed) {
+  for (const [name, { reason, source }] of killed) {
     const p = state.players.find((x) => x.name === name)
     if (p && p.alive) {
-      deathList.push(...killPlayer(state, name, reason))
+      deathList.push(...killPlayer(state, name, reason, source))
     }
+  }
+
+  // 清理恶灵骑士每夜标记
+  for (const p of state.players) {
+    p.mark.dreadKnightCheckedTonight = false
+    p.mark.dreadKnightPoisonedTonight = false
   }
 
   // 清理夜晚状态

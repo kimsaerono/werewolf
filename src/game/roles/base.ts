@@ -28,6 +28,11 @@ export abstract class BaseRole {
     // 默认无行为
   }
 
+  /** 被预言家查验时触发（恶灵骑士反伤用），checkerName 为预言家玩家名 */
+  onBeingChecked(state: GameState, checkerName: string): void {
+    // 默认无行为
+  }
+
   /** 夜晚结算：返回夜晚意图/效果 */
   onNightResolve(state: GameState): Effect[] {
     return []

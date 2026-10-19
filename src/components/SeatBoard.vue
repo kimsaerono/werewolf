@@ -37,8 +37,9 @@ const emit = defineEmits<{ reorder: [names: string[]] }>()
 
 /** 悬浮列优先填充所需行数：ceil(玩家数 / 2) */
 const seatRows = computed(() => Math.max(1, Math.ceil(props.players.length / 2)))
-/** 左右两列各自持有的玩家（DOM 顺序 = 左列上到下，再右列上到下） */
-const leftPlayers = computed(() => props.players.slice(0, seatRows.value))
+/** 左列：反序，使视觉「下→上」= 1..x（座位1在左下角）；slice 副本，不污染源数据 */
+const leftPlayers = computed(() => props.players.slice(0, seatRows.value).reverse())
+/** 右列：正序，视觉「上→下」= x+1..n（座位 n 在右下角） */
 const rightPlayers = computed(() => props.players.slice(seatRows.value))
 
 // ===== 半遮面：整列默认收进一半贴屏边，点一下 / 触摸滑出完整，静止 1.5s 自动收回 =====
@@ -77,10 +78,19 @@ const leftEl = ref<HTMLElement | null>(null)
 const rightEl = ref<HTMLElement | null>(null)
 let sortables: Sortable[] = []
 
-/** 读整板 DOM 最终顺序（左列先、右列后）→ 派生全局新顺序 */
+/** 读整板 DOM 最终顺序 → 还原为逻辑顺序（座位号 1..n）
+ *  左列 DOM 是「上→下 = x..1」，需反序还原为 1..x；右列 DOM 是「上→下 = x+1..n」直接拼接。 */
 function collectOrder(): string[] {
   const names: string[] = []
-  listEl.value
+  const leftNames: string[] = []
+  leftEl.value
+    ?.querySelectorAll<HTMLElement>(".seat-card[data-name]")
+    .forEach((card) => {
+      const name = card.dataset.name
+      if (name) leftNames.push(name)
+    })
+  names.push(...leftNames.reverse())
+  rightEl.value
     ?.querySelectorAll<HTMLElement>(".seat-card[data-name]")
     .forEach((card) => {
       const name = card.dataset.name
@@ -260,8 +270,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
               <span class="seat-name-text"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
             </span>
             <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
-            <span v-if="!p.alive" class="seat-dead-x">✕</span>
-            <span class="seat-no float">{{ p.no || idx + 1 }}</span>
+            <div v-if="!p.alive" class="seat-out-stamp">OUT</div>
+            <span class="seat-no float">{{ p.no || (seatRows - idx) }}</span>
             <span
               v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
               class="seat-lover"
@@ -296,7 +306,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
               <span class="seat-name-text"><span v-if="p.name === judge" style="color: #ffd666">⚖️</span>{{ p.name }}</span>
             </span>
             <span v-if="p.role && !roleAvatar(p.role)" class="seat-avatar float seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
-            <span v-if="!p.alive" class="seat-dead-x">✕</span>
+            <div v-if="!p.alive" class="seat-out-stamp">OUT</div>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
             <span
               v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
@@ -320,7 +330,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
           <span v-else-if="p.role && !roleAvatar(p.role)" class="seat-avatar seat-avatar-emoji">{{ ROLE_EMOJI[p.role] || "🎭" }}</span>
-          <span v-if="!p.alive" class="seat-dead-x">✕</span>
+          <div v-if="!p.alive" class="seat-out-stamp">OUT</div>
           <div class="seat-info">
             <div class="seat-name">
               <span v-if="p.name === judge" style="color: #ffd666">⚖️</span>
@@ -359,22 +369,29 @@ function cardBg(p: Player): Record<string, string> | undefined {
   -webkit-user-drag: none;
   user-drag: none;
 }
-/* 出局头像上的红叉 */
-.seat-dead-x {
+/* 已出局 OUT 印章（复用 Picker 样式，适配座位卡尺寸） */
+.seat-out-stamp {
   position: absolute;
-  inset: 0; /* 整卡覆盖 */
-  z-index: 3;
-  pointer-events: none;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-25deg);
+  width: 56px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ff4d4f;
-  font-size: 70px;
+  background: radial-gradient(circle at 30% 30%, #ff4d4f, #b80000);
+  color: #fff;
+  font-size: 14px;
   font-weight: 900;
-  line-height: 1;
-  background: rgba(18, 22, 34, 0.55);
-  border-radius: inherit;
-  text-shadow: 0 0 8px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.9);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  border-radius: 50%;
+  border: 2.5px solid #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6), inset 0 -2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+  pointer-events: none;
+  text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
 }
 .seat-list {
   display: flex;
@@ -757,7 +774,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
   color: #fff;
   box-shadow: 0 2px 6px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.2);
   text-shadow: none;
-  z-index: 2;
+  z-index: 4;
 }
 /* 右列：序号靠左，收起时可见 */
 .seat-board.floating .seat-col-right .seat-no.float {

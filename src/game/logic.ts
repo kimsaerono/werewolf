@@ -123,6 +123,20 @@ export interface Mark {
   voteTarget: string
   voteWolfCount: number
   voteGoodCount: number
+  /** 恶灵骑士：反伤是否已使用（整局一次性） */
+  dreadKnightRevengeUsed: boolean
+  /** 恶灵骑士：本夜是否被预言家查验（每夜重置） */
+  dreadKnightCheckedTonight: boolean
+  /** 恶灵骑士：本夜是否被女巫毒杀（每夜重置） */
+  dreadKnightPoisonedTonight: boolean
+  /** 恶灵骑士：反伤触发次数（计分用） */
+  dreadKnightRevengeCount: number
+  /** 恶灵骑士：是否曾被预言家查验（整局累计，计分用） */
+  dreadKnightEverChecked: boolean
+  /** 恶灵骑士：是否曾被女巫毒杀（整局累计，计分用） */
+  dreadKnightEverPoisoned: boolean
+  /** 恶灵骑士：反伤目标玩家名（空=未触发反伤） */
+  dreadKnightRevengeTarget: string
 }
 
 export interface Player {
@@ -282,6 +296,13 @@ export function defaultMark(): Mark {
     voteTarget: "",
     voteWolfCount: 0,
     voteGoodCount: 0,
+    dreadKnightRevengeUsed: false,
+    dreadKnightCheckedTonight: false,
+    dreadKnightPoisonedTonight: false,
+    dreadKnightRevengeCount: 0,
+    dreadKnightEverChecked: false,
+    dreadKnightEverPoisoned: false,
+    dreadKnightRevengeTarget: "",
   }
 }
 
@@ -775,12 +796,12 @@ export function onAfterDeath(hook: (state: GameState, evt: { name: string; reaso
  * 注意：拿枪类标记（猎人/狼王能否开枪）取决于是否被毒，属于调用点上下文，仍由各调用点设置，
  * 不在本入口处理，以免破坏被毒吞枪语义。
  */
-export function killPlayer(state: GameState, name: string, reason: DieReason): string[] {
+export function killPlayer(state: GameState, name: string, reason: DieReason, source?: string): string[] {
   const p = state.players.find((x) => x.name === name)
   if (!p || !p.alive) return []
 
   // 触发死亡前钩子（角色可拦截死亡，如白痴翻牌）
-  const evt = { name, reason }
+  const evt = { name, reason, source }
   for (const hook of beforeDeathHooks) {
     if (hook(state, evt)) {
       // 被拦截：不执行死亡
@@ -964,6 +985,11 @@ export function nextNight(state: GameState): void {
   // 狼美人：上一夜生效的魅惑对象落为「禁连选」基准，之后可重新魅惑
   if (state.charmedName) state.charmLastTarget = state.charmedName
   state.nightSteps = freshNightSteps()
+  // 恶灵骑士：重置每夜标记
+  for (const p of state.players) {
+    p.mark.dreadKnightCheckedTonight = false
+    p.mark.dreadKnightPoisonedTonight = false
+  }
   state.hunterShotPending = false
   state.wolfKingShotPending = false
   state.prophetReport = ""
@@ -979,6 +1005,8 @@ export function wolfKill(state: GameState, sel: string): string | null {
   if (!target.alive) return `${sel}已出局，不能作为刀人对象`
   // 狼美人禁止被刀（防止自刀触发殉情）
   if (getRoleInstance(target.role)?.def.id === "狼美人") return `${sel}是狼美人，禁止被刀`
+  // 恶灵骑士禁止被刀（不能自刀）
+  if (getRoleInstance(target.role)?.def.id === "恶灵骑士") return `${sel}是恶灵骑士，禁止被刀`
   const isSelf = isWolfRole(target.role)
   // 情侣不能互刀：狼恋人不可作为刀人目标
   if (isLover(state, sel) && isWolfRole(target.role)) {
@@ -1066,6 +1094,13 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
   pushNightLog(state, `🔮预言家查验${lbl}，结果：${isWolf ? "狼人" : "好人"}`)
   pushGlobalLog(state, `🔮预言家查验：${lbl} → ${isWolf ? "狼人" : "好人"}`)
   pushFlow(state, "预言家验人", sel, isWolf ? "狼" : "好")
+  // 恶灵骑士反伤：查验触发目标角色的 onBeingChecked 钩子
+  const targetRole = getRoleInstance(target.role)
+  if (targetRole && targetRole.onBeingChecked) {
+    targetRole.onBeingChecked(state, prophet ? prophet.name : "")
+    target.mark.dreadKnightCheckedTonight = true
+    target.mark.dreadKnightEverChecked = true
+  }
   // 记录验人结果用于记分（预言家存活时才记分）
   if (prophet && prophet.alive) {
     if (isWolf) prophet.mark.prophetCheckWolf = (prophet.mark.prophetCheckWolf || 0) + 1
@@ -1162,8 +1197,16 @@ export function witchPoison(state: GameState, sel: string): string | null {
   state.nightUsedDrug = "poison"
   state.nightWitchPoison = sel
   state.nightSteps.witch = true
-  if (tar && isWolfRole(tar.role)) witch.mark.witchPoWolf = true
-  else if (tar) witch.mark.witchPoGood = true
+  // 恶灵骑士：毒药被免疫（消耗但不毒死），不设 witchPoWolf/witchPoGood
+  const isDreadKnight = tar && getRoleInstance(tar.role)?.def.id === "恶灵骑士"
+  if (isDreadKnight) {
+    tar.mark.dreadKnightPoisonedTonight = true
+    tar.mark.dreadKnightEverPoisoned = true
+  } else if (tar && isWolfRole(tar.role)) {
+    witch.mark.witchPoWolf = true
+  } else if (tar) {
+    witch.mark.witchPoGood = true
+  }
   // 毒到猎/狼王：立即标记吞枪（猎人睁眼在女巫之后，需在睁眼时即告知枪已哑火）
   // 使用角色系统判断目标角色
   if (tar) {
