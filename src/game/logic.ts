@@ -43,6 +43,11 @@ export const GOD_LIST = roleIds().filter((id) => getRole(id)?.camp === "god")
 export function isWolfRole(role: string): boolean {
   return getRole(role)?.camp === "wolf"
 }
+/** 狼群成员：狼阵营且参与狼人会议/刀人（石像鬼 wolfPack=false，不在狼群） */
+export function isWolfPackRole(role: string): boolean {
+  const def = getRole(role)
+  return def?.camp === "wolf" && def.wolfPack !== false
+}
 /** 唯一性角色：注册表 unique===true 的角色（每局至多 1 个） */
 export const UNIQUE_ROLES = roleIds().filter((id) => getRole(id)?.unique)
 /** 角色头像表情，一眼认出（由注册表派生） */
@@ -137,6 +142,8 @@ export interface Mark {
   dreadKnightEverPoisoned: boolean
   /** 恶灵骑士：反伤目标玩家名（空=未触发反伤） */
   dreadKnightRevengeTarget: string
+  /** 石像鬼：本夜是否由石像鬼完成刀人（每夜重置） */
+  gargoyleKilledTonight: boolean
 }
 
 export interface Player {
@@ -170,6 +177,8 @@ export const DEFAULT_VOICES: Record<string, string> = {
   wolf_king_gesture: "狼王、白狼王请举手示意，法官确认！",
   charm: "狼美人请睁眼！今晚魅惑一个人，让他与你生死相随，选好赶紧闭眼。",
   charm_close: "狼美人请闭眼。",
+  gargoyle: "石像鬼请睁眼，查看一名玩家的真实身份，看完闭眼。",
+  gargoyle_close: "石像鬼请闭眼。",
   wolf_close: "狼人请闭眼。",
   prophet: "算命大仙请睁眼！扒开一位玩家的底牌，看完把嘴捂严实，闭眼！",
   prophet_close: "预言家请闭眼。",
@@ -177,6 +186,8 @@ export const DEFAULT_VOICES: Record<string, string> = {
   guard_close: "守卫请闭眼。",
   witch: "药罐子女巫请睁眼！今晚被刀的是某玩家。救不救？毒药要不要给谁上点强度，想明白再闭眼。",
   witch_close: "女巫请闭眼。",
+  gravekeeper: "守墓人请睁眼，得知昨日被投票放逐者属于好人还是狼人阵营。",
+  gravekeeper_close: "守墓人请闭眼。",
   knight: "骑士请睁眼，确认你的决斗之剑还没出鞘。",
   knight_close: "骑士请闭眼。",
   hunter_open: "猎人请睁眼，确认你的枪状态，没问题就闭眼。",
@@ -256,6 +267,8 @@ export interface GameState {
   charmedName: string
   /** 狼美人上一夜魅惑的对象（用于「不可连续两晚魅惑同一人」） */
   charmLastTarget: string
+  /** 最近一次白天被投票放逐出局的玩家名（守墓人读取；""=无人被放逐） */
+  lastVoteOut: string
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
   /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
@@ -303,6 +316,7 @@ export function defaultMark(): Mark {
     dreadKnightEverChecked: false,
     dreadKnightEverPoisoned: false,
     dreadKnightRevengeTarget: "",
+    gargoyleKilledTonight: false,
   }
 }
 
@@ -352,6 +366,7 @@ export function defaultState(): GameState {
     lovers: [],
     charmedName: "",
     charmLastTarget: "",
+    lastVoteOut: "",
     simMode: true,
     modeChosen: false,
     underdogs: [],
@@ -396,6 +411,7 @@ export function normalizeState(s: GameState): GameState {
   if (!Array.isArray(st.lovers)) st.lovers = []
   if (typeof st.charmedName !== "string") st.charmedName = ""
   if (typeof st.charmLastTarget !== "string") st.charmLastTarget = ""
+  if (typeof st.lastVoteOut !== "string") st.lastVoteOut = ""
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   if (!Array.isArray(st.underdogs)) st.underdogs = []
@@ -631,6 +647,7 @@ export function startNewGame(state: GameState): void {
   state.beiguo = ""
   state.finished = false
   state.lovers = []
+  state.lastVoteOut = ""
   state.underdogs = []
   state.comeback = false
   state.underdogCamp = null
@@ -989,6 +1006,7 @@ export function nextNight(state: GameState): void {
   for (const p of state.players) {
     p.mark.dreadKnightCheckedTonight = false
     p.mark.dreadKnightPoisonedTonight = false
+    p.mark.gargoyleKilledTonight = false
   }
   state.hunterShotPending = false
   state.wolfKingShotPending = false
@@ -1125,6 +1143,72 @@ export function prophetNoCheck(state: GameState): string | null {
   return null
 }
 
+/** 石像鬼查验：返回存活目标的完整身份（角色名）。不与狼人刀人步骤冲突。 */
+export function gargoyleCheck(state: GameState, sel: string): string | { name: string; role: string } | null {
+  if (!sel) return "请选择查验对象"
+  const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
+  if (!gargoyle) return "本局没有石像鬼"
+  if (!gargoyle.alive) return "石像鬼已出局，本晚不能查验"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能查验`
+  const role = target.role || "未分配"
+  pushNightLog(state, `🗿石像鬼查验${playerLabel(target)}，身份：${role}`)
+  pushGlobalLog(state, `🗿石像鬼查验：${playerLabel(target)} → ${role}`)
+  pushFlow(state, "石像鬼验人", sel, role)
+  return { name: sel, role }
+}
+
+/** 石像鬼是否已解锁刀人：除石像鬼外狼阵营全灭 */
+export function gargoyleCanKill(state: GameState): boolean {
+  const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
+  if (!gargoyle || !gargoyle.alive) return false
+  const otherWolfAlive = state.players.some(
+    (p) => p.alive && p.name !== gargoyle.name && isWolfRole(p.role),
+  )
+  return !otherWolfAlive
+}
+
+/** 石像鬼刀人（解锁后）：写入狼刀口，视为普通狼刀（女巫/守卫生效） */
+export function gargoyleKill(state: GameState, sel: string): string | null {
+  if (!gargoyleCanKill(state)) return "石像鬼尚未解锁刀人能力"
+  if (!sel) return "请选择被刀对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为刀人对象`
+  if (isWolfRole(target.role)) return `${sel}是狼阵营，石像鬼不能刀狼`
+  const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
+  state.nightWolfKill = sel
+  state.wolfSelfKill = false
+  if (gargoyle) gargoyle.mark.gargoyleKilledTonight = true
+  pushNightLog(state, `🗿石像鬼刀人：${sel}`)
+  pushGlobalLog(state, `🗿石像鬼刀人：${sel}`)
+  pushFlow(state, "石像鬼刀人", sel)
+  return null
+}
+
+/** 石像鬼空刀（解锁后，本夜不刀人） */
+export function gargoyleEmptyKill(state: GameState): string | null {
+  if (!gargoyleCanKill(state)) return "石像鬼尚未解锁刀人能力"
+  state.nightWolfKill = ""
+  state.wolfSelfKill = false
+  pushNightLog(state, "🗿石像鬼空刀：本夜不刀人")
+  pushGlobalLog(state, "🗿石像鬼空刀：本夜不刀人")
+  pushFlow(state, "石像鬼刀人", "", "空刀")
+  return null
+}
+
+/** 守墓人结果：上一白天被公投放逐者的阵营（null=无信息：无放逐/守墓人已出局） */
+export function gravekeeperResult(state: GameState): { name: string; isWolf: boolean } | null {
+  const gk = state.players.find((p) => getRoleInstance(p.role)?.def.id === "守墓人")
+  if (!gk || !gk.alive) return null
+  const name = state.lastVoteOut
+  if (!name) return null
+  const p = state.players.find((x) => x.name === name)
+  if (!p) return null
+  return { name, isWolf: isWolfRole(p.role) }
+}
+
 export function guardDo(state: GameState, sel: string, flagSame: boolean): string | null {
   if (!sel) return "请选择守护对象"
   // 使用角色系统查找守卫
@@ -1256,6 +1340,17 @@ export function executeNightAction(
     case "cupid":
       if (!target || (Array.isArray(target) && target.length !== 2)) return "请选择两位玩家作为情侣"
       return cupidConnect(state, target as string[])
+    case "gargoyle": {
+      if (!target) return "请选择查验对象"
+      const gc = gargoyleCheck(state, target as string)
+      if (typeof gc === "object") return null
+      return gc
+    }
+    case "gargoyleKill":
+      if (!target) return "请选择被刀对象"
+      return gargoyleKill(state, target as string)
+    case "gargoyleEmpty":
+      return gargoyleEmptyKill(state)
     default:
       return `未知夜间行动: ${roleKey}`
   }
@@ -1393,10 +1488,14 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
   if (isIdiot && !outP.mark.idiotFlipped && idiotFlip) {
     outP.mark.idiotFlipped = true
     outP.alive = true
+    // 白痴翻牌未出局 → 本日无放逐，守墓人当夜无信息
+    state.lastVoteOut = ""
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
     pushFlow(state, "放逐", outName, "白痴翻牌")
   } else {
     killPlayer(state, outName, "vote")
+    // 记录白天公投出局者（守墓人次夜读取）
+    state.lastVoteOut = outName
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
     // 使用角色系统判断是否为猎人/狼王
@@ -1419,8 +1518,11 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   if (!p.alive) return "该玩家已出局"
   if (!isWolfRole(p.role)) return "只能选择狼人/白狼王自爆"
   if (getRoleInstance(p.role)?.def.id === "狼美人") return "狼美人不能自爆"
+  if (getRoleInstance(p.role)?.def.id === "石像鬼") return "石像鬼不能自爆"
   killPlayer(state, sel, "selfBomb")
   state.skipVote = true
+  // 注意：不在此清空 lastVoteOut —— 若当日已公投放逐，放逐信息仍应保留给守墓人；
+  // 若尚未投票，lastVoteOut 本就在黎明被清空，守墓人当夜无信息。
   // 自爆直接吞警徽：自爆者是警长则警徽流失
   if (state.jingHui === sel) loseBadge(state, sel, "自爆")
   pushGlobalLog(state, `💥狼人自爆：${sel}，本日跳过投票`)
@@ -1446,6 +1548,7 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   // 记录自爆带走目标，供计分判定（女巫有药 / 守卫 / 未开技能骑士 +0.5）
   p.mark.wolfBombTarget = tar
   state.skipVote = true
+  // 同狼人自爆：不清空 lastVoteOut（当日已放逐则保留，未放逐则黎明已为空）
   // 白狼王自爆带走：被带走的猎人/狼王不开枪；若白狼王是警长则警徽流失
   if (state.jingHui === sel) loseBadge(state, sel, "自爆")
   pushGlobalLog(state, `💥白狼王${sel}自爆，带走${tar}，本日跳过投票`)

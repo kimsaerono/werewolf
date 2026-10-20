@@ -495,6 +495,21 @@ export function useGame() {
       refresh()
       return r
     },
+    gargoyleCheck(sel: string) {
+      const r = g.gargoyleCheck(state, sel)
+      refresh()
+      return r
+    },
+    gargoyleKill(sel: string) {
+      const err = g.gargoyleKill(state, sel)
+      refresh()
+      return err
+    },
+    gargoyleEmpty() {
+      const err = g.gargoyleEmptyKill(state)
+      refresh()
+      return err
+    },
     guardDo(sel: string, same: boolean) {
       const err = g.guardDo(state, sel, same)
       refresh()
@@ -738,6 +753,7 @@ export function useGame() {
       campBreakdown: g.campBreakdown,
       suggestHonor: g.suggestHonor,
       isWolfRole: g.isWolfRole,
+      isWolfPackRole: g.isWolfPackRole,
       getChainType: g.getChainType,
       thirdCampLabel: g.thirdCampLabel,
       roleAvatar,

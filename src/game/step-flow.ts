@@ -1,5 +1,5 @@
 import type { GameState } from "./logic"
-import { getBoardRoles, isWolfRole, getRoleInstance } from "./logic"
+import { getBoardRoles, isWolfRole, isWolfPackRole, getRoleInstance } from "./logic"
 import { getRole, roleIds } from "./roles/registry"
 import type { NightStepCtx, RoleDef } from "./roles/types"
 
@@ -98,10 +98,17 @@ export function computeStepKeys(state: GameState): string[] {
       round: state.round,
       lovers: state.lovers,
       isWolfRole,
+      isWolfPack: isWolfPackRole,
       players: state.players,
       hunterExists: !!hunterP,
       hunterAlive: !!hunterP?.alive,
     })
+    // 首夜角色是在夜间各步骤里逐个确认的；石像鬼需要目标的具体身份，
+    // 故首夜把它挪到所有夜间步骤末尾（身份全部分配后再查验）。第 2 夜起保持前置顺序。
+    if (state.round <= 1 && ks.includes("gargoyle")) {
+      ks.splice(ks.indexOf("gargoyle"), 1)
+      ks.push("gargoyle")
+    }
     // 首夜所有角色睁眼后先竞选警长，再天亮公布死讯
     if (state.round <= 1 && !uiDone.jinghui) ks.push("jinghui")
     if (ks.length === 0) ks.push("dawn")

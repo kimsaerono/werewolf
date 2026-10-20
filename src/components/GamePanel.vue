@@ -2,7 +2,7 @@
 import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
-import { roleShort, playerLabelShort } from "@/game/logic"
+import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
 import { computeStepKeys } from "@/game/step-flow"
 import { playSfx, type SfxName } from "@/utils/sfx"
@@ -268,6 +268,14 @@ const witchCanSelfSave = computed(() => state.round <= 1 || !witchIsKillTarget.v
 const prophetObj = findPlayerByRoleId("预言家")
 const hasBeauty = hasRoleId("狼美人")
 const charmObj = findPlayerByRoleId("狼美人")
+const hasGargoyle = hasRoleId("石像鬼")
+const gargoyleObj = findPlayerByRoleId("石像鬼")
+const hasGravekeeper = hasRoleId("守墓人")
+const gravekeeperObj = findPlayerByRoleId("守墓人")
+/** 石像鬼查验结果（全屏弹窗） */
+const gargoyleReveal = ref<{ label: string; role: string } | null>(null)
+/** 守墓人本夜信息（null=无信息） */
+const gravekeeperInfo = computed(() => gravekeeperResult(state))
 /** 魅惑对象：全员显示，已出局/狼美人自己禁选 */
 const charmPicker = computed(() =>
   buildPickerOptions((p) => {
@@ -439,12 +447,21 @@ const guardPicker = computed(() =>
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
-/** 自爆选项：全员显示，已出局/非狼阵营/狼美人禁选 */
+/** 自爆选项：全员显示，已出局/非狼阵营/狼美人/石像鬼禁选 */
 const wolfPlainPicker = computed(() =>
   buildPickerOptions((p) => {
     if (!p.alive) return "已出局"
     if (!refs.isWolfRole(p.role)) return "非狼阵营"
     if (getRoleInstance(p.role)?.def.id === "狼美人") return "不能自爆"
+    if (getRoleInstance(p.role)?.def.id === "石像鬼") return "不能自爆"
+    return null
+  }),
+)
+/** 石像鬼刀人目标：全员显示，已出局/狼阵营禁选 */
+const gargoyleKillPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (refs.isWolfRole(p.role)) return "不能刀狼"
     return null
   }),
 )
@@ -460,7 +477,7 @@ const wolfKillPicker = computed(() =>
 )
 // ===== 首夜睁眼认人：板子角色配额与确认状态 =====
 const boardRolesArr = computed(() => refs.getBoardRoles(state))
-const wolfCampRoles = computed(() => boardRolesArr.value.filter((r) => refs.isWolfRole(r)))
+const wolfCampRoles = computed(() => boardRolesArr.value.filter((r) => refs.isWolfPackRole(r)))
 const wolfCampStatus = computed(() => {
   const map: Record<string, { need: number; have: number }> = {}
   for (const r of wolfCampRoles.value) {
@@ -468,7 +485,7 @@ const wolfCampStatus = computed(() => {
     map[r].need++
   }
   for (const p of state.players) {
-    if (p.role && refs.isWolfRole(p.role)) {
+    if (p.role && refs.isWolfPackRole(p.role)) {
       if (!map[p.role]) map[p.role] = { need: 0, have: 0 }
       map[p.role].have++
     }
@@ -484,6 +501,11 @@ const wolfCampUnconfirmed = computed(() =>
 const wolfCampSingleUnconfirmed = computed(() => wolfCampUnconfirmed.value.filter((r) => r !== "狼人"))
 const wolfNeed = computed(() => wolfCampStatus.value["狼人"]?.need || 0)
 const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
+/** 普通狼（狼群成员）配额与存活：用于判断本夜狼人环节是否有人睁眼 */
+const packWolfQuota = computed(() => boardRolesArr.value.filter((r) => refs.isWolfPackRole(r)).length)
+const packWolfAlive = computed(() => state.players.some((p) => p.alive && refs.isWolfPackRole(p.role)))
+/** 本夜狼人环节无人睁眼：板子无普通狼，或普通狼全部出局（仍照常念台词，杜绝语音暗示） */
+const wolfNoOne = computed(() => packWolfQuota.value === 0 || (wolfAllConfirmed.value && !packWolfAlive.value))
 /** 未确认身份且存活的玩家（用于睁眼认人）：全员显示，已出局/已分配身份禁选 */
 const unassignedAlivePicker = computed(() =>
   buildPickerOptions((p) => {
@@ -507,9 +529,11 @@ const wwkBoomTarPicker = computed(() =>
 const STEP_VOICE: Record<string, string> = {
   guard: "guard",
   wolf: "wolf",
+  gargoyle: "gargoyle",
   charm: "charm",
   prophet: "prophet",
   witch: "witch",
+  gravekeeper: "gravekeeper",
   knight: "knight",
   cupid: "cupid",
   loversMeet: "lovers_meet",
@@ -525,9 +549,11 @@ const STEP_VOICE: Record<string, string> = {
 const STEP_CLOSE: Record<string, string> = {
   guard: "guard_close",
   wolf: "wolf_close",
+  gargoyle: "gargoyle_close",
   charm: "charm_close",
   prophet: "prophet_close",
   witch: "witch_close",
+  gravekeeper: "gravekeeper_close",
   knight: "knight_close",
   cupid: "cupid_close",
   loversMeet: "lovers_close",
@@ -541,6 +567,8 @@ const VOICE_LABEL: Record<string, string> = {
   lovers_meet: "情侣认亲",
   lovers_close: "情侣闭眼",
   wolf: "狼人睁眼",
+  gargoyle: "石像鬼睁眼",
+  gargoyle_close: "石像鬼闭眼",
   charm: "狼美人睁眼",
   charm_close: "狼美人闭眼",
   wolf_king_gesture: "狼王/白狼王举手示意",
@@ -551,6 +579,8 @@ const VOICE_LABEL: Record<string, string> = {
   guard_close: "守卫闭眼",
   witch: "女巫睁眼",
   witch_close: "女巫闭眼",
+  gravekeeper: "守墓人睁眼",
+  gravekeeper_close: "守墓人闭眼",
   knight: "骑士睁眼",
   knight_close: "骑士闭眼",
   dawn: "天亮",
@@ -741,6 +771,40 @@ function openCharm() {
 function doCharmClose() {
   markDoneStep("charm")
   playVoice("charm_close")
+}
+
+// ===== 石像鬼 =====
+function doGargoyleCheck(v: string) {
+  snapshot()
+  const r = actions.gargoyleCheck(v)
+  if (typeof r === "string") return message.error(r)
+  if (r) {
+    const target = state.players.find((x) => x.name === r.name)
+    const lbl = target ? refs.playerLabel(target) : r.name
+    gargoyleReveal.value = { label: lbl, role: r.role }
+  }
+}
+function doGargoyleKill(v: string) {
+  snapshot()
+  const err = actions.gargoyleKill(v)
+  if (err) return message.error(err)
+  const target = state.players.find((x) => x.name === v)
+  effect("wolf", "death", target ? `石像鬼刀：${refs.playerLabel(target)}` : `石像鬼刀：${v}`)
+}
+function doGargoyleEmpty() {
+  snapshot()
+  const err = actions.gargoyleEmpty()
+  if (err) return message.error(err)
+  message.success("石像鬼本夜空刀")
+}
+function doGargoyleClose() {
+  markDoneStep("gargoyle")
+  gargoyleReveal.value = null
+  playVoice("gargoyle_close")
+}
+function doGravekeeperClose() {
+  markDoneStep("gravekeeper")
+  playVoice("gravekeeper_close")
 }
 
 // ===== 首夜睁眼认人：法官确认角色身份（二次确认，防选错） =====
@@ -1383,7 +1447,11 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <div v-else-if="currentStep === 'wolf'" class="step-body">
           <div class="step-emoji">🌑</div>
           <h3 class="step-title">狼人刀人</h3>
-          <template v-if="!wolfAllConfirmed">
+          <template v-if="wolfNoOne">
+            <p class="small" style="text-align: center">本夜狼人环节：无人睁眼（照常念台词，避免语音暗示）</p>
+            <a-button type="primary" size="large" @click="doWolfClose">🌑 狼人闭眼，继续</a-button>
+          </template>
+          <template v-else-if="!wolfAllConfirmed">
             <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
             <a-button v-if="(wolfCampStatus['狼人']?.have || 0) < (wolfCampStatus['狼人']?.need || 0)" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
             <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAlivePicker.options, (v) => confirmRoleWithCheck(cr, v), unassignedAlivePicker)">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
@@ -1404,6 +1472,65 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               </div>
               <a-button type="primary" danger @click="doWolfClose">已确认狼人闭眼</a-button>
             </div>
+          </template>
+        </div>
+
+        <!-- 石像鬼（狼群外，独自验人；普通狼全灭后解锁刀人） -->
+        <div v-else-if="currentStep === 'gargoyle'" class="step-body">
+          <div class="step-emoji">🗿</div>
+          <h3 class="step-title">石像鬼</h3>
+          <template v-if="!hasGargoyle">
+            <p class="small" style="text-align: center">石像鬼单独睁眼，法官确认其身份（不与普通狼见面）</p>
+            <a-button type="primary" size="large" @click="openPicker('确认石像鬼（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('石像鬼', v), unassignedAlivePicker)">🗿 确认石像鬼</a-button>
+          </template>
+          <template v-else>
+            <template v-if="gargoyleObj && !gargoyleObj.alive">
+              <p class="small" style="text-align: center; color: #ff7875">石像鬼已出局，本晚不能行动（走流程）</p>
+              <a-button type="primary" size="large" @click="doGargoyleClose">已确认石像鬼出局，进入下一步</a-button>
+            </template>
+            <template v-else>
+              <p class="small" style="text-align: center">查验一名存活玩家的完整身份</p>
+              <a-button v-if="!gargoyleReveal" type="primary" size="large" @click="openPicker('石像鬼查验对象', alivePicker.options, (v) => doGargoyleCheck(v), alivePicker)">🗿 查验身份</a-button>
+              <div v-else class="prophet-result">
+                <div class="prophet-result-main">{{ gargoyleReveal.label }} 的身份：{{ gargoyleReveal.role }}</div>
+                <a-button size="small" @click="gargoyleReveal = null">重新查验</a-button>
+              </div>
+              <template v-if="state.round > 1 && gargoyleCanKill(state)">
+                <p class="small" style="text-align: center; color: #ff7875">普通狼已全部出局，石像鬼解锁刀人能力</p>
+                <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('石像鬼刀人', gargoyleKillPicker.options, (v) => doGargoyleKill(v), gargoyleKillPicker)">🌑 确认刀人</a-button>
+                <a-button v-if="!state.nightWolfKill" size="large" @click="doGargoyleEmpty">🈳 空刀（不刀人）</a-button>
+                <div v-if="state.nightWolfKill" class="prophet-result">
+                  <div class="prophet-result-main">🌑 已刀：{{ (() => { const v = state.players.find((x) => x.name === state.nightWolfKill); return v ? playerLabelShort(v) : state.nightWolfKill })() }}</div>
+                </div>
+              </template>
+              <a-button type="primary" danger size="large" style="margin-top: 8px" @click="doGargoyleClose">石像鬼闭眼</a-button>
+            </template>
+          </template>
+        </div>
+
+        <!-- 守墓人（首夜确认身份；第二夜起被动读取上一白天放逐阵营） -->
+        <div v-else-if="currentStep === 'gravekeeper'" class="step-body">
+          <div class="step-emoji">🪦</div>
+          <h3 class="step-title">守墓人验尸</h3>
+          <template v-if="!hasGravekeeper">
+            <p class="small" style="text-align: center">守墓人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认守墓人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('守墓人', v), unassignedAlivePicker)">🪦 确认守墓人</a-button>
+          </template>
+          <template v-else>
+            <template v-if="gravekeeperObj && !gravekeeperObj.alive">
+              <p class="small" style="text-align: center; color: #ff7875">守墓人已出局，技能失效（走流程）</p>
+            </template>
+            <template v-else-if="state.round <= 1">
+              <p class="small" style="text-align: center">首夜不触发技能，本夜无信息</p>
+            </template>
+            <template v-else-if="gravekeeperInfo">
+              <p class="small" style="text-align: center">上一白天被放逐：{{ labelOf(gravekeeperInfo.name) }}</p>
+              <div class="prophet-result">
+                <div class="prophet-result-main">{{ gravekeeperInfo.isWolf ? "属于【狼人阵营】🐺" : "属于【好人阵营】👼" }}</div>
+              </div>
+            </template>
+            <p v-else class="small" style="text-align: center">上一白天无人被放逐，本夜无信息</p>
+            <a-button type="primary" danger size="large" @click="doGravekeeperClose">已告知守墓人，闭眼</a-button>
           </template>
         </div>
 
@@ -1521,6 +1648,10 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-if="!hasHunter">
             <p class="small" style="text-align: center">猎人睁眼，法官确认其身份</p>
             <a-button type="primary" size="large" @click="openPicker('确认猎人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('猎人', v), unassignedAlivePicker)">🔫 确认猎人</a-button>
+          </template>
+          <template v-else-if="hunterObj && !hunterObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">猎人已出局，本夜走流程（照常念台词）</p>
+            <a-button type="primary" size="large" @click="doHunterOpen">🔫 猎人闭眼</a-button>
           </template>
           <template v-else>
             <p class="small" style="text-align: center">确认你的枪状态，白天/夜里按规则触发开枪</p>
@@ -1734,6 +1865,15 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </div>
         </div>
         <a-button type="primary" danger size="large" @click="doProphetClose">已告知预言家，闭眼</a-button>
+      </div>
+
+      <!-- 石像鬼查验结果全屏展示 -->
+      <div v-if="gargoyleReveal" class="fullscreen-overlay" style="z-index: 9999;">
+        <div class="fs-result" style="border-color: #8a6dff">
+          <div class="fs-result-emoji">🗿</div>
+          <div class="fs-result-text">{{ gargoyleReveal.label }} 的身份是【{{ gargoyleReveal.role }}】</div>
+        </div>
+        <a-button type="primary" size="large" @click="gargoyleReveal = null">知道了</a-button>
       </div>
 
       <!-- 猎人可开枪全屏遮罩：法官提示处理枪 -->

@@ -46,6 +46,8 @@ export interface NightStepCtx {
   round: number
   lovers: string[]
   isWolfRole: (role: string) => boolean
+  /** 是否狼群成员（参与狼人会议/刀人；石像鬼为 false）。可选，缺省回退 isWolfRole */
+  isWolfPack?: (role: string) => boolean
   players: { role: string; alive: boolean }[]
   /** 场上是否存在猎人玩家（可能尚未分配） */
   hunterExists: boolean
@@ -72,6 +74,12 @@ export interface RoleDef {
    * 默认取 camp === "god"；白痴等名义神职但按口径不算神牌的角色显式设为 false。
    */
   countsAsGod?: boolean
+
+  /**
+   * 是否属于「狼群」：参与狼人会议/刀人、与普通狼互通身份。
+   * 默认 true（camp === "wolf" 即为狼群成员）。石像鬼为 false（独自行动、不与狼见面）。
+   */
+  wolfPack?: boolean
 
   /**
    * 夜晚行动步骤（Phase 4a 起驱动流程编排）。

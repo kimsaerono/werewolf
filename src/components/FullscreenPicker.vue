@@ -197,7 +197,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center top;
+  object-position: center;
   filter: brightness(0.55) saturate(0.9);
   pointer-events: none;
   z-index: 0;

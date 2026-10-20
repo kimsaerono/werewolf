@@ -1517,21 +1517,21 @@ describe("playerLabelShort 紧凑标签", () => {
 
 describe("角色注册表派生常量", () => {
   it("内置角色全量派生到 ALL_ROLE_OPT，顺序与注册一致", () => {
-    expect(ALL_ROLE_OPT).toEqual(["狼人", "白狼王", "狼王", "狼美人", "恶灵骑士", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "平民", "丘比特"])
+    expect(ALL_ROLE_OPT).toEqual(["狼人", "白狼王", "狼王", "狼美人", "恶灵骑士", "石像鬼", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "守墓人", "平民", "丘比特"])
   })
 
   it("GOD_LIST 来自 camp===god，丘比特不入列", () => {
-    expect(GOD_LIST.sort()).toEqual(["守卫", "女巫", "白痴", "猎人", "预言家", "骑士"].sort())
+    expect(GOD_LIST.sort()).toEqual(["守卫", "女巫", "白痴", "猎人", "预言家", "骑士", "守墓人"].sort())
     expect(GOD_LIST).not.toContain("丘比特")
   })
 
-  it("isWolfRole 覆盖狼人/白狼王/狼王/狼美人/恶灵骑士，不含其它", () => {
-    expect(["狼人", "白狼王", "狼王", "狼美人", "恶灵骑士"].map(isWolfRole)).toEqual([true, true, true, true, true])
+  it("isWolfRole 覆盖狼人/白狼王/狼王/狼美人/恶灵骑士/石像鬼，不含其它", () => {
+    expect(["狼人", "白狼王", "狼王", "狼美人", "恶灵骑士", "石像鬼"].map(isWolfRole)).toEqual([true, true, true, true, true, true])
     expect(["预言家", "女巫", "平民", "丘比特"].map(isWolfRole)).toEqual([false, false, false, false])
   })
 
   it("UNIQUE_ROLES 来自 unique===true", () => {
-    const expected = ["白狼王", "狼王", "狼美人", "恶灵骑士", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "丘比特"]
+    const expected = ["白狼王", "狼王", "狼美人", "恶灵骑士", "石像鬼", "预言家", "女巫", "猎人", "守卫", "骑士", "白痴", "守墓人", "丘比特"]
     expect(UNIQUE_ROLES.sort()).toEqual(expected.sort())
   })
 

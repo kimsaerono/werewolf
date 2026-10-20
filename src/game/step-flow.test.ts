@@ -107,11 +107,13 @@ describe("computeStepKeys · 夜间顺序与条件", () => {
     expect(keys).toEqual(["guard", "wolf", "witch", "prophet", "hunterOpen"])
   })
 
-  it("夜刀完成(nightSteps.wolf)且无存活狼：狼人步骤移除，全部完成则天亮", () => {
+  it("无存活狼时狼人步骤仍保留（照常念台词），uiDone 后移除", () => {
     const s = build(["狼人", "预言家", "平民"], { round: 2 })
-    s.nightSteps = { wolf: true }
     s.players[0].alive = false // 狼人出局
     s.uiDone = { prophet: true }
+    // 即使无存活普通狼，狼人环节也要照常出现（避免语音暗示）
+    expect(computeStepKeys(s)).toContain("wolf")
+    s.uiDone = { ...s.uiDone, wolf: true }
     expect(computeStepKeys(s)).toEqual(["dawn"])
   })
 
@@ -121,11 +123,11 @@ describe("computeStepKeys · 夜间顺序与条件", () => {
     expect(computeStepKeys(s)).toEqual(["wolf", "prophet", "hunterOpen"])
   })
 
-  it("猎人已出局：猎人睁眼步骤移除", () => {
+  it("猎人已出局：猎人睁眼步骤仍保留（照常念台词）", () => {
     const s = build(["狼人", "预言家", "女巫", "猎人", "平民"], { round: 2 })
     const h = s.players.find((p) => p.role === "猎人")!
     h.alive = false
-    expect(computeStepKeys(s)).not.toContain("hunterOpen")
+    expect(computeStepKeys(s)).toContain("hunterOpen")
   })
 
   it("uiDone 的步骤移除（首夜）", () => {
@@ -206,11 +208,11 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
     expect(keys).toEqual(["wolf", "prophet", "hunterOpen"])
   })
 
-  it("猎人已出局移除", () => {
+  it("猎人已出局：仍保留（照常念台词）", () => {
     const keys = getActiveNightStepKeys(
       ctx({ boardRoles: ["狼人", "预言家", "女巫", "猎人", "平民"], hunterExists: true, hunterAlive: false }),
     )
-    expect(keys).not.toContain("hunterOpen")
+    expect(keys).toContain("hunterOpen")
   })
 
   it("uiDone 步骤移除", () => {
@@ -220,7 +222,7 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
     expect(keys).toEqual(["witch", "hunterOpen"])
   })
 
-  it("狼人全确认且无存活狼 → 狼人步骤移除", () => {
+  it("狼人全确认且无存活狼 → 狼人步骤仍保留（照常念台词）", () => {
     const keys = getActiveNightStepKeys(
       ctx({
         boardRoles: ["狼人", "预言家", "女巫", "平民", "平民"],
@@ -231,6 +233,6 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
         ],
       }),
     )
-    expect(keys).not.toContain("wolf")
+    expect(keys).toContain("wolf")
   })
 })

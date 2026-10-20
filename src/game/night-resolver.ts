@@ -1,6 +1,6 @@
 import type { GameState } from "./logic"
 import type { DieReason, Effect } from "./roles/types"
-import { killPlayer, pushNightLog, pushGlobalLog, pushFlow, isWolfRole } from "./logic"
+import { killPlayer, pushNightLog, pushGlobalLog, pushFlow, isWolfPackRole } from "./logic"
 import { getRoleInstance } from "./roles/builtin"
 
 /**
@@ -10,8 +10,8 @@ import { getRoleInstance } from "./roles/builtin"
 export function resolveNightEffects(state: GameState): string | null {
   if (state.phase !== "night") return "当前不是夜晚，无法天亮结算"
 
-  // 检查狼人步骤是否完成
-  const aliveWolfExists = state.players.some((p) => p.alive && isWolfRole(p.role))
+  // 检查狼人步骤是否完成（仅普通狼群需要刀人步骤；石像鬼解锁后走自身步骤）
+  const aliveWolfExists = state.players.some((p) => p.alive && isWolfPackRole(p.role))
   if (aliveWolfExists && !state.nightSteps.wolf) {
     return "狼人刀人步骤未完成，请先确认狼人刀人"
   }
@@ -125,12 +125,16 @@ export function resolveNightEffects(state: GameState): string | null {
   for (const p of state.players) {
     p.mark.dreadKnightCheckedTonight = false
     p.mark.dreadKnightPoisonedTonight = false
+    p.mark.gargoyleKilledTonight = false
   }
 
   // 清理夜晚状态
   state.guardLastTarget = state.nightGuardTarget
   state.skipVote = false
   state.phase = "day"
+  // 新白天开始：清空"上一白天放逐者"。守墓人已在刚结束的夜晚读取过，不受影响；
+  // 当天若无人被公投放逐（无人出局/骑士跳票/自爆），下一夜即无信息。
+  state.lastVoteOut = ""
   state.uiDone = {}
 
   // 播报

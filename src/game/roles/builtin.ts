@@ -6,12 +6,14 @@ import { WhiteWolfKingRole } from "./white-wolf-king"
 import { WolfKingRole } from "./wolf-king"
 import { WolfBeautyRole } from "./wolf-beauty"
 import { DreadKnightRole } from "./dread-knight"
+import { GargoyleRole } from "./gargoyle"
 import { ProphetRole } from "./prophet"
 import { WitchRole } from "./witch"
 import { HunterRole } from "./hunter"
 import { GuardRole } from "./guard"
 import { KnightRole } from "./knight"
 import { IdiotRole } from "./idiot"
+import { GravekeeperRole } from "./gravekeeper"
 import { VillagerRole } from "./villager"
 import { CupidRole } from "./cupid"
 import { onBeforeDeath, onAfterDeath } from "../logic"
@@ -25,12 +27,8 @@ export const BUILTIN_ROLES: RoleDef[] = [
     id: "狼人", camp: "wolf", unique: false, emoji: "🐺", short: "狼", intentKeys: ["nightWolfKill"],
     nightStep: {
       order: 30, key: "wolf", label: "狼人刀人", emoji: "🌑",
-      enabled: (c) => {
-        const quota = c.boardRoles.filter(c.isWolfRole).length
-        const confirmed = c.players.filter((p) => c.isWolfRole(p.role)).length >= quota
-        const aliveWolf = c.players.some((p) => p.alive && c.isWolfRole(p.role))
-        return quota > 0 && (!confirmed || aliveWolf)
-      },
+      // 每夜都进入狼人环节（照常念台词，避免语音暗示）；是否有人睁眼/刀人由面板判断
+      enabled: (c) => c.boardRoles.some((r) => c.isWolfRole(r)),
     },
   },
   { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", intentKeys: [] },
@@ -41,6 +39,14 @@ export const BUILTIN_ROLES: RoleDef[] = [
   },
   { id: "恶灵骑士", camp: "wolf", unique: true, emoji: "🛡️🐺", short: "恶骑", intentKeys: ["nightWolfKill"] },
   {
+    id: "石像鬼", camp: "wolf", unique: true, emoji: "🗿", short: "石", wolfPack: false, intentKeys: ["nightWolfKill"],
+    nightStep: {
+      order: 25, key: "gargoyle", label: "石像鬼", emoji: "🗿",
+      // 板子含石像鬼即每夜出现（照常念台词）；是否可验/可刀由面板判断
+      enabled: (c) => c.boardRoles.includes("石像鬼") && !c.nightSteps.gargoyle,
+    },
+  },
+  {
     id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", intentKeys: ["nightProphetCheck"],
     nightStep: { order: 50, key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
   },
@@ -50,7 +56,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
   },
   {
     id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", intentKeys: [],
-    nightStep: { order: 80, key: "hunterOpen", label: "猎人睁眼", emoji: "🔫", enabled: (c) => c.boardRoles.includes("猎人") && (!c.hunterExists || c.hunterAlive) },
+    nightStep: { order: 80, key: "hunterOpen", label: "猎人睁眼", emoji: "🔫", enabled: (c) => c.boardRoles.includes("猎人") },
   },
   {
     id: "守卫", camp: "god", unique: true, emoji: "🛡️", short: "守", intentKeys: ["nightGuardTarget"],
@@ -63,6 +69,17 @@ export const BUILTIN_ROLES: RoleDef[] = [
   {
     id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", countsAsGod: false, intentKeys: [],
     nightStep: { order: 60, key: "idiotOpen", label: "白痴睁眼", emoji: "🙊", enabled: (c) => c.round <= 1 && c.boardRoles.includes("白痴") },
+  },
+  {
+    id: "守墓人", camp: "god", unique: true, emoji: "🪦", short: "墓", intentKeys: [],
+    nightStep: {
+      order: 55,
+      key: "gravekeeper",
+      label: "守墓人验尸",
+      emoji: "🪦",
+      // 板子含守墓人即每夜出现（照常念台词）；首夜仅确认，第二夜起读信息，死亡则走流程
+      enabled: (c) => c.boardRoles.includes("守墓人") && !c.nightSteps.gravekeeper,
+    },
   },
   { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", intentKeys: [] },
   {
@@ -90,12 +107,14 @@ export function initBuiltinRoles(): void {
     new WolfKingRole(),
     new WolfBeautyRole(),
     new DreadKnightRole(),
+    new GargoyleRole(),
     new ProphetRole(),
     new WitchRole(),
     new HunterRole(),
     new GuardRole(),
     new KnightRole(),
     new IdiotRole(),
+    new GravekeeperRole(),
     new VillagerRole(),
     new CupidRole(),
   ]
