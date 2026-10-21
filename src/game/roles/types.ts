@@ -9,6 +9,7 @@ export type DieReason =
   | "duel"
   | "shot"
   | "lover"
+  | "bomb"
   | "other"
 
 /** 角色死亡事件（死亡管线中派发） */

@@ -12,6 +12,7 @@ import {
   prophetCheck,
   wolfBaoZha,
   wolfKill,
+  witchSave,
   recalcScore,
   nextNight,
   finishGameAuto,
@@ -149,6 +150,20 @@ describe("石像鬼：与普通狼并存", () => {
     expect(resolveNightEffects(st)).toBeNull()
     expect(st.players.find((p) => p.name === "P3")!.alive).toBe(false)
     expect(st.players.find((p) => p.name === "P4")!.alive).toBe(true)
+  })
+})
+
+describe("石像鬼：被狼误刀不算自刀", () => {
+  it("wolfKill(石像鬼) → 不置 wolfSelfKill，日志/流程不标「自刀」，女巫救他也不写骗药标记", () => {
+    const st = makeState(["狼人", "石像鬼", "女巫", "预言家", "平民"])
+    expect(wolfKill(st, "P2")).toBeNull()
+    // 石像鬼不与狼群见面，狼并不知道他是狼 → 不构成自刀
+    expect(st.wolfSelfKill).toBe(false)
+    expect(st.flow[st.flow.length - 1].detail).not.toContain("自刀")
+    expect(st.globalLog.join("\n")).not.toContain("自刀")
+    // 女巫顺手救了他：不给任何玩家写「自刀骗解药」标记
+    expect(witchSave(st)).toBeNull()
+    expect(st.players.every((p) => !p.mark.wolfSelfKillCheat)).toBe(true)
   })
 })
 

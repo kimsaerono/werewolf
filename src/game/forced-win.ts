@@ -1,5 +1,5 @@
 import type { GameState } from "./logic"
-import { isWolfRole } from "./logic"
+import { isEffectiveWolf } from "./logic"
 import { aliveCampCounts, getChainType, goodWinNow, isGameStarted, isThirdMember, wolfWinNow } from "./win-checker"
 import type { CampCounts } from "./win-checker"
 import { getRoleInstance } from "./roles/builtin"
@@ -640,7 +640,7 @@ function toNode(state: GameState): GoodNode {
   let c = 0
   let flipped = 0
   for (const p of alive) {
-    if (isWolfRole(p.role)) continue
+    if (isEffectiveWolf(p)) continue
     const special = SPECIAL[p.role]
     if (special === "witch" || special === "guard" || special === "hunter" || special === "knight") continue
     if (p.role === "白痴") {
@@ -688,7 +688,7 @@ function toNode(state: GameState): GoodNode {
   }
 
   return {
-    w: alive.filter((p) => isWolfRole(p.role)).length,
+    w: alive.filter((p) => isEffectiveWolf(p)).length,
     g,
     c,
     flipped,

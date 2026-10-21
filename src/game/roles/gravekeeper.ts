@@ -9,6 +9,7 @@ import type { RoleDef, RoleSolverState } from "./types"
  * - 被动触发，无需选择目标；上一白天无人被放逐则当夜无信息。
  * - 死亡后技能失效（出局则夜间不再出现该步骤）。
  * - 无保护/击杀能力，胜负与好人一致；不加个人分（仅阵营胜负分）。
+ * 步骤元数据（order/enabled）声明在 builtin.ts 的注册表字面量里 —— 步骤编排只读注册表。
  */
 export class GravekeeperRole extends BaseRole {
   readonly def: RoleDef = {
@@ -18,13 +19,6 @@ export class GravekeeperRole extends BaseRole {
     emoji: "🪦",
     short: "墓",
     intentKeys: [],
-    nightStep: {
-      order: 55,
-      key: "gravekeeper",
-      label: "守墓人验尸",
-      emoji: "🪦",
-      enabled: (c) => c.boardRoles.includes("守墓人") && !c.nightSteps.gravekeeper,
-    },
   }
 
   extractState(

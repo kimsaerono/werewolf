@@ -1,5 +1,5 @@
 import type { GameState, Player, Mark } from "./logic"
-import { isWolfRole, getBoardRoles } from "./logic"
+import { isWolfRole, isEffectiveWolf, getBoardRoles } from "./logic"
 import { getChainType, isThirdMember } from "./win-checker"
 import { analyzeCertainty, solveForcedWin } from "./forced-win"
 import type { Certainty } from "./forced-win"
@@ -108,8 +108,8 @@ export function predictWinRate(state: GameState): WinPrediction {
     }
   }
 
-  const aliveWolfCount = state.players.filter(p => p.alive && isWolfRole(p.role)).length
-  const aliveGoodCount = state.players.filter(p => p.alive && !isWolfRole(p.role)).length
+  const aliveWolfCount = state.players.filter(p => p.alive && isEffectiveWolf(p)).length
+  const aliveGoodCount = state.players.filter(p => p.alive && !isEffectiveWolf(p)).length
   const isThird = (p: { name: string; role: string }) => isThirdMember(state, p)
   const chain = getChainType(state)
   const thirdAlive = alivePlayers.filter(p => isThird(p))
@@ -242,7 +242,7 @@ export function predictWinRate(state: GameState): WinPrediction {
     const charmed = state.charmedName
       ? state.players.find((p) => p.name === state.charmedName)
       : undefined
-    if (charmed && charmed.alive && !isWolfRole(charmed.role)) {
+    if (charmed && charmed.alive && !isEffectiveWolf(charmed)) {
       wolf += BASE.delta.charmActive
       factors.push("🌹 狼美人已魅惑好人")
     } else {

@@ -272,6 +272,49 @@ const hasGargoyle = hasRoleId("石像鬼")
 const gargoyleObj = findPlayerByRoleId("石像鬼")
 const hasGravekeeper = hasRoleId("守墓人")
 const gravekeeperObj = findPlayerByRoleId("守墓人")
+const hasHiddenWolf = hasRoleId("隐狼")
+const hiddenWolfObj = findPlayerByRoleId("隐狼")
+const hasNightmare = hasRoleId("噩梦之影")
+const nightmareObj = findPlayerByRoleId("噩梦之影")
+const hasWolfHunter = hasRoleId("猎魔人")
+const wolfHunterObj = findPlayerByRoleId("猎魔人")
+const hasDreamer = hasRoleId("摄梦人")
+const dreamerObj = findPlayerByRoleId("摄梦人")
+const hasWildChild = hasRoleId("野孩子")
+const wildChildObj = findPlayerByRoleId("野孩子")
+const hasBomber = hasRoleId("炸弹人")
+const bomberObj = findPlayerByRoleId("炸弹人")
+/** 野孩子榜样对象 */
+const wildChildModelObj = computed(() =>
+  wildChildObj.value ? state.players.find((p) => p.name === wildChildObj.value?.mark.roleModel) : undefined,
+)
+/** 噩梦之影恐惧选项：全员显示，已出局/自己禁选 */
+const nightmarePicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === nightmareObj.value?.name) return "不能恐惧自己"
+    return null
+  }),
+)
+/** 野孩子榜样选项：全员显示，已出局/自己禁选 */
+const wildChildPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === wildChildObj.value?.name) return "不能选自己"
+    return null
+  }),
+)
+/** 猎魔人狩猎 / 摄梦人入梦：全员显示，已出局禁选 */
+const hunterWolfPicker = computed(() => buildPickerOptions((p) => (!p.alive ? "已出局" : null)))
+const dreamerPicker = computed(() => buildPickerOptions((p) => (!p.alive ? "已出局" : null)))
+/** 炸弹人票选名单：被投票者多选（可多选，除炸弹人自己外存活玩家） */
+const bombVoterPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === bomberObj.value?.name) return "炸弹人不能票自己"
+    return null
+  }),
+)
 /** 石像鬼查验结果（全屏弹窗） */
 const gargoyleReveal = ref<{ label: string; role: string } | null>(null)
 /** 守墓人本夜信息（null=无信息） */
@@ -504,8 +547,12 @@ const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 /** 普通狼（狼群成员）配额与存活：用于判断本夜狼人环节是否有人睁眼 */
 const packWolfQuota = computed(() => boardRolesArr.value.filter((r) => refs.isWolfPackRole(r)).length)
 const packWolfAlive = computed(() => state.players.some((p) => p.alive && refs.isWolfPackRole(p.role)))
-/** 本夜狼人环节无人睁眼：板子无普通狼，或普通狼全部出局（仍照常念台词，杜绝语音暗示） */
-const wolfNoOne = computed(() => packWolfQuota.value === 0 || (wolfAllConfirmed.value && !packWolfAlive.value))
+/** 本夜狼人环节无人睁眼：板子无普通狼，或普通狼全部出局且隐狼无刀（仍照常念台词，杜绝语音暗示） */
+const wolfNoOne = computed(
+  () => packWolfQuota.value === 0
+    ? !(hiddenWolfObj.value?.alive && hiddenWolfObj.value?.mark.hasKnife)
+    : wolfAllConfirmed.value && !packWolfAlive.value && !(hiddenWolfObj.value?.alive && hiddenWolfObj.value?.mark.hasKnife),
+)
 /** 未确认身份且存活的玩家（用于睁眼认人）：全员显示，已出局/已分配身份禁选 */
 const unassignedAlivePicker = computed(() =>
   buildPickerOptions((p) => {
@@ -527,11 +574,16 @@ const wwkBoomTarPicker = computed(() =>
 // ===== 单步向导 =====
 
 const STEP_VOICE: Record<string, string> = {
+  wildChild: "wild_child",
   guard: "guard",
+  hiddenWolf: "hiddenWolf",
+  nightmare: "nightmare",
   wolf: "wolf",
   gargoyle: "gargoyle",
   charm: "charm",
   prophet: "prophet",
+  hunterWolf: "hunterWolf",
+  dreamer: "dreamer",
   witch: "witch",
   gravekeeper: "gravekeeper",
   knight: "knight",
@@ -539,6 +591,7 @@ const STEP_VOICE: Record<string, string> = {
   loversMeet: "lovers_meet",
   hunterOpen: "hunter_open",
   idiotOpen: "idiot_open",
+  bomberOpen: "bomber_open",
   wolfkingShot: "wolfkingShot",
   prophetReport: "prophetReport",
   speech: "speech",
@@ -547,11 +600,16 @@ const STEP_VOICE: Record<string, string> = {
 }
 /** 步骤完成后的闭眼语音 */
 const STEP_CLOSE: Record<string, string> = {
+  wildChild: "wild_child_close",
   guard: "guard_close",
+  hiddenWolf: "hiddenWolf_close",
+  nightmare: "nightmare_close",
   wolf: "wolf_close",
   gargoyle: "gargoyle_close",
   charm: "charm_close",
   prophet: "prophet_close",
+  hunterWolf: "hunterWolf_close",
+  dreamer: "dreamer_close",
   witch: "witch_close",
   gravekeeper: "gravekeeper_close",
   knight: "knight_close",
@@ -559,6 +617,7 @@ const STEP_CLOSE: Record<string, string> = {
   loversMeet: "lovers_close",
   hunterOpen: "hunter_close",
   idiotOpen: "idiot_close",
+  bomberOpen: "bomber_close",
 }
 const VOICE_LABEL: Record<string, string> = {
   night_start: "进入夜晚（天黑请闭眼）",
@@ -583,6 +642,20 @@ const VOICE_LABEL: Record<string, string> = {
   gravekeeper_close: "守墓人闭眼",
   knight: "骑士睁眼",
   knight_close: "骑士闭眼",
+  wild_child: "野孩子睁眼",
+  wild_child_close: "野孩子闭眼",
+  hiddenWolf: "隐狼睁眼",
+  hiddenWolf_close: "隐狼闭眼",
+  nightmare: "噩梦之影睁眼",
+  nightmare_close: "噩梦之影闭眼",
+  hunterWolf: "猎魔人睁眼",
+  hunterWolf_close: "猎魔人闭眼",
+  dreamer: "摄梦人睁眼",
+  dreamer_close: "摄梦人闭眼",
+  bomber_open: "炸弹人睁眼",
+  bomber_close: "炸弹人闭眼",
+  blood_seal: "血月自爆封印",
+  bomber_boom: "炸弹引爆",
   dawn: "天亮",
   dawn_peace: "天亮（平安夜）",
   death: "出局播报",
@@ -976,6 +1049,66 @@ function doProphetClose() {
   prophetReveal.value = null
   playVoice("prophet_close")
 }
+function doWildChildPick(v: string) {
+  snapshot()
+  const err = actions.wildChildPick(v)
+  if (err) return message.error(err)
+  const t = state.players.find((x) => x.name === v)
+  message.success(`野孩子榜样：${v}`)
+  effect("wildChild", undefined, t ? `榜样：${refs.playerLabel(t)}` : `榜样：${v}`)
+  playVoice("wild_child_close")
+}
+function doWildChildClose() {
+  markDoneStep("wildChild")
+  playVoice("wild_child_close")
+}
+function doHiddenWolfClose() {
+  markDoneStep("hiddenWolf")
+  playVoice("hiddenWolf_close")
+}
+function doNightmareFear(v: string) {
+  snapshot()
+  const err = actions.nightmareFear(v)
+  if (err) return message.error(err)
+  const t = state.players.find((x) => x.name === v)
+  message.success(`已恐惧 ${v}`)
+  effect("nightmare", undefined, t ? `恐惧：${refs.playerLabel(t)}` : `恐惧：${v}`)
+  playVoice("nightmare_close")
+}
+function doNightmareClose() {
+  markDoneStep("nightmare")
+  playVoice("nightmare_close")
+}
+function doHunterWolfHunt(v: string) {
+  snapshot()
+  const err = actions.hunterHunt(v)
+  if (err) return message.error(err)
+  const t = state.players.find((x) => x.name === v)
+  message.success(`猎魔人已锁定目标 ${v}（天亮结算）`)
+  effect("hunterWolf", undefined, t ? `狩猎：${refs.playerLabel(t)}` : `狩猎：${v}`)
+  playVoice("hunterWolf_close")
+}
+function doHunterWolfClose() {
+  markDoneStep("hunterWolf")
+  playVoice("hunterWolf_close")
+}
+function doDreamerDream(v: string) {
+  snapshot()
+  const err = actions.dreamDo(v)
+  if (err) return message.error(err)
+  const t = state.players.find((x) => x.name === v)
+  message.success(`摄梦人已入梦 ${v}`)
+  effect("dreamer", undefined, t ? `入梦：${refs.playerLabel(t)}` : `入梦：${v}`)
+  playVoice("dreamer_close")
+}
+function doDreamerClose() {
+  markDoneStep("dreamer")
+  playVoice("dreamer_close")
+}
+function doBomberClose() {
+  markDoneStep("bomberOpen")
+  playVoice("bomber_close")
+}
 function doGuard(v: string) {
   snapshot()
   const err = actions.guardDo(v, false)
@@ -1192,8 +1325,20 @@ function onSheriffLose() {
 function doFinishVote(v: string) {
   const outP = state.players.find((p) => p.name === v)
   if (!outP) return message.error("请选择放逐出局对象")
-  snapshot()
   const outRole = getRoleInstance(outP.role)
+  // 炸弹人：先勾选票选名单（多选），再放逐引爆
+  if (outRole && outRole.def.id === "炸弹人") {
+    openMultiPicker("勾选投票给炸弹人的玩家（可多选）", bombVoterPicker.value.options, (voters) => {
+      snapshot()
+      const err = actions.finishVote(outP.name, false, voters)
+      if (err) return message.error(err)
+      effect("bomber", "explode", `炸弹人放逐引爆：${refs.playerLabel(outP)}`)
+      playVoice("bomber_boom")
+      markDone("vote")
+    }, 1, bombVoterPicker.value.options.length, [], bombVoterPicker.value)
+    return
+  }
+  snapshot()
   if (outRole && outRole.def.id === "白痴" && !outP.mark.idiotFlipped) {
     // 白痴被放逐 → 直接翻牌免死（失去投票权，保留在场上）
     const err = actions.finishVote(outP.name, true)
@@ -1231,6 +1376,13 @@ function doWolfBaoZha(v: string) {
   stopSpeech()
   const err = actions.wolfBaoZha(v)
   if (err) return message.error(err)
+  // 血月使徒自爆：当夜神职技能封印
+  if (pRole && pRole.def.id === "血月使徒") {
+    message.warning("血月当空，今夜神职技能全部失效！")
+    effect("explode", "explode", "血月封印：当夜神职失效")
+    playVoice("blood_seal")
+    return
+  }
   message.success("狼人自爆，直接进入黑夜")
   effect("explode", "explode")
   playVoice("explode")
@@ -1451,13 +1603,20 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <p class="small" style="text-align: center">本夜狼人环节：无人睁眼（照常念台词，避免语音暗示）</p>
             <a-button type="primary" size="large" @click="doWolfClose">🌑 狼人闭眼，继续</a-button>
           </template>
+          <template v-else-if="state.wolfFearedTonight">
+            <p class="small" style="text-align: center; color: #ff7875">😱 狼队被噩梦之影恐惧，本夜无法刀人</p>
+            <a-button type="primary" size="large" @click="doWolfEmptyKill">🈳 确认空刀（被恐惧）</a-button>
+          </template>
           <template v-else-if="!wolfAllConfirmed">
             <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
             <a-button v-if="(wolfCampStatus['狼人']?.have || 0) < (wolfCampStatus['狼人']?.need || 0)" danger size="large" @click="openWolfConfirm">🐺 确认狼人（{{ wolfCount }}/{{ wolfNeed }}）</a-button>
             <a-button v-for="cr in wolfCampSingleUnconfirmed" :key="cr" type="primary" size="large" @click="openPicker(`确认${cr}（睁眼认人）`, unassignedAlivePicker.options, (v) => confirmRoleWithCheck(cr, v), unassignedAlivePicker)">{{ refs.ROLE_EMOJI[cr] || "" }} 确认{{ cr }}</a-button>
           </template>
           <template v-else>
-            <p class="small" style="text-align: center">狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）</p>
+            <p class="small" style="text-align: center">
+              狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）
+              <template v-if="hiddenWolfObj?.alive && hiddenWolfObj?.mark.hasKnife"><br /><b style="color:#ff7875">🐺 隐狼已获得刀人能力（其余狼出局）</b></template>
+            </p>
             <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', wolfKillPicker.options, (v) => doWolfKill(v), wolfKillPicker)">🌑 确认刀人</a-button>
             <a-button v-if="!state.nightWolfKill" size="large" @click="doWolfEmptyKill">🈳 空刀（不刀人）</a-button>
             <div v-if="state.nightSteps.wolf && !state.nightWolfKill" class="prophet-result">
@@ -1531,6 +1690,142 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             </template>
             <p v-else class="small" style="text-align: center">上一白天无人被放逐，本夜无信息</p>
             <a-button type="primary" danger size="large" @click="doGravekeeperClose">已告知守墓人，闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 野孩子（首夜选榜样） -->
+        <div v-else-if="currentStep === 'wildChild'" class="step-body">
+          <div class="step-emoji">🌱</div>
+          <h3 class="step-title">野孩子选榜样</h3>
+          <template v-if="!hasWildChild">
+            <p class="small" style="text-align: center">野孩子睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认野孩子（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('野孩子', v), unassignedAlivePicker)">🌱 确认野孩子</a-button>
+          </template>
+          <template v-else-if="wildChildObj && !wildChildObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">野孩子已出局（走流程）</p>
+            <a-button type="primary" size="large" @click="doWildChildClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="!wildChildObj?.mark.roleModel">
+            <p class="small" style="text-align: center">选择一名玩家作为榜样（不能选自己）；榜样死后野孩子将黑化为狼</p>
+            <a-button type="primary" size="large" @click="openPicker('选择榜样', wildChildPicker.options, (v) => doWildChildPick(v), wildChildPicker)">🌱 选择榜样</a-button>
+          </template>
+          <template v-else>
+            <div class="prophet-result">
+              <div class="prophet-result-main">已选榜样：{{ labelOf(String(wildChildObj.mark.roleModel)) }}</div>
+            </div>
+            <a-button type="primary" danger size="large" @click="doWildChildClose">野孩子闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 隐狼（首夜认人；带刀后并入狼人环节） -->
+        <div v-else-if="currentStep === 'hiddenWolf'" class="step-body">
+          <div class="step-emoji">🐺</div>
+          <h3 class="step-title">隐狼睁眼</h3>
+          <template v-if="!hasHiddenWolf">
+            <p class="small" style="text-align: center">隐狼睁眼，法官单独确认其身份（不与狼群见面）</p>
+            <a-button type="primary" size="large" @click="openPicker('确认隐狼（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('隐狼', v), unassignedAlivePicker)">🐺 确认隐狼</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">隐狼验人为金水，狼群全灭后获得刀人能力</p>
+            <a-button type="primary" size="large" @click="doHiddenWolfClose">隐狼闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 噩梦之影 -->
+        <div v-else-if="currentStep === 'nightmare'" class="step-body">
+          <div class="step-emoji">😱</div>
+          <h3 class="step-title">噩梦之影恐惧</h3>
+          <template v-if="!hasNightmare">
+            <p class="small" style="text-align: center">噩梦之影睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认噩梦之影（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('噩梦之影', v), unassignedAlivePicker)">😱 确认噩梦之影</a-button>
+          </template>
+          <template v-else-if="nightmareObj && !nightmareObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">噩梦之影已出局，本晚不能恐惧（走流程）</p>
+            <a-button type="primary" size="large" @click="doNightmareClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="nightmareObj?.mark.skillDisabled">
+            <p class="small" style="text-align: center; color: #ff7875">噩梦之影被封印/恐惧，本晚不能行动</p>
+            <a-button type="primary" size="large" @click="doNightmareClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="!state.nightSteps.nightmare">
+            <p class="small" style="text-align: center">恐惧狼阵营 → 该阵营当晚无法刀人；恐惧神职 → 其技能当晚失效</p>
+            <a-button type="primary" size="large" @click="openPicker('选择恐惧对象', nightmarePicker.options, (v) => doNightmareFear(v), nightmarePicker)">😱 选择恐惧对象</a-button>
+          </template>
+          <template v-else>
+            <div class="prophet-result">
+              <div class="prophet-result-main">已恐惧：{{ labelOf(state.nightmareFearTarget) }}</div>
+            </div>
+            <a-button type="primary" danger size="large" @click="doNightmareClose">噩梦之影闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 猎魔人 -->
+        <div v-else-if="currentStep === 'hunterWolf'" class="step-body">
+          <div class="step-emoji">🗡️</div>
+          <h3 class="step-title">猎魔人狩猎</h3>
+          <template v-if="!hasWolfHunter">
+            <p class="small" style="text-align: center">猎魔人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认猎魔人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('猎魔人', v), unassignedAlivePicker)">🗡️ 确认猎魔人</a-button>
+          </template>
+          <template v-else-if="wolfHunterObj && !wolfHunterObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">猎魔人已出局，本晚不能狩猎（走流程）</p>
+            <a-button type="primary" size="large" @click="doHunterWolfClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="wolfHunterObj?.mark.skillDisabled || state.bloodMoonSeal">
+            <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "猎魔人被恐惧，本晚不能行动" }}</p>
+            <a-button type="primary" size="large" @click="doHunterWolfClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="!state.nightSteps.hunterWolf">
+            <p class="small" style="text-align: center">选择一名玩家狩猎（天亮结算）：是狼则狼死，是好人则猎魔人反噬；免疫女巫毒</p>
+            <a-button type="primary" size="large" @click="openPicker('选择狩猎对象', hunterWolfPicker.options, (v) => doHunterWolfHunt(v), hunterWolfPicker)">🗡️ 选择狩猎对象</a-button>
+          </template>
+          <template v-else>
+            <div class="prophet-result">
+              <div class="prophet-result-main">已锁定狩猎目标：{{ labelOf(state.nightHuntTarget) }}（天亮结算）</div>
+            </div>
+            <a-button type="primary" danger size="large" @click="doHunterWolfClose">猎魔人闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 摄梦人 -->
+        <div v-else-if="currentStep === 'dreamer'" class="step-body">
+          <div class="step-emoji">💭</div>
+          <h3 class="step-title">摄梦人入梦</h3>
+          <template v-if="!hasDreamer">
+            <p class="small" style="text-align: center">摄梦人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认摄梦人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('摄梦人', v), unassignedAlivePicker)">💭 确认摄梦人</a-button>
+          </template>
+          <template v-else-if="dreamerObj && !dreamerObj.alive">
+            <p class="small" style="text-align: center; color: #ff7875">摄梦人已出局，本晚不能入梦（走流程）</p>
+            <a-button type="primary" size="large" @click="doDreamerClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="dreamerObj?.mark.skillDisabled || state.bloodMoonSeal">
+            <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "摄梦人被恐惧，本晚不能行动" }}</p>
+            <a-button type="primary" size="large" @click="doDreamerClose">进入下一步</a-button>
+          </template>
+          <template v-else-if="!state.nightSteps.dreamer">
+            <p class="small" style="text-align: center">选择一名玩家入梦；连续两晚入同一人梦境，其天亮死亡（禁同上夜目标时链断）</p>
+            <a-button type="primary" size="large" @click="openPicker('选择入梦对象', dreamerPicker.options, (v) => doDreamerDream(v), dreamerPicker)">💭 选择入梦对象</a-button>
+          </template>
+          <template v-else>
+            <div class="prophet-result">
+              <div class="prophet-result-main">已入梦：{{ labelOf(state.nightDreamTarget) }}{{ state.nightDreamTarget && state.nightDreamTarget === dreamerObj?.mark.prevDreamTarget ? "（连梦，天亮死亡）" : "" }}</div>
+            </div>
+            <a-button type="primary" danger size="large" @click="doDreamerClose">摄梦人闭眼</a-button>
+          </template>
+        </div>
+
+        <!-- 炸弹人（首夜认人） -->
+        <div v-else-if="currentStep === 'bomberOpen'" class="step-body">
+          <div class="step-emoji">💣</div>
+          <h3 class="step-title">炸弹人睁眼</h3>
+          <template v-if="!hasBomber">
+            <p class="small" style="text-align: center">炸弹人睁眼，法官确认其身份</p>
+            <a-button type="primary" size="large" @click="openPicker('确认炸弹人（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('炸弹人', v), unassignedAlivePicker)">💣 确认炸弹人</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">被放逐时引爆炸弹，炸死票选你的玩家；若被全票放逐则独赢</p>
+            <a-button type="primary" size="large" @click="doBomberClose">炸弹人闭眼</a-button>
           </template>
         </div>
 

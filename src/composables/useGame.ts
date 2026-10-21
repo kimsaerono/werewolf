@@ -510,6 +510,26 @@ export function useGame() {
       refresh()
       return err
     },
+    nightmareFear(sel: string) {
+      const err = g.nightmareFear(state, sel)
+      refresh()
+      return err
+    },
+    wildChildPick(sel: string) {
+      const err = g.wildChildPick(state, sel)
+      refresh()
+      return err
+    },
+    hunterHunt(sel: string) {
+      const err = g.hunterHunt(state, sel)
+      refresh()
+      return err
+    },
+    dreamDo(sel: string) {
+      const err = g.dreamDo(state, sel)
+      refresh()
+      return err
+    },
     guardDo(sel: string, same: boolean) {
       const err = g.guardDo(state, sel, same)
       refresh()
@@ -573,8 +593,8 @@ export function useGame() {
       g.loseJingHui(state)
       refresh()
     },
-    finishVote(out: string, idiotFlip: boolean) {
-      const err = g.finishVote(state, out, idiotFlip)
+    finishVote(out: string, idiotFlip: boolean, bombVoters?: string[]) {
+      const err = g.finishVote(state, out, idiotFlip, bombVoters)
       refresh()
       return err
     },

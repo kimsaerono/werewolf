@@ -43,8 +43,8 @@ export class WolfBeautyRole extends BaseRole {
   }
 
   onAfterDeath(state: GameState, evt: DieEvent & { killed: string[] }): void {
-    // 仅投票 / 枪杀触发殉情（夜里被女巫毒死不触发）
-    if (evt.reason !== "vote" && evt.reason !== "shot") return
+    // 仅投票 / 枪杀 / 炸弹引爆触发殉情（夜里被女巫毒死、被刀死不触发）
+    if (evt.reason !== "vote" && evt.reason !== "shot" && evt.reason !== "bomb") return
     const targetName = state.charmedName
     if (!targetName) return
     const target = state.players.find((x) => x.name === targetName)

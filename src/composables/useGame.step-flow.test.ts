@@ -42,24 +42,24 @@ describe("useGame × step-flow 集成（真实 actions → 当前步骤）", () 
     __resetAudioActivityForTest()
   })
 
-  it("12k 首夜：步骤序列基于板子角色（狼→女巫→预言家→白痴→骑士→猎人→警长）", () => {
+  it("12k 首夜：步骤序列基于板子角色（狼→预言家→女巫→白痴→骑士→猎人→警长）", () => {
     setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "骑士", "白痴", "平民", "平民", "平民", "平民"])
     expect(game.state.phase).toBe("night")
     expect(game.state.round).toBe(1)
     expect(computeStepKeys(game.state)).toEqual([
-      "wolf", "witch", "prophet", "idiotOpen", "knight", "hunterOpen", "jinghui",
+      "wolf", "prophet", "witch", "idiotOpen", "knight", "hunterOpen", "jinghui",
     ])
   })
 
-  it("9人标准板首夜：狼→女巫→预言家→猎人→警长", () => {
+  it("9人标准板首夜：狼→预言家→女巫→猎人→警长", () => {
     setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
-    expect(computeStepKeys(game.state)).toEqual(["wolf", "witch", "prophet", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(game.state)).toEqual(["wolf", "prophet", "witch", "hunterOpen", "jinghui"])
   })
 
-  it("标记 wolf 完成 → 首项推进到 witch", () => {
+  it("标记 wolf 完成 → 首项推进到 prophet", () => {
     setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
     game.state.uiDone = { ...game.state.uiDone, wolf: true }
-    expect(computeStepKeys(game.state)[0]).toBe("witch")
+    expect(computeStepKeys(game.state)[0]).toBe("prophet")
   })
 
   it("推进所有夜间步骤 + 警长 → ['dawn']", () => {

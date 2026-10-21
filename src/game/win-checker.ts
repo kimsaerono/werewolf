@@ -1,7 +1,7 @@
 import type { GameState } from "./logic"
 import type { Camp } from "./roles/types"
 import { getRoleInstance } from "./roles/builtin"
-import { isWolfRole, GOD_LIST } from "./logic"
+import { isEffectiveWolf, GOD_LIST } from "./logic"
 
 export type WinCamp = Camp | "civil" | "draw" | null
 
@@ -25,8 +25,8 @@ export function getChainType(state: GameState): "WG" | "GG" | "WW" | "" {
   const pa = state.players.find((p) => p.name === a)
   const pb = state.players.find((p) => p.name === b)
   if (!pa || !pb) return ""
-  const wa = isWolfRole(pa.role)
-  const wb = isWolfRole(pb.role)
+  const wa = isEffectiveWolf(pa)
+  const wb = isEffectiveWolf(pb)
   if (wa && wb) return "WW"
   if (!wa && !wb) return "GG"
   return "WG"
@@ -57,7 +57,8 @@ export function aliveCampCounts(state: GameState): CampCounts {
   for (const p of state.players) {
     if (!p.alive) continue
     const role = getRoleInstance(p.role)
-    if (isWolfRole(p.role)) {
+    // 黑化野孩子按狼计（isEffectiveWolf 先于 camp 桶判定）
+    if (isEffectiveWolf(p)) {
       wolf++
       continue
     }
@@ -109,6 +110,17 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   if (state.finished) {
     return { ended: false, text: "", reason: "" }
   }
+  // 炸弹人独赢：全票放逐达成，即时判第三方胜（炸弹人可能已被放逐而死，不走存活 winRule）
+  if (state.bombVictory) {
+    const prev = state.winCamp
+    state.winCamp = "third"
+    const ended = prev !== "third"
+    return {
+      ended,
+      text: ended ? WIN_TEXT.third : "",
+      reason: "炸弹人全票放逐，炸弹引爆达成独赢",
+    }
+  }
 
   // 收集所有角色的胜负判定
   const judgments: Array<{ camp: WinCamp; reason: string; priority: number }> = []
@@ -141,7 +153,7 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
     reason = top.reason
   } else {
     // 默认规则：屠边/屠城
-    const aliveWolf = state.players.filter((p) => p.alive && isWolfRole(p.role))
+    const aliveWolf = state.players.filter((p) => p.alive && isEffectiveWolf(p))
     const aliveAll = state.players.filter((p) => p.alive)
     const counts = aliveCampCounts(state)
     const aliveWolfCount = counts.wolf

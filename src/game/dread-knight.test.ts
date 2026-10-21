@@ -6,6 +6,7 @@ import {
   prophetCheck,
   witchPoison,
   witchSave,
+  guardDo,
   killPlayer,
   nextNight,
   startNewGame,
@@ -228,5 +229,20 @@ describe("恶灵骑士", () => {
     // 实际上预言家死了（反伤），因为解药只解 wolfKill
     expect(st.players[2].alive).toBe(false)
     expect(st.players[2].deathReason).toBe("other")
+  })
+
+  it("守卫守中也挡不住反伤（守卫只挡狼人刀人，反伤 reason=other）", () => {
+    // 把猎人位换成守卫，构造含守卫的局面
+    st.players[4].role = "守卫"
+    st.boardRoles = ["狼人", "恶灵骑士", "预言家", "女巫", "守卫", "平民", "平民", "平民"]
+    expect(wolfKill(st, "P3")).toBeNull() // 狼刀预言家
+    expect(guardDo(st, "P3", false)).toBeNull() // 守卫守住预言家
+    expect(prophetCheck(st, "P2")).toBeTruthy() // 预言家验恶灵骑士 → 触发反伤
+    resolveNightEffects(st)
+    // 狼刀被守中，但反伤照样命中：预言家死于反伤，且守卫不算守中
+    expect(st.players[2].alive).toBe(false)
+    expect(st.players[2].deathReason).toBe("other")
+    expect(st.players[4].mark.guardHitCount).toBe(0)
+    expect(st.players[1].mark.dreadKnightRevengeUsed).toBe(true)
   })
 })

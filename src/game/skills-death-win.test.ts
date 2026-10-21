@@ -128,7 +128,7 @@ describe("白狼王自爆带人 · 技能校验", () => {
 describe("狼人自爆 · 技能校验", () => {
   it("好人不能自爆", () => {
     const st = setup()
-    expect(wolfBaoZha(st, "P3")).toBe("只能选择狼人/白狼王自爆")
+    expect(wolfBaoZha(st, "P3")).toBe("只能狼阵营玩家自爆")
     expect(g(st, "P3").alive).toBe(true)
   })
 

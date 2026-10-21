@@ -16,6 +16,13 @@ import { IdiotRole } from "./idiot"
 import { GravekeeperRole } from "./gravekeeper"
 import { VillagerRole } from "./villager"
 import { CupidRole } from "./cupid"
+import { HiddenWolfRole } from "./hidden-wolf"
+import { NightmareRole } from "./nightmare"
+import { BloodMoonRole } from "./blood-moon"
+import { WolfHunterRole } from "./wolf-hunter"
+import { DreamerRole } from "./dreamer"
+import { WildChildRole } from "./wild-child"
+import { BombermanRole } from "./bomberman"
 import { onBeforeDeath, onAfterDeath } from "../logic"
 
 /**
@@ -28,11 +35,28 @@ export const BUILTIN_ROLES: RoleDef[] = [
     nightStep: {
       order: 30, key: "wolf", label: "狼人刀人", emoji: "🌑",
       // 每夜都进入狼人环节（照常念台词，避免语音暗示）；是否有人睁眼/刀人由面板判断
+      // 隐狼带刀时（狼群全灭只剩隐狼）也需要狼人环节
       enabled: (c) => c.boardRoles.some((r) => c.isWolfRole(r)),
     },
   },
   { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", intentKeys: [] },
   { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王", intentKeys: [] },
+  // 隐狼：不与狼群见面，首夜单独认人；带刀后并入狼人环节
+  {
+    id: "隐狼", camp: "wolf", unique: true, emoji: "🐺🌫️", short: "隐狼", wolfPack: false, intentKeys: ["nightWolfKill"],
+    nightStep: {
+      order: 26, key: "hiddenWolf", label: "隐狼睁眼", emoji: "🐺",
+      // 仅首夜出现：法官单独叫醒确认身份（不与狼群见面）
+      enabled: (c) => c.round <= 1 && c.boardRoles.includes("隐狼") && !c.nightSteps.hiddenWolf,
+    },
+  },
+  // 噩梦之影：每夜恐惧一人
+  {
+    id: "噩梦之影", camp: "wolf", unique: true, emoji: "😱", short: "噩梦", intentKeys: [],
+    nightStep: { order: 28, key: "nightmare", label: "噩梦之影恐惧", emoji: "😱" },
+  },
+  // 血月使徒：普通带刀狼，自爆封印神职/仅剩狼时延迟出局（无独立夜间步骤）
+  { id: "血月使徒", camp: "wolf", unique: true, emoji: "🌕", short: "血月", intentKeys: [] },
   {
     id: "狼美人", camp: "wolf", unique: true, emoji: "🌹", short: "狼美", intentKeys: ["nightWolfKill", "charmedName"],
     nightStep: { order: 35, key: "charm", label: "狼美人魅惑", emoji: "🌹", enabled: (c) => c.boardRoles.includes("狼美人") },
@@ -48,11 +72,21 @@ export const BUILTIN_ROLES: RoleDef[] = [
   },
   {
     id: "预言家", camp: "god", unique: true, emoji: "🔮", short: "预", intentKeys: ["nightProphetCheck"],
-    nightStep: { order: 50, key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
+    nightStep: { order: 40, key: "prophet", label: "预言家验人", emoji: "🔮", enabled: (c) => c.boardRoles.includes("预言家") },
+  },
+  // 猎魔人：每夜狩猎一人，天亮结算；免疫女巫毒
+  {
+    id: "猎魔人", camp: "god", unique: true, emoji: "🗡️", short: "猎魔", intentKeys: [],
+    nightStep: { order: 42, key: "hunterWolf", label: "猎魔人狩猎", emoji: "🗡️" },
+  },
+  // 摄梦人：每夜入梦一人，连续两晚同梦天亮致死
+  {
+    id: "摄梦人", camp: "god", unique: true, emoji: "💭", short: "摄梦", intentKeys: [],
+    nightStep: { order: 45, key: "dreamer", label: "摄梦人入梦", emoji: "💭" },
   },
   {
     id: "女巫", camp: "god", unique: true, emoji: "🧙", short: "巫", intentKeys: ["nightWitchSave", "nightWitchPoison", "nightUsedDrug"],
-    nightStep: { order: 40, key: "witch", label: "女巫操作", emoji: "🧪" },
+    nightStep: { order: 50, key: "witch", label: "女巫操作", emoji: "🧪" },
   },
   {
     id: "猎人", camp: "god", unique: true, emoji: "🔫", short: "猎", intentKeys: [],
@@ -82,6 +116,24 @@ export const BUILTIN_ROLES: RoleDef[] = [
     },
   },
   { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", intentKeys: [] },
+  // 野孩子：首夜选榜样，榜样死后黑化为狼
+  {
+    id: "野孩子", camp: "villager", unique: true, emoji: "🌱", short: "野孩", intentKeys: [],
+    nightStep: {
+      order: 8, key: "wildChild", label: "野孩子选榜样", emoji: "🌱",
+      // 仅首夜出现
+      enabled: (c) => c.round <= 1 && c.boardRoles.includes("野孩子") && !c.nightSteps.wildChild,
+    },
+  },
+  // 炸弹人：被放逐时引爆炸弹，全票放逐独赢
+  {
+    id: "炸弹人", camp: "third", unique: true, emoji: "💣", short: "炸弹", intentKeys: [],
+    nightStep: {
+      order: 85, key: "bomberOpen", label: "炸弹人睁眼", emoji: "💣",
+      // 仅首夜：纯认人步骤（防止未认人被兜底成平民）
+      enabled: (c) => c.round <= 1 && c.boardRoles.includes("炸弹人") && !c.nightSteps.bomberOpen,
+    },
+  },
   {
     id: "丘比特", camp: "third", unique: true, emoji: "💘", short: "丘", intentKeys: ["lovers"],
     nightStep: { order: 10, key: "cupid", label: "丘比特连人", emoji: "💘", enabled: (c) => c.round <= 1 && c.boardRoles.includes("丘比特") },
@@ -117,6 +169,13 @@ export function initBuiltinRoles(): void {
     new GravekeeperRole(),
     new VillagerRole(),
     new CupidRole(),
+    new HiddenWolfRole(),
+    new NightmareRole(),
+    new BloodMoonRole(),
+    new WolfHunterRole(),
+    new DreamerRole(),
+    new WildChildRole(),
+    new BombermanRole(),
   ]
 
   for (const role of roles) {

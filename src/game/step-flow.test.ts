@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { defaultState, newPlayer, type GameState } from "./logic"
+import { defaultState, newPlayer, isWolfRole, isWolfPackRole, type GameState } from "./logic"
 import { computeStepKeys, getActiveNightStepKeys, type NightStepCtx } from "./step-flow"
 
 /**
@@ -39,7 +39,7 @@ describe("computeStepKeys · 阶段总览", () => {
 
   it("夜晚 → 夜间步骤 + 警长 + 天亮", () => {
     const s = build(["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
-    expect(computeStepKeys(s)).toEqual(["wolf", "witch", "prophet", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(s)).toEqual(["wolf", "prophet", "witch", "hunterOpen", "jinghui"])
   })
 
   it("白天 → [speech, vote, night]（首夜含 prophetReport）", () => {
@@ -74,25 +74,25 @@ describe("computeStepKeys · 阶段总览", () => {
 })
 
 describe("computeStepKeys · 夜间顺序与条件", () => {
-  it("9人标准板首夜：狼→女巫→预言家→猎人→警长", () => {
+  it("9人标准板首夜：狼→预言家→女巫→猎人→警长", () => {
     const s = build(["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
-    expect(computeStepKeys(s)).toEqual(["wolf", "witch", "prophet", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(s)).toEqual(["wolf", "prophet", "witch", "hunterOpen", "jinghui"])
   })
 
   it("含守卫：守卫在狼人之前", () => {
     const s = build(["狼人", "守卫", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
-    expect(computeStepKeys(s)).toEqual(["guard", "wolf", "witch", "prophet", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(s)).toEqual(["guard", "wolf", "prophet", "witch", "hunterOpen", "jinghui"])
   })
 
   it("含丘比特：丘比特→情侣认亲 最前", () => {
     const s = build(["狼人", "狼人", "狼人", "丘比特", "预言家", "女巫", "猎人", "平民", "平民", "平民", "平民"])
     s.lovers = ["P1", "P2"]
-    expect(computeStepKeys(s)).toEqual(["cupid", "loversMeet", "wolf", "witch", "prophet", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(s)).toEqual(["cupid", "loversMeet", "wolf", "prophet", "witch", "hunterOpen", "jinghui"])
   })
 
   it("12k（骑士/白痴）：白痴、骑士在预言家之后、猎人之前（首夜）", () => {
     const s = build(["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "骑士", "白痴", "平民", "平民", "平民", "平民"])
-    expect(computeStepKeys(s)).toEqual(["wolf", "witch", "prophet", "idiotOpen", "knight", "hunterOpen", "jinghui"])
+    expect(computeStepKeys(s)).toEqual(["wolf", "prophet", "witch", "idiotOpen", "knight", "hunterOpen", "jinghui"])
   })
 
   it("第二夜：首夜限定步骤（丘比特/情侣/白痴/骑士）不再出现", () => {
@@ -104,7 +104,7 @@ describe("computeStepKeys · 夜间顺序与条件", () => {
     expect(keys).not.toContain("cupid")
     expect(keys).not.toContain("loversMeet")
     expect(keys).not.toContain("jinghui")
-    expect(keys).toEqual(["guard", "wolf", "witch", "prophet", "hunterOpen"])
+    expect(keys).toEqual(["guard", "wolf", "prophet", "witch", "hunterOpen"])
   })
 
   it("无存活狼时狼人步骤仍保留（照常念台词），uiDone 后移除", () => {
@@ -152,7 +152,8 @@ function ctx(over: Partial<NightStepCtx> = {}): NightStepCtx {
     nightSteps: {},
     round: 1,
     lovers: [],
-    isWolfRole: (r) => r === "狼人" || r === "狼王" || r === "白狼王",
+    isWolfRole,
+    isWolfPack: isWolfPackRole,
     players: [],
     hunterExists: false,
     hunterAlive: false,
@@ -165,21 +166,21 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
     const keys = getActiveNightStepKeys(
       ctx({ boardRoles: ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"] }),
     )
-    expect(keys).toEqual(["wolf", "witch", "prophet", "hunterOpen"])
+    expect(keys).toEqual(["wolf", "prophet", "witch", "hunterOpen"])
   })
 
   it("守卫在狼人之前", () => {
     const keys = getActiveNightStepKeys(
       ctx({ boardRoles: ["狼人", "狼人", "守卫", "预言家", "女巫", "猎人", "平民", "平民"] }),
     )
-    expect(keys).toEqual(["guard", "wolf", "witch", "prophet", "hunterOpen"])
+    expect(keys).toEqual(["guard", "wolf", "prophet", "witch", "hunterOpen"])
   })
 
   it("白痴、骑士在预言家之后、猎人之前（首夜）", () => {
     const keys = getActiveNightStepKeys(
       ctx({ boardRoles: ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "骑士", "白痴", "平民", "平民", "平民", "平民"] }),
     )
-    expect(keys).toEqual(["wolf", "witch", "prophet", "idiotOpen", "knight", "hunterOpen"])
+    expect(keys).toEqual(["wolf", "prophet", "witch", "idiotOpen", "knight", "hunterOpen"])
   })
 
   it("丘比特→情侣认亲 最前", () => {
@@ -189,7 +190,7 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
         lovers: ["P1", "P2"],
       }),
     )
-    expect(keys).toEqual(["cupid", "loversMeet", "wolf", "witch", "prophet", "hunterOpen"])
+    expect(keys).toEqual(["cupid", "loversMeet", "wolf", "prophet", "witch", "hunterOpen"])
   })
 
   it("第二夜不再出现首夜限定步骤", () => {
@@ -234,5 +235,96 @@ describe("getActiveNightStepKeys · 顺序与条件与历史一致", () => {
       }),
     )
     expect(keys).toContain("wolf")
+  })
+})
+
+describe("getActiveNightStepKeys · 新角色步序", () => {
+  it("野孩子首夜最前，炸弹人/隐狼首夜限定步骤各就各位", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({
+        boardRoles: ["狼人", "隐狼", "噩梦之影", "猎魔人", "摄梦人", "野孩子", "炸弹人", "预言家", "平民"],
+      }),
+    )
+    expect(keys).toEqual([
+      "wildChild",
+      "hiddenWolf",
+      "nightmare",
+      "wolf",
+      "prophet",
+      "hunterWolf",
+      "dreamer",
+      "bomberOpen",
+    ])
+  })
+
+  it("第二夜：野孩子/隐狼/炸弹人首夜限定步骤全部消失", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({
+        round: 2,
+        boardRoles: ["狼人", "隐狼", "噩梦之影", "猎魔人", "摄梦人", "野孩子", "炸弹人", "预言家", "平民"],
+      }),
+    )
+    expect(keys).not.toContain("wildChild")
+    expect(keys).not.toContain("hiddenWolf")
+    expect(keys).not.toContain("bomberOpen")
+    expect(keys).toEqual(["nightmare", "wolf", "prophet", "hunterWolf", "dreamer"])
+  })
+
+  it("噩梦之影在狼人之前、预言家之前", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({ boardRoles: ["狼人", "噩梦之影", "预言家", "平民", "平民"] }),
+    )
+    expect(keys.indexOf("nightmare")).toBeLessThan(keys.indexOf("wolf"))
+    expect(keys.indexOf("nightmare")).toBeLessThan(keys.indexOf("prophet"))
+  })
+
+  it("猎魔人/摄梦人在预言家之后、女巫之前；女巫在最末行动神职", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({ boardRoles: ["狼人", "预言家", "猎魔人", "摄梦人", "女巫", "平民"] }),
+    )
+    expect(keys).toEqual(["wolf", "prophet", "hunterWolf", "dreamer", "witch"])
+  })
+
+
+  it("血月使徒无独立步骤（与普通狼同走狼人环节）", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({ boardRoles: ["血月使徒", "预言家", "平民", "平民"] }),
+    )
+    expect(keys).toEqual(["wolf", "prophet"])
+    expect(keys).not.toContain("bloodMoon")
+  })
+
+  it("隐狼带刀（狼群全灭）时狼人环节仍保留", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({
+        round: 2,
+        boardRoles: ["狼人", "隐狼", "预言家", "平民", "平民"],
+        players: [
+          { role: "狼人", alive: false },
+          { role: "隐狼", alive: true },
+          { role: "预言家", alive: true },
+        ],
+      }),
+    )
+    expect(keys).toContain("wolf")
+  })
+
+  it("新角色夜间出局：其步骤仍保留（照常念台词）", () => {
+    const keys = getActiveNightStepKeys(
+      ctx({
+        round: 2,
+        boardRoles: ["狼人", "噩梦之影", "猎魔人", "摄梦人", "预言家", "平民"],
+        players: [
+          { role: "狼人", alive: true },
+          { role: "噩梦之影", alive: false },
+          { role: "猎魔人", alive: false },
+          { role: "摄梦人", alive: false },
+          { role: "预言家", alive: true },
+        ],
+      }),
+    )
+    expect(keys).toContain("nightmare")
+    expect(keys).toContain("hunterWolf")
+    expect(keys).toContain("dreamer")
   })
 })

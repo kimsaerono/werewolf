@@ -43,10 +43,38 @@ export const GOD_LIST = roleIds().filter((id) => getRole(id)?.camp === "god")
 export function isWolfRole(role: string): boolean {
   return getRole(role)?.camp === "wolf"
 }
-/** 狼群成员：狼阵营且参与狼人会议/刀人（石像鬼 wolfPack=false，不在狼群） */
+/** 狼群成员：狼阵营且参与狼人会议/刀人（石像鬼、隐狼为 false，不在狼群） */
 export function isWolfPackRole(role: string): boolean {
   const def = getRole(role)
   return def?.camp === "wolf" && def.wolfPack !== false
+}
+
+/**
+ * 玩家当前生效阵营：野孩子黑化后视为狼，其余取角色注册表阵营（未分配返回 ""）。
+ * 胜负/计分/查验等「按人判定阵营」的口径统一走这里。
+ */
+export function effectiveCampOf(p: { role: string; mark: Mark }): string {
+  if (p.role === "野孩子" && p.mark.isTransform) return "wolf"
+  return getRole(p.role)?.camp ?? ""
+}
+
+/** 玩家当前是否为狼阵营（野孩子黑化计入；查验/计分/胜负共用） */
+export function isEffectiveWolf(p: { role: string; mark: Mark }): boolean {
+  return effectiveCampOf(p) === "wolf"
+}
+
+/** 隐狼当前能否刀人：场上有存活隐狼，且除隐狼外无其他存活狼阵营玩家 */
+export function hiddenWolfCanKnife(state: GameState): boolean {
+  if (!state.players.some((p) => p.alive && p.role === "隐狼")) return false
+  return !state.players.some((p) => p.alive && p.role !== "隐狼" && isEffectiveWolf(p))
+}
+
+/** 刷新隐狼刀人权标记（死亡/放逐/入夜等造成减员后调用） */
+export function refreshHiddenWolfKnife(state: GameState): void {
+  const can = hiddenWolfCanKnife(state)
+  for (const p of state.players) {
+    if (p.role === "隐狼") p.mark.hasKnife = can
+  }
 }
 /** 唯一性角色：注册表 unique===true 的角色（每局至多 1 个） */
 export const UNIQUE_ROLES = roleIds().filter((id) => getRole(id)?.unique)
@@ -144,6 +172,36 @@ export interface Mark {
   dreadKnightRevengeTarget: string
   /** 石像鬼：本夜是否由石像鬼完成刀人（每夜重置） */
   gargoyleKilledTonight: boolean
+  /** 本夜技能被封印/恐惧（噩梦之影恐惧神职；每夜重置） */
+  skillDisabled: boolean
+  /** 隐狼：当前是否具备刀人权（除隐狼外狼阵营全灭时 true，动态刷新） */
+  hasKnife: boolean
+  /** 野孩子：是否已黑化变身 */
+  isTransform: boolean
+  /** 野孩子：首夜选定的榜样玩家名 */
+  roleModel: string
+  /** 摄梦人：上一夜摄梦对象（连续两晚同梦触发连梦死亡） */
+  prevDreamTarget: string
+  /** 血月使徒：被放逐但血月之力延续到天亮才死（期间可行动/自爆） */
+  bloodDelayedExile: boolean
+  /** 猎魔人：狩猎击杀狼次数 */
+  huntWolfCount: number
+  /** 猎魔人：狩猎误伤好人次数 */
+  huntGoodCount: number
+  /** 摄梦人：连梦击杀狼次数 */
+  dreamKillWolf: number
+  /** 摄梦人：连梦击杀好人次数 */
+  dreamKillGood: number
+  /** 噩梦之影：恐惧狼阵营目标次数（恐狼空刀 -1） */
+  fearWolfCount: number
+  /** 噩梦之影：恐惧神职目标次数（+0.5） */
+  fearGodCount: number
+  /** 炸弹人：炸弹炸死狼次数 */
+  bombWolfCount: number
+  /** 炸弹人：炸弹炸死好人次数 */
+  bombGoodCount: number
+  /** 血月使徒：自爆封印神职次数 */
+  bloodSealCount: number
 }
 
 export interface Player {
@@ -206,6 +264,20 @@ export const DEFAULT_VOICES: Record<string, string> = {
   knight_duel_good: "骑士看走眼翻车，自己白给，继续盘！",
   wwk_boom: "白狼王掀桌自爆！顺手薅走一个，直接入夜。",
   jinghui: "现在竞选警长。",
+  nightmare: "噩梦之影请睁眼！今晚恐吓一个人，让他从梦中惊醒！",
+  nightmare_close: "噩梦之影请闭眼。",
+  hiddenWolf: "隐狼请睁眼，确认你的身份，别声张，闭眼。",
+  hiddenWolf_close: "隐狼请闭眼。",
+  hunterWolf: "猎魔人请睁眼！选择一名玩家进行狩猎，天亮揭晓结果。",
+  hunterWolf_close: "猎魔人请闭眼。",
+  dreamer: "摄梦人请睁眼！进入一名玩家的梦境，连续两晚同梦将带来死亡。",
+  dreamer_close: "摄梦人请闭眼。",
+  wild_child: "野孩子请睁眼，看看你的榜样，记住他，闭眼。",
+  wild_child_close: "野孩子请闭眼。",
+  bomber_open: "炸弹人请睁眼，确认身份，闭眼。",
+  bomber_close: "炸弹人请闭眼。",
+  blood_seal: "血月使徒自爆，血月当空！今夜神职技能全部失效！",
+  bomber_boom: "炸弹被引爆！票选他的玩家全部被炸出局！",
   wolfkingShot: "狼王出局，可以开枪带走一人。",
   prophetReport: "竞选警长结束，请公布首夜情况。",
   speech: "开始发言。",
@@ -269,6 +341,18 @@ export interface GameState {
   charmLastTarget: string
   /** 最近一次白天被投票放逐出局的玩家名（守墓人读取；""=无人被放逐） */
   lastVoteOut: string
+  /** 噩梦之影本夜恐惧目标（""=未恐惧） */
+  nightmareFearTarget: string
+  /** 本夜狼队被恐惧：狼人刀人环节无法刀人（噩梦之影技能） */
+  wolfFearedTonight: boolean
+  /** 血月使徒自爆封印：当夜神职技能全部失效（自爆时置入，天亮清除） */
+  bloodMoonSeal: boolean
+  /** 猎魔人本夜狩猎目标（""=未狩猎；天亮结算） */
+  nightHuntTarget: string
+  /** 摄梦人本夜摄梦目标（""=未入梦；连续两晚同梦天亮致死） */
+  nightDreamTarget: string
+  /** 炸弹人全票放逐独赢已达成（胜负直接判第三方） */
+  bombVictory: boolean
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
   /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
@@ -317,6 +401,21 @@ export function defaultMark(): Mark {
     dreadKnightEverPoisoned: false,
     dreadKnightRevengeTarget: "",
     gargoyleKilledTonight: false,
+    skillDisabled: false,
+    hasKnife: false,
+    isTransform: false,
+    roleModel: "",
+    prevDreamTarget: "",
+    bloodDelayedExile: false,
+    huntWolfCount: 0,
+    huntGoodCount: 0,
+    dreamKillWolf: 0,
+    dreamKillGood: 0,
+    fearWolfCount: 0,
+    fearGodCount: 0,
+    bombWolfCount: 0,
+    bombGoodCount: 0,
+    bloodSealCount: 0,
   }
 }
 
@@ -367,6 +466,12 @@ export function defaultState(): GameState {
     charmedName: "",
     charmLastTarget: "",
     lastVoteOut: "",
+    nightmareFearTarget: "",
+    wolfFearedTonight: false,
+    bloodMoonSeal: false,
+    nightHuntTarget: "",
+    nightDreamTarget: "",
+    bombVictory: false,
     simMode: true,
     modeChosen: false,
     underdogs: [],
@@ -412,6 +517,12 @@ export function normalizeState(s: GameState): GameState {
   if (typeof st.charmedName !== "string") st.charmedName = ""
   if (typeof st.charmLastTarget !== "string") st.charmLastTarget = ""
   if (typeof st.lastVoteOut !== "string") st.lastVoteOut = ""
+  if (typeof st.nightmareFearTarget !== "string") st.nightmareFearTarget = ""
+  if (typeof st.wolfFearedTonight !== "boolean") st.wolfFearedTonight = false
+  if (typeof st.bloodMoonSeal !== "boolean") st.bloodMoonSeal = false
+  if (typeof st.nightHuntTarget !== "string") st.nightHuntTarget = ""
+  if (typeof st.nightDreamTarget !== "string") st.nightDreamTarget = ""
+  if (typeof st.bombVictory !== "boolean") st.bombVictory = false
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   if (!Array.isArray(st.underdogs)) st.underdogs = []
@@ -648,10 +759,17 @@ export function startNewGame(state: GameState): void {
   state.finished = false
   state.lovers = []
   state.lastVoteOut = ""
+  state.nightmareFearTarget = ""
+  state.wolfFearedTonight = false
+  state.bloodMoonSeal = false
+  state.nightHuntTarget = ""
+  state.nightDreamTarget = ""
+  state.bombVictory = false
   state.underdogs = []
   state.comeback = false
   state.underdogCamp = null
   state.underdogStreak = 0
+  refreshHiddenWolfKnife(state)
   pushGlobalLog(state, "✅本局开始：发牌后由法官在夜晚睁眼时确认身份")
 }
 
@@ -700,15 +818,15 @@ export function loverPartner(state: GameState, name: string): string {
   return state.lovers.find((n) => n !== name) || ""
 }
 
-/** 链型：GG 人人恋 / WW 狼狼恋 / WG 人狼恋；身份未全部确认时返回空串 */
+/** 链型：GG 人人恋 / WW 狼狼恋 / WG 人狼恋；身份未全部确认时返回空串（黑化野孩子按狼计） */
 export function getChainType(state: GameState): "GG" | "WW" | "WG" | "" {
   const [a, b] = state.lovers
   if (!a || !b) return ""
   const pa = state.players.find((p) => p.name === a)
   const pb = state.players.find((p) => p.name === b)
   if (!pa || !pb || !pa.role || !pb.role) return ""
-  const aw = isWolfRole(pa.role)
-  const bw = isWolfRole(pb.role)
+  const aw = isEffectiveWolf(pa)
+  const bw = isEffectiveWolf(pb)
   if (aw && bw) return "WW"
   if (!aw && !bw) return "GG"
   return "WG"
@@ -845,6 +963,9 @@ export function killPlayer(state: GameState, name: string, reason: DieReason, so
       console.error(`[killPlayer] afterDeath hook error:`, e)
     }
   }
+
+  // 减员可能影响隐狼刀人权（除隐狼外狼全灭 → 隐狼接刀）
+  refreshHiddenWolfKnife(state)
 
   return killed
 }
@@ -985,6 +1106,14 @@ export function manualSaveRoles(state: GameState): string | null {
   state.beiguo = ""
   state.finished = false
   state.lovers = []
+  state.lastVoteOut = ""
+  state.nightmareFearTarget = ""
+  state.wolfFearedTonight = false
+  state.bloodMoonSeal = false
+  state.nightHuntTarget = ""
+  state.nightDreamTarget = ""
+  state.bombVictory = false
+  refreshHiddenWolfKnife(state)
   pushGlobalLog(state, "✅法官手动分配角色完成，本局开始")
   return null
 }
@@ -1002,12 +1131,21 @@ export function nextNight(state: GameState): void {
   // 狼美人：上一夜生效的魅惑对象落为「禁连选」基准，之后可重新魅惑
   if (state.charmedName) state.charmLastTarget = state.charmedName
   state.nightSteps = freshNightSteps()
-  // 恶灵骑士：重置每夜标记
+  // 每夜重置：恐惧/狩猎/入梦意图；神职封印由天亮清除（血月自爆封印持续到当夜结束）
+  state.nightmareFearTarget = ""
+  state.wolfFearedTonight = false
+  state.nightHuntTarget = ""
+  state.nightDreamTarget = ""
+  // 重置每夜标记
   for (const p of state.players) {
     p.mark.dreadKnightCheckedTonight = false
     p.mark.dreadKnightPoisonedTonight = false
     p.mark.gargoyleKilledTonight = false
+    p.mark.skillDisabled = false
   }
+  // 野孩子黑化：榜样已死且自己存活 → 本夜变身；并刷新隐狼刀人权
+  checkWildChildTransform(state)
+  refreshHiddenWolfKnife(state)
   state.hunterShotPending = false
   state.wolfKingShotPending = false
   state.prophetReport = ""
@@ -1017,6 +1155,12 @@ export function nextNight(state: GameState): void {
 }
 
 export function wolfKill(state: GameState, sel: string): string | null {
+  if (state.wolfFearedTonight) return "今夜狼队被噩梦之影恐惧，无法刀人（请确认空刀）"
+  // 狼群外特殊狼（石像鬼、隐狼）被恐惧时只封其个人刀人技能：此时场上仅存该特殊狼带刀，需拦刀
+  const hiddenWolf = state.players.find((p) => p.alive && p.role === "隐狼")
+  if (hiddenWolf?.mark.skillDisabled && hiddenWolfCanKnife(state)) {
+    return "隐狼本夜技能被封印，无法刀人（请确认空刀）"
+  }
   if (!sel) return "请选择被刀对象"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
@@ -1025,7 +1169,9 @@ export function wolfKill(state: GameState, sel: string): string | null {
   if (getRoleInstance(target.role)?.def.id === "狼美人") return `${sel}是狼美人，禁止被刀`
   // 恶灵骑士禁止被刀（不能自刀）
   if (getRoleInstance(target.role)?.def.id === "恶灵骑士") return `${sel}是恶灵骑士，禁止被刀`
-  const isSelf = isWolfRole(target.role)
+  // 石像鬼不与狼群见面：狼误刀他不算自刀（不标"自刀"提示，女巫救他也不给狼队"骗解药"分）
+  // 黑化野孩子按狼计：狼刀他算自刀
+  const isSelf = isEffectiveWolf(target) && getRoleInstance(target.role)?.def.id !== "石像鬼"
   // 情侣不能互刀：狼恋人不可作为刀人目标
   if (isLover(state, sel) && isWolfRole(target.role)) {
     return `情侣不能互刀，请重新选择刀人对象（${sel}是狼人恋人）`
@@ -1091,6 +1237,159 @@ export function charmDo(state: GameState, sel: string): string | null {
   return null
 }
 
+/** 噩梦之影恐惧：恐狼→当晚狼队空刀；恐神职→目标当晚技能失效；恐自己/民→无效果 */
+export function nightmareFear(state: GameState, sel: string): string | null {
+  const nm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "噩梦之影")
+  if (!nm) return "本局没有噩梦之影"
+  if (!nm.alive) return "噩梦之影已出局，本晚不能恐惧"
+  if (!sel) return "请选择恐惧对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为恐惧对象`
+  state.nightmareFearTarget = sel
+  state.nightSteps.nightmare = true
+  if (target.name === nm.name) {
+    pushNightLog(state, `😱噩梦之影恐惧自己：无效果`)
+    pushGlobalLog(state, `😱噩梦之影恐吓了自己（无效果）`)
+    pushFlow(state, "噩梦之影恐惧", sel, "无效果")
+    return null
+  }
+  if (isEffectiveWolf(target) && getRoleInstance(target.role)?.def.wolfPack === false) {
+    // 狼群外特殊狼（石像鬼、隐狼）：验人/刀人是个人的主动技能，恐惧只封其本人技能，不波及狼队
+    target.mark.skillDisabled = true
+    nm.mark.fearWolfCount = (nm.mark.fearWolfCount || 0) + 1
+    pushNightLog(state, `😱噩梦之影恐惧${sel}（特殊狼）：其个人技能本夜失效`)
+    pushGlobalLog(state, `😱噩梦之影恐吓了 ${sel}，其本夜技能失效`)
+    pushFlow(state, "噩梦之影恐惧", sel, "封特殊狼个人技能")
+  } else if (isEffectiveWolf(target)) {
+    state.wolfFearedTonight = true
+    nm.mark.fearWolfCount = (nm.mark.fearWolfCount || 0) + 1
+    pushNightLog(state, `😱噩梦之影恐惧${sel}（狼阵营）：狼队今晚无法刀人`)
+    pushGlobalLog(state, `😱噩梦之影恐吓狼队成功：今夜狼人无法刀人`)
+    pushFlow(state, "噩梦之影恐惧", sel, "狼队空刀")
+  } else if (getRole(target.role)?.camp === "god") {
+    target.mark.skillDisabled = true
+    // 计分只计预/巫/猎魔/摄梦四类核心神职，防刷守卫/守墓人
+    if (["预言家", "女巫", "猎魔人", "摄梦人"].includes(target.role)) {
+      nm.mark.fearGodCount = (nm.mark.fearGodCount || 0) + 1
+    }
+    pushNightLog(state, `😱噩梦之影恐惧${sel}（神职）：目标本夜技能失效`)
+    pushGlobalLog(state, `😱噩梦之影恐吓了 ${sel}，其本夜技能失效`)
+    pushFlow(state, "噩梦之影恐惧", sel, "封神职")
+  } else {
+    pushNightLog(state, `😱噩梦之影恐惧${sel}：无效果`)
+    pushGlobalLog(state, `😱噩梦之影恐吓了 ${sel}（无效果）`)
+    pushFlow(state, "噩梦之影恐惧", sel, "无效果")
+  }
+  return null
+}
+
+/** 野孩子首夜选定榜样 */
+export function wildChildPick(state: GameState, sel: string): string | null {
+  const wc = state.players.find((p) => getRoleInstance(p.role)?.def.id === "野孩子")
+  if (!wc) return "本局没有野孩子"
+  if (!wc.alive) return "野孩子已出局"
+  if (!sel) return "请选择榜样"
+  if (wc.mark.roleModel) return `野孩子已选定榜样（${wc.mark.roleModel}），不能重复选择`
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为榜样`
+  if (target.name === wc.name) return "野孩子不能选自己为榜样"
+  wc.mark.roleModel = sel
+  state.nightSteps.wildChild = true
+  pushNightLog(state, `🌱野孩子选定榜样：${sel}`)
+  pushGlobalLog(state, `🌱野孩子默默记住了榜样 ${sel}（榜样不会知情）`)
+  pushFlow(state, "野孩子选榜样", sel)
+  return null
+}
+
+/** 野孩子黑化变身检查（入夜时调用）：榜样已死且自己存活且未变身 */
+export function checkWildChildTransform(state: GameState): void {
+  for (const p of state.players) {
+    if (p.role !== "野孩子" || !p.alive || p.mark.isTransform || !p.mark.roleModel) continue
+    const model = state.players.find((x) => x.name === p.mark.roleModel)
+    if (model && !model.alive) {
+      p.mark.isTransform = true
+      pushGlobalLog(state, `🐺野孩子${p.name}目睹榜样死亡，黑化为狼人阵营！`)
+      pushNightLog(state, `🐺野孩子${p.name}黑化变身`)
+      pushFlow(state, "野孩子变身", p.name, "黑化为狼")
+    }
+  }
+}
+
+/** 猎魔人狩猎：选择目标，天亮结算（目标是狼→其死；是好人→猎魔人反噬） */
+export function hunterHunt(state: GameState, sel: string): string | null {
+  const hm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "猎魔人")
+  if (!hm) return "本局没有猎魔人"
+  if (!hm.alive) return "猎魔人已出局，本晚不能狩猎"
+  if (hm.mark.skillDisabled) return "猎魔人被恐惧，本夜无法行动"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
+  if (!sel) return "请选择狩猎对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为狩猎对象`
+  state.nightHuntTarget = sel
+  state.nightSteps.hunterWolf = true
+  pushNightLog(state, `🗡️猎魔人狩猎：${sel}（天亮结算）`)
+  pushGlobalLog(state, `🗡️猎魔人悄悄锁定了狩猎目标：${sel}`)
+  pushFlow(state, "猎魔人狩猎", sel)
+  return null
+}
+
+/** 摄梦人入梦：选择目标；连续两晚同梦天亮致死；自己夜间死亡则梦游者殉情 */
+export function dreamDo(state: GameState, sel: string): string | null {
+  const dm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "摄梦人")
+  if (!dm) return "本局没有摄梦人"
+  if (!dm.alive) return "摄梦人已出局，本晚不能入梦"
+  if (dm.mark.skillDisabled) return "摄梦人被恐惧，本夜无法行动"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
+  if (!sel) return "请选择入梦对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为入梦对象`
+  state.nightDreamTarget = sel
+  state.nightSteps.dreamer = true
+  const linked = !!dm.mark.prevDreamTarget && dm.mark.prevDreamTarget === sel
+  pushNightLog(state, `💭摄梦人进入 ${sel} 的梦境${linked ? "（连续第二晚同梦，天亮结算）" : ""}`)
+  pushGlobalLog(state, `💭摄梦人今晚入梦：${sel}${linked ? "（连续同梦）" : ""}`)
+  pushFlow(state, "摄梦人入梦", sel, linked ? "连梦" : "")
+  return null
+}
+
+/** 炸弹人放逐票选名单校验（放逐前调用，防止放逐已生效却校验失败） */
+function validateBombVoters(state: GameState, outName: string, voters: string[]): string | null {
+  const voterSet = [...new Set(voters.filter(Boolean))]
+  if (voterSet.length === 0) return "请勾选投炸弹人的玩家（可多选）"
+  for (const v of voterSet) {
+    if (v === outName) return "炸弹人不能票自己"
+    const vp = state.players.find((x) => x.name === v)
+    if (!vp) return `未找到投票玩家 ${v}`
+    if (!vp.alive) return `${v}已出局，不能计入票选`
+  }
+  return null
+}
+
+/** 炸弹人被放逐引爆炸弹：炸死被票选者（不开枪）；全票放逐则独赢 */
+function bombExileDetonate(state: GameState, outP: Player, voters: string[]): void {
+  const voterSet = [...new Set(voters.filter(Boolean))]
+  const aliveOthers = state.players.filter((p) => p.alive && p.name !== outP.name)
+  const allVoted = aliveOthers.length > 0 && aliveOthers.every((p) => voterSet.includes(p.name))
+  pushGlobalLog(state, `💣炸弹人${outP.name}被放逐，引爆炸弹！炸死：${voterSet.join("、")}`)
+  pushFlow(state, "炸弹引爆", voterSet.join("、"))
+  for (const v of voterSet) {
+    const vp = state.players.find((x) => x.name === v)
+    if (!vp) continue
+    if (isEffectiveWolf(vp)) outP.mark.bombWolfCount = (outP.mark.bombWolfCount || 0) + 1
+    else outP.mark.bombGoodCount = (outP.mark.bombGoodCount || 0) + 1
+    killPlayer(state, v, "bomb", "炸弹人炸弹")
+  }
+  if (allVoted) {
+    state.bombVictory = true
+    pushGlobalLog(state, `💣全票放逐！炸弹人${outP.name}达成独赢条件！`)
+    pushFlow(state, "炸弹人独赢", outP.name, "全票放逐")
+  }
+}
+
 export function prophetCheck(state: GameState, sel: string): string | { name: string; isWolf: boolean } | null {
   if (!sel) return "请选择查验对象"
   // 使用角色系统查找预言家
@@ -1099,13 +1398,16 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
     return role && role.def.id === "预言家"
   })
   if (prophet && !prophet.alive) return "预言家已出局，本晚不能查验"
+  if (prophet && prophet.mark.skillDisabled) return "预言家被恐惧，本夜无法查验"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
   if (sel === NO_CHECK) {
     return prophetNoCheck(state)
   }
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能查验`
-  const isWolf = isWolfRole(target.role)
+  // 隐狼验出金水（不与狼群见面）；黑化野孩子按狼计 → 查杀
+  const isWolf = target.role !== "隐狼" && isEffectiveWolf(target)
   state.nightSteps.prophet = true
   const lbl = playerLabel(target)
   state.prophetReport = `${lbl} → ${isWolf ? "狼人" : "好人"}`
@@ -1149,6 +1451,7 @@ export function gargoyleCheck(state: GameState, sel: string): string | { name: s
   const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
   if (!gargoyle) return "本局没有石像鬼"
   if (!gargoyle.alive) return "石像鬼已出局，本晚不能查验"
+  if (gargoyle.mark.skillDisabled) return "石像鬼本夜技能被封印，不能查验"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能查验`
@@ -1171,13 +1474,14 @@ export function gargoyleCanKill(state: GameState): boolean {
 
 /** 石像鬼刀人（解锁后）：写入狼刀口，视为普通狼刀（女巫/守卫生效） */
 export function gargoyleKill(state: GameState, sel: string): string | null {
+  const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
+  if (gargoyle?.mark.skillDisabled) return "石像鬼本夜技能被封印，不能刀人"
   if (!gargoyleCanKill(state)) return "石像鬼尚未解锁刀人能力"
   if (!sel) return "请选择被刀对象"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为刀人对象`
   if (isWolfRole(target.role)) return `${sel}是狼阵营，石像鬼不能刀狼`
-  const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
   state.nightWolfKill = sel
   state.wolfSelfKill = false
   if (gargoyle) gargoyle.mark.gargoyleKilledTonight = true
@@ -1198,15 +1502,16 @@ export function gargoyleEmptyKill(state: GameState): string | null {
   return null
 }
 
-/** 守墓人结果：上一白天被公投放逐者的阵营（null=无信息：无放逐/守墓人已出局） */
+/** 守墓人结果：上一白天被公投放逐者的阵营（null=无信息：无放逐/守墓人已出局/被封印） */
 export function gravekeeperResult(state: GameState): { name: string; isWolf: boolean } | null {
   const gk = state.players.find((p) => getRoleInstance(p.role)?.def.id === "守墓人")
   if (!gk || !gk.alive) return null
+  if (gk.mark.skillDisabled || state.bloodMoonSeal) return null
   const name = state.lastVoteOut
   if (!name) return null
   const p = state.players.find((x) => x.name === name)
   if (!p) return null
-  return { name, isWolf: isWolfRole(p.role) }
+  return { name, isWolf: isEffectiveWolf(p) }
 }
 
 export function guardDo(state: GameState, sel: string, flagSame: boolean): string | null {
@@ -1218,6 +1523,8 @@ export function guardDo(state: GameState, sel: string, flagSame: boolean): strin
   })
   if (!guard) return "本局没有守卫"
   if (!guard.alive) return "守卫已出局，本晚不能守人"
+  if (guard.mark.skillDisabled) return "守卫被恐惧，本夜无法守人"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为守护对象`
@@ -1246,13 +1553,15 @@ export function witchSave(state: GameState): string | null {
   })
   if (!witch) return "本局没有女巫"
   if (!witch.alive) return "女巫已出局，本晚不能用药"
+  if (witch.mark.skillDisabled) return "女巫被恐惧，本夜无法用药"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
   if (target === witch.name && state.round > 1) return "女巫只有首夜可以自救，之后夜晚不能自救"
   state.witchSaveUsed = true
   state.nightUsedDrug = "save"
   state.nightWitchSave = target
   state.nightSteps.witch = true
   const t = state.players.find((x) => x.name === target)
-  if (t && !isWolfRole(t.role)) witch.mark.witchSaveGood = true
+  if (t && !isEffectiveWolf(t)) witch.mark.witchSaveGood = true
   if (t && isWolfRole(t.role) && state.wolfSelfKill && state.nightWolfKill === target) {
     t.mark.wolfSelfKillCheat = true
   }
@@ -1273,6 +1582,8 @@ export function witchPoison(state: GameState, sel: string): string | null {
   })
   if (!witch) return "本局没有女巫"
   if (!witch.alive) return "女巫已出局，本晚不能用药"
+  if (witch.mark.skillDisabled) return "女巫被恐惧，本夜无法用药"
+  if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
   if (sel === witch.name) return "女巫不能对自己用毒"
   const tar = state.players.find((x) => x.name === sel)
   if (!tar) return "未找到该玩家"
@@ -1281,14 +1592,15 @@ export function witchPoison(state: GameState, sel: string): string | null {
   state.nightUsedDrug = "poison"
   state.nightWitchPoison = sel
   state.nightSteps.witch = true
-  // 恶灵骑士：毒药被免疫（消耗但不毒死），不设 witchPoWolf/witchPoGood
-  const isDreadKnight = tar && getRoleInstance(tar.role)?.def.id === "恶灵骑士"
-  if (isDreadKnight) {
+  // 恶灵骑士/猎魔人：毒药被免疫（消耗但不毒死），不设 witchPoWolf/witchPoGood
+  const tarRoleId = getRoleInstance(tar.role)?.def.id
+  const isImmune = tarRoleId === "恶灵骑士" || tarRoleId === "猎魔人"
+  if (tarRoleId === "恶灵骑士") {
     tar.mark.dreadKnightPoisonedTonight = true
     tar.mark.dreadKnightEverPoisoned = true
-  } else if (tar && isWolfRole(tar.role)) {
+  } else if (!isImmune && isEffectiveWolf(tar)) {
     witch.mark.witchPoWolf = true
-  } else if (tar) {
+  } else if (!isImmune) {
     witch.mark.witchPoGood = true
   }
   // 毒到猎/狼王：立即标记吞枪（猎人睁眼在女巫之后，需在睁眼时即告知枪已哑火）
@@ -1351,6 +1663,18 @@ export function executeNightAction(
       return gargoyleKill(state, target as string)
     case "gargoyleEmpty":
       return gargoyleEmptyKill(state)
+    case "nightmare":
+      if (!target) return "请选择恐惧对象"
+      return nightmareFear(state, target as string)
+    case "wildChild":
+      if (!target) return "请选择榜样"
+      return wildChildPick(state, target as string)
+    case "hunterWolf":
+      if (!target) return "请选择狩猎对象"
+      return hunterHunt(state, target as string)
+    case "dreamer":
+      if (!target) return "请选择入梦对象"
+      return dreamDo(state, target as string)
     default:
       return `未知夜间行动: ${roleKey}`
   }
@@ -1370,7 +1694,7 @@ export function hunterShootConfirm(state: GameState, tarName: string): string | 
   const target = state.players.find((p) => p.name === tarName)
   if (!target) return "未找到目标玩家"
   killPlayer(state, tarName, "shot")
-  if (isWolfRole(target.role)) hunter.mark.hunterKillWolf = true
+  if (isEffectiveWolf(target)) hunter.mark.hunterKillWolf = true
   else hunter.mark.hunterKillGood = true
   state.hunterShotPending = false
   state.hunterShotDone = true
@@ -1413,7 +1737,7 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   const targetRole = getRoleInstance(target.role)
   killPlayer(state, tarName, "shot")
   // 计分口径：带狼 -1；带神牌 +0.5；带平民/白痴/第三方不加分
-  if (isWolfRole(target.role)) wk.mark.wolfKingShotWolf = true
+  if (isEffectiveWolf(target)) wk.mark.wolfKingShotWolf = true
   else if (targetRole?.countsAsGod()) wk.mark.wolfKingShotGood = true
   // 被带走的猎人能否开枪，由 HunterRole.onAfterDeath 处理
   state.wolfKingShotPending = false
@@ -1456,7 +1780,7 @@ export function knightDuel(state: GameState, tar: string): string | null {
   if (!t.alive) return "该玩家已出局"
   if (t.name === knight.name) return "不能和自己决斗"
   state.knightDuelUsed = true
-  if (isWolfRole(t.role)) {
+  if (isEffectiveWolf(t)) {
     killPlayer(state, tar, "duel")
     knight.mark.hunterKillWolf = true
     pushGlobalLog(state, `⚔️骑士${knight.name}决斗戳中狼人${tar}，狼人出局`)
@@ -1472,7 +1796,11 @@ export function knightDuel(state: GameState, tar: string): string | null {
   return null
 }
 
-export function finishVote(state: GameState, outName: string, idiotFlip: boolean): string | null {
+/**
+ * 公投放逐。bombVoters：炸弹人在场时勾选的投票名单（多选）。
+ * 炸弹人先校验名单再放逐，防止放逐已生效却校验失败。
+ */
+export function finishVote(state: GameState, outName: string, idiotFlip: boolean, bombVoters?: string[]): string | null {
   if (state.skipVote) return "本日已因狼人自爆跳过投票，请进入夜晚开始新的一轮"
   if (!outName) return "请选择放逐出局对象"
   const outP = state.players.find((p) => p.name === outName)
@@ -1485,6 +1813,12 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
   if (isIdiot && outP.mark.idiotFlipped) {
     return "白痴已翻牌，无法被放逐出局"
   }
+  // 炸弹人：放逐前校验票选名单（可多选，全票放逐独赢）
+  const isBomber = outRole && outRole.def.id === "炸弹人"
+  if (isBomber) {
+    const err = validateBombVoters(state, outName, bombVoters ?? [])
+    if (err) return err
+  }
   if (isIdiot && !outP.mark.idiotFlipped && idiotFlip) {
     outP.mark.idiotFlipped = true
     outP.alive = true
@@ -1492,21 +1826,37 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     state.lastVoteOut = ""
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
     pushFlow(state, "放逐", outName, "白痴翻牌")
-  } else {
+  } else if (isBomber) {
+    // 炸弹人放逐：先出局再引爆（引爆用校验过的名单）
     killPlayer(state, outName, "vote")
-    // 记录白天公投出局者（守墓人次夜读取）
     state.lastVoteOut = outName
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
-    // 使用角色系统判断是否为猎人/狼王
-    if (outRole && outRole.def.id === "猎人" && !outP.mark.hunterIsPoisoned) {
-      state.hunterShotPending = true
-      pushGlobalLog(state, `🔫猎人${outName}被放逐，可开枪（放逐后立即处理）`)
+    bombExileDetonate(state, outP, bombVoters ?? [])
+  } else {
+    // 血月使徒仅剩狼被放逐 → 延迟出局：当晚可行动/自爆，天亮死亡
+    const isBloodMoon = outRole && outRole.def.id === "血月使徒"
+    const lastWolf = isBloodMoon && !state.players.some((x) => x.alive && x.name !== outName && isEffectiveWolf(x))
+    if (lastWolf) {
+      outP.mark.bloodDelayedExile = true
+      pushGlobalLog(state, `🌕血月使徒${outName}被放逐，血月之力延续到天亮（可行动/自爆）`)
+      pushFlow(state, "放逐", outName, "血月延迟出局")
+    } else {
+      killPlayer(state, outName, "vote")
+      pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
+      pushFlow(state, "放逐", outName)
+      // 使用角色系统判断是否为猎人/狼王
+      if (outRole && outRole.def.id === "猎人" && !outP.mark.hunterIsPoisoned) {
+        state.hunterShotPending = true
+        pushGlobalLog(state, `🔫猎人${outName}被放逐，可开枪（放逐后立即处理）`)
+      }
+      if (outRole && outRole.def.id === "狼王" && !outP.mark.wolfKingIsPoisoned) {
+        state.wolfKingShotPending = true
+        pushGlobalLog(state, `🔫狼王${outName}被放逐，可开枪`)
+      }
     }
-    if (outRole && outRole.def.id === "狼王" && !outP.mark.wolfKingIsPoisoned) {
-      state.wolfKingShotPending = true
-      pushGlobalLog(state, `🔫狼王${outName}被放逐，可开枪`)
-    }
+    // 记录白天公投出局者（守墓人次夜读取；血月延迟也计入，天亮结算死讯）
+    state.lastVoteOut = outName
   }
   return null
 }
@@ -1516,11 +1866,18 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   const p = state.players.find((x) => x.name === sel)
   if (!p) return "未找到该玩家"
   if (!p.alive) return "该玩家已出局"
-  if (!isWolfRole(p.role)) return "只能选择狼人/白狼王自爆"
+  if (!isEffectiveWolf(p)) return "只能狼阵营玩家自爆"
   if (getRoleInstance(p.role)?.def.id === "狼美人") return "狼美人不能自爆"
   if (getRoleInstance(p.role)?.def.id === "石像鬼") return "石像鬼不能自爆"
   killPlayer(state, sel, "selfBomb")
   state.skipVote = true
+  // 血月使徒自爆：当夜神职技能全部失效
+  if (getRoleInstance(p.role)?.def.id === "血月使徒") {
+    state.bloodMoonSeal = true
+    p.mark.bloodSealCount = (p.mark.bloodSealCount || 0) + 1
+    pushGlobalLog(state, `🌕血月当空！今夜神职技能全部失效！`)
+    pushFlow(state, "血月封印", sel, "当夜神职失效")
+  }
   // 注意：不在此清空 lastVoteOut —— 若当日已公投放逐，放逐信息仍应保留给守墓人；
   // 若尚未投票，lastVoteOut 本就在黎明被清空，守墓人当夜无信息。
   // 自爆直接吞警徽：自爆者是警长则警徽流失
@@ -1569,7 +1926,7 @@ import { getRoleInstance } from "./roles/builtin"
 
 export function recalcScore(state: GameState): void {
   const win = state.winCamp
-  const aliveWolfCount = state.players.filter((x) => x.alive && isWolfRole(x.role)).length
+  const aliveWolfCount = state.players.filter((x) => x.alive && isEffectiveWolf(x)).length
   state.players.forEach((p) => {
     const detail: string[] = []
     let s = 0
@@ -1602,8 +1959,8 @@ export function recalcScore(state: GameState): void {
     }
 
     // 阵营胜利分（保留在 logic.ts 中，因为涉及全局胜负逻辑）
-    // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分；人狼恋狼恋人属第三方不计狼胜）
-    if (win === "wolf" && isWolfRole(p.role) && !isWGCamp) {
+    // 狼人胜利：真狼 +3（狼狼恋无第三方，丘比特属好人不计狼胜分；人狼恋狼恋人属第三方不计狼胜；黑化野孩子按狼计）
+    if (win === "wolf" && isEffectiveWolf(p) && !isWGCamp) {
       s += 3
       detail.push("狼人胜利+3")
       if (p.alive) {
@@ -1621,9 +1978,9 @@ export function recalcScore(state: GameState): void {
       s += 3
       detail.push("神职胜利+3")
     }
-    // 使用角色系统判断平民角色
+    // 使用角色系统判断平民角色（黑化野孩子按狼计，不再拿平民分）
     const pRole = getRoleInstance(p.role)
-    if ((win === "god" || win === "civil") && pRole && pRole.def.camp === "villager" && !isWGCamp) {
+    if ((win === "god" || win === "civil") && pRole && pRole.def.camp === "villager" && !p.mark.isTransform && !isWGCamp) {
       s += 2
       detail.push("平民胜利+2")
     }
@@ -1687,10 +2044,10 @@ export function suggestHonor(state: GameState): { mvp: string; svp: string } {
   if (!win || win === "third") return { mvp: "", svp: "" }
   const winnerIsWolf = win === "wolf"
   const winners = state.players
-    .filter((p) => (winnerIsWolf ? isWolfRole(p.role) : !isWolfRole(p.role)))
+    .filter((p) => (winnerIsWolf ? isEffectiveWolf(p) : !isEffectiveWolf(p)))
     .sort((a, b) => b.scoreRound - a.scoreRound)
   const losers = state.players
-    .filter((p) => (winnerIsWolf ? !isWolfRole(p.role) : isWolfRole(p.role)))
+    .filter((p) => (winnerIsWolf ? !isEffectiveWolf(p) : isEffectiveWolf(p)))
     .sort((a, b) => b.scoreRound - a.scoreRound)
 
   // Phase 6：使用角色系统的 highlight
@@ -1814,11 +2171,11 @@ export function campPlayerCounts(state: GameState): { wolf: number; god: number;
 
 /** 各阵营角色分配摘要（用于结算展示） */
 export function campBreakdown(state: GameState): string {
-  const wolves = state.players.filter((p) => isWolfRole(p.role))
+  const wolves = state.players.filter((p) => isEffectiveWolf(p))
   const gods = state.players.filter((p) => GOD_LIST.includes(p.role))
   const civils = state.players.filter((p) => {
     const role = getRoleInstance(p.role)
-    return role && role.def.camp === "villager"
+    return role && role.def.camp === "villager" && !p.mark.isTransform
   })
   const cupid = state.players.find((p) => {
     const role = getRoleInstance(p.role)
@@ -1826,6 +2183,12 @@ export function campBreakdown(state: GameState): string {
   })
   const fmt = (arr: Player[]) => (arr.length ? arr.map((p) => `${p.no || 0}.${p.name}(${p.role})`).join("、") : "无")
   let txt = `🐺狼人阵营：${fmt(wolves)}\n🔮神职阵营：${fmt(gods)}\n👤平民阵营：${fmt(civils)}`
+  // 独立第三方角色（炸弹人等，不含丘比特——丘比特随情侣阵营一起展示）
+  const otherThird = state.players.filter((p) => {
+    const role = getRoleInstance(p.role)
+    return role && role.def.camp === "third" && role.def.id !== "丘比特"
+  })
+  if (otherThird.length) txt += `\n💣第三方阵营：${fmt(otherThird)}`
   if (cupid || state.lovers.length) {
     const thirdMembers = state.players.filter((p) => {
       const role = getRoleInstance(p.role)

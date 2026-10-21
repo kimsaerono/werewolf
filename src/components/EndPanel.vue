@@ -2,7 +2,7 @@
 import { computed, ref, onMounted } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
-import { ROLE_EMOJI, roleShort, campPlayerCounts } from "@/game/logic"
+import { ROLE_EMOJI, roleShort, campPlayerCounts, getRoleInstance } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 
 const { message } = AntApp.useApp()
@@ -75,6 +75,8 @@ const stats = computed(() => {
     wolves: camps.wolf,
     gods: camps.god,
     villagers: camps.villager,
+    // 独立第三方（炸弹人；丘比特不计入，避免与情侣阵营重复展示）
+    thirds: state.players.filter((p) => p.role && p.role !== "丘比特" && getRoleInstance(p.role)?.def.camp === "third").length,
     rounds: state.round,
     winCamp: state.winCamp,
     comeback: state.comeback
@@ -227,6 +229,13 @@ async function doFinish() {
               <span class="stat-icon">👨‍🌾</span>
               <div class="stat-value">{{ stats.villagers }}</div>
               <div class="stat-label">平民</div>
+            </div>
+          </a-col>
+          <a-col v-if="stats.thirds > 0" :xs="12" :sm="6" :lg="4">
+            <div class="stat-card third">
+              <span class="stat-icon">💣</span>
+              <div class="stat-value">{{ stats.thirds }}</div>
+              <div class="stat-label">第三方</div>
             </div>
           </a-col>
           <a-col :xs="12" :sm="6" :lg="4">

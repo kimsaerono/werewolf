@@ -99,18 +99,24 @@ describe("角色注册护栏：派生常量与注册表一致", () => {
 describe("夜间步骤派生：顺序与元数据锁定", () => {
   it("NIGHT_ACTION_STEPS 顺序与历史流程逐字一致", () => {
     expect(NIGHT_ACTION_STEPS.map((s) => s.key)).toEqual([
+      "wildChild",
       "cupid",
       "loversMeet",
       "guard",
       "gargoyle",
+      "hiddenWolf",
+      "nightmare",
       "wolf",
       "charm",
-      "witch",
       "prophet",
+      "hunterWolf",
+      "dreamer",
+      "witch",
       "gravekeeper",
       "idiotOpen",
       "knight",
       "hunterOpen",
+      "bomberOpen",
     ])
   })
 
