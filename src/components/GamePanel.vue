@@ -1084,8 +1084,9 @@ function doHunterWolfHunt(v: string) {
   const err = actions.hunterHunt(v)
   if (err) return message.error(err)
   const t = state.players.find((x) => x.name === v)
-  message.success(`猎魔人已锁定目标 ${v}（天亮结算）`)
   effect("hunterWolf", undefined, t ? `狩猎：${refs.playerLabel(t)}` : `狩猎：${v}`)
+  playVoice("hunterWolf_close")
+  markDoneStep("hunterWolf")
   playVoice("hunterWolf_close")
 }
 function doHunterWolfClose() {
@@ -1097,8 +1098,9 @@ function doDreamerDream(v: string) {
   const err = actions.dreamDo(v)
   if (err) return message.error(err)
   const t = state.players.find((x) => x.name === v)
-  message.success(`摄梦人已入梦 ${v}`)
   effect("dreamer", undefined, t ? `入梦：${refs.playerLabel(t)}` : `入梦：${v}`)
+  playVoice("dreamer_close")
+  markDoneStep("dreamer")
   playVoice("dreamer_close")
 }
 function doDreamerClose() {
@@ -1488,12 +1490,14 @@ const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> 
   vote: { emoji: "⚖️", bg: "rgba(60,80,140,.92)", label: "放逐出局" },
   jinghui: { emoji: "👑", bg: "rgba(200,160,30,.92)", label: "警徽易主" },
   jinghuiLose: { emoji: "👑", bg: "rgba(110,90,60,.9)", label: "警徽流失" },
+  hunterWolf: { emoji: "🗡️", bg: "rgba(190, 40, 40, .92)", label: "猎魔人狩猎" },
+  dreamer: { emoji: "💭", bg: "rgba(120, 80, 200, .92)", label: "摄梦人入梦" },
 }
-function effect(type: string, sfx?: SfxName, result?: string) {
+function effect(type: string, sfx?: SfxName, result?: string, duration = 1200) {
   if (sfx) playSfx(sfx)
   overlay.value = { type, key: Date.now(), result }
   if (overlayTimer) clearTimeout(overlayTimer)
-  overlayTimer = setTimeout(() => (overlay.value = null), 2200)
+  overlayTimer = setTimeout(() => (overlay.value = null), Math.max(0, duration))
 }
 
 defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
@@ -1776,8 +1780,17 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <a-button type="primary" size="large" @click="doHunterWolfClose">进入下一步</a-button>
           </template>
           <template v-else-if="!state.nightSteps.hunterWolf">
-            <p class="small" style="text-align: center">选择一名玩家狩猎（天亮结算）：是狼则狼死，是好人则猎魔人反噬；免疫女巫毒</p>
-            <a-button type="primary" size="large" @click="openPicker('选择狩猎对象', hunterWolfPicker.options, (v) => doHunterWolfHunt(v), hunterWolfPicker)">🗡️ 选择狩猎对象</a-button>
+            <template v-if="state.round <= 1">
+              <p class="small" style="text-align: center">首夜猎魔人只认人，不狩猎</p>
+              <a-button type="primary" size="large" @click="doHunterWolfClose">猎魔人闭眼</a-button>
+            </template>
+            <template v-else>
+              <p class="small" style="text-align: center">选择一名玩家狩猎（天亮结算）：是狼则狼死，是好人则猎魔人反噬；免疫女巫毒</p>
+              <div style="display: flex; flex-direction: column; gap: 12px">
+                <a-button type="primary" size="large" @click="openPicker('选择狩猎对象', hunterWolfPicker.options, (v) => doHunterWolfHunt(v), hunterWolfPicker)">🗡️ 选择狩猎对象</a-button>
+                <a-button size="large" @click="doHunterWolfClose">空过，不狩猎</a-button>
+              </div>
+            </template>
           </template>
           <template v-else>
             <div class="prophet-result">

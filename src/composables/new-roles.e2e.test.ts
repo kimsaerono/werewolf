@@ -128,6 +128,7 @@ describe("新角色 E2E 完整对局", () => {
     setupGame(game, ["狼人", "猎魔人", "预言家", "平民", "平民"])
 
     // 第一夜：猎魔戳狼P1；狼刀预言家P3
+    game.state.round = 2
     game.actions.hunterHunt("P1")
     game.actions.wolfKill("P3")
     game.actions.prophetCheck("P1")

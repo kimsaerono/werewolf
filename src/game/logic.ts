@@ -1324,6 +1324,7 @@ export function hunterHunt(state: GameState, sel: string): string | null {
   if (!hm.alive) return "猎魔人已出局，本晚不能狩猎"
   if (hm.mark.skillDisabled) return "猎魔人被恐惧，本夜无法行动"
   if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
+  if (state.round <= 1) return "首夜猎魔人只认人，不狩猎"
   if (!sel) return "请选择狩猎对象"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"

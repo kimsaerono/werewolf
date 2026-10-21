@@ -147,6 +147,7 @@ describe("血月使徒", () => {
 describe("猎魔人", () => {
   it("狩猎狼 → 天亮狼死", () => {
     const st = makeState(["狼人", "猎魔人", "平民", "平民", "平民"])
+    st.round = 2
     expect(hunterHunt(st, "P0")).toBeNull()
     st.nightSteps.wolf = true
     resolveNightEffects(st)
@@ -156,6 +157,7 @@ describe("猎魔人", () => {
 
   it("狩猎好人 → 猎魔人反噬", () => {
     const st = makeState(["狼人", "猎魔人", "平民", "平民", "平民"])
+    st.round = 2
     expect(hunterHunt(st, "P2")).toBeNull()
     st.nightSteps.wolf = true
     resolveNightEffects(st)
@@ -464,13 +466,15 @@ describe("守卫/解药边界（只挡/只解狼刀）", () => {
   })
 
   it("守卫守被猎魔戳的狼目标 → 仍死（守卫挡不住猎魔猎杀）", () => {
-    const st = makeState(["狼人", "守卫", "猎魔人", "平民"])
+    const st = makeState(["狼人", "猎魔人", "猎人", "平民"])
+    st.round = 2
     // 让 P0(狼) 以外无狼 → 猎魔戳 P0（狼）；守卫守 P0
     guardDo(st, "P0", false)
     hunterHunt(st, "P0")
     st.nightSteps.wolf = true
     resolveNightEffects(st)
     expect(g(st, "P0").alive).toBe(false)
+    expect(st.hunterShotPending).toBe(false)
   })
 
   it("守卫守连梦目标 → 仍死", () => {
@@ -510,6 +514,7 @@ describe("守卫/解药边界（只挡/只解狼刀）", () => {
 describe("猎魔人/摄梦 × 老角色", () => {
   it("猎魔戳死 + 狼刀同目标 → 去重只死一次", () => {
     const st = makeState(["狼人", "猎魔人", "平民", "平民"])
+    st.round = 2
     wolfKill(st, "P2")
     hunterHunt(st, "P2")
     resolveNightEffects(st)
@@ -518,6 +523,7 @@ describe("猎魔人/摄梦 × 老角色", () => {
 
   it("猎魔戳死狼 + 该狼被炸同夜不触发猎人开枪（猎魔死因=other）", () => {
     const st = makeState(["狼人", "猎魔人", "猎人", "平民"])
+    st.round = 2
     // 猎魔戳 P0(狼)，P2(猎人) 与本次结算无关 → 猎人不开枪
     hunterHunt(st, "P0")
     st.nightSteps.wolf = true
