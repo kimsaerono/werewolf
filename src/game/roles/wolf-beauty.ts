@@ -1,6 +1,6 @@
 import { BaseRole } from "./base"
 import type { GameState } from "../logic"
-import type { RoleDef, DieEvent, Effect, RoleSolverState } from "./types"
+import type { RoleDef, DieEvent, Effect, RoleSolverState, ScoreEntry } from "./types"
 import { killAsLover, pushNightLog, pushGlobalLog } from "../logic"
 
 /**
@@ -56,6 +56,14 @@ export class WolfBeautyRole extends BaseRole {
     }
     pushNightLog(state, `💔狼美人${evt.name}出局，被魅惑者${targetName}殉情`)
     pushGlobalLog(state, `💔${targetName}遭狼美人殉情出局`)
+  }
+
+  scoreRules(_state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
+    const entries: ScoreEntry[] = []
+    const m = player.mark
+    // 狼美人禁止被刀，故不存在「自刀骗解药」；只保留悍跳警徽分
+    if (m.wolfHanTiaoJinghui) entries.push({ reason: "悍跳拿警徽", delta: 0.5 })
+    return entries
   }
 
   extractState(

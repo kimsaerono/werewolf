@@ -490,13 +490,14 @@ const guardPicker = computed(() =>
 const wolfAliveOptions = computed(() =>
   aliveList.value.filter((p) => refs.isWolfRole(p.role)).map((p) => playerOption(p)),
 )
-/** 自爆选项：全员显示，已出局/非狼阵营/狼美人/石像鬼禁选 */
+/** 自爆选项：全员显示，已出局/非狼阵营/狼美人/石像鬼/恶灵骑士禁选 */
 const wolfPlainPicker = computed(() =>
   buildPickerOptions((p) => {
     if (!p.alive) return "已出局"
     if (!refs.isWolfRole(p.role)) return "非狼阵营"
     if (getRoleInstance(p.role)?.def.id === "狼美人") return "不能自爆"
     if (getRoleInstance(p.role)?.def.id === "石像鬼") return "不能自爆"
+    if (getRoleInstance(p.role)?.def.id === "恶灵骑士") return "不能自爆"
     return null
   }),
 )
@@ -1124,6 +1125,10 @@ function doGuard(v: string) {
   effect("guard", "guard", target ? `守卫：${refs.playerLabel(target)}` : "")
   playVoice("guard_close")
 }
+function doGuardSealedDone() {
+  markDoneStep("guard")
+  playVoice("guard_close")
+}
 function openWitchModal(type: "save" | "poison") {
   if (type === "save") {
     if (!state.nightWolfKill) return message.warning("本晚还没有被刀者，无法使用解药")
@@ -1175,8 +1180,13 @@ function doWitchPoison(v: string) {
   effect("witchPoison", "witch", t ? `毒药：${refs.playerLabel(t)}` : `毒药：${v}`)
 }
 function doWitchDone() {
-  // 女巫已出局 或 解药毒药都用完时直接闭眼，不再二次确认
-  if ((witchObj.value && !witchObj.value.alive) || (state.witchSaveUsed && state.witchPoisonUsed)) {
+  // 女巫已出局 / 解药毒药都用完 / 被封印恐惧时直接闭眼，不再二次确认
+  if (
+    (witchObj.value && !witchObj.value.alive) ||
+    (state.witchSaveUsed && state.witchPoisonUsed) ||
+    state.bloodMoonSeal ||
+    witchObj.value?.mark.skillDisabled
+  ) {
     markDoneStep("witch")
     playVoice("witch_close")
     return
@@ -1354,9 +1364,11 @@ function doFinishVote(v: string) {
   if (err) return message.error(err)
   effect("vote", undefined, `放逐出局：${refs.playerLabel(outP)}`)
   markDone("vote")
-  // 放逐玩家有遗言，弹计时
-  lastWordsName.value = v
-  lastWordsShow.value = true
+  // 放逐玩家有遗言；血月延迟出局未真正死亡，不弹遗言
+  if (!outP.alive) {
+    lastWordsName.value = v
+    lastWordsShow.value = true
+  }
 }
 function doWolfBaoZha(v: string) {
   const p = state.players.find((x) => x.name === v)
@@ -1588,6 +1600,10 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               <p class="small" style="text-align: center; color: #ff7875">守卫已出局，本晚不能守人（走流程）</p>
               <a-button type="primary" size="large" @click="markDoneStep('guard')">已确认守卫出局，进入下一步</a-button>
             </template>
+            <template v-else-if="guardObj?.mark.skillDisabled || state.bloodMoonSeal">
+              <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "守卫被恐惧，本晚不能守人" }}</p>
+              <a-button type="primary" size="large" @click="doGuardSealedDone">进入下一步</a-button>
+            </template>
             <template v-else>
             <p class="small" style="text-align: center">
               守卫：{{ guardObj ? playerLabelShort(guardObj) : "-" }}
@@ -1609,7 +1625,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
           <template v-else-if="state.wolfFearedTonight">
             <p class="small" style="text-align: center; color: #ff7875">😱 狼队被噩梦之影恐惧，本夜无法刀人</p>
-            <a-button type="primary" size="large" @click="doWolfEmptyKill">🈳 确认空刀（被恐惧）</a-button>
+            <template v-if="state.nightSteps.wolf && !state.nightWolfKill">
+              <div class="prophet-result">
+                <div class="prophet-result-main">🌑 本夜空刀：狼人被恐惧，无法刀人</div>
+              </div>
+              <a-button type="primary" danger size="large" @click="doWolfClose">已确认狼人闭眼</a-button>
+            </template>
+            <a-button v-else type="primary" size="large" @click="doWolfEmptyKill">🈳 确认空刀（被恐惧）</a-button>
           </template>
           <template v-else-if="!wolfAllConfirmed">
             <p class="small" style="text-align: center">狼人阵营睁眼，法官按身份逐个确认</p>
@@ -1682,6 +1704,9 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-else>
             <template v-if="gravekeeperObj && !gravekeeperObj.alive">
               <p class="small" style="text-align: center; color: #ff7875">守墓人已出局，技能失效（走流程）</p>
+            </template>
+            <template v-else-if="gravekeeperObj?.mark.skillDisabled || state.bloodMoonSeal">
+              <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "守墓人被恐惧，本晚不能验尸" }}</p>
             </template>
             <template v-else-if="state.round <= 1">
               <p class="small" style="text-align: center">首夜不触发技能，本夜无信息</p>
@@ -1817,12 +1842,13 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <a-button type="primary" size="large" @click="doDreamerClose">进入下一步</a-button>
           </template>
           <template v-else-if="!state.nightSteps.dreamer">
-            <p class="small" style="text-align: center">选择一名玩家入梦；连续两晚入同一人梦境，其天亮死亡（禁同上夜目标时链断）</p>
+            <p class="small" style="text-align: center">选择一名玩家成为梦游者，其免疫夜间伤害；连续两晚入同一人的梦，该玩家天亮被梦杀出局</p>
             <a-button type="primary" size="large" @click="openPicker('选择入梦对象', dreamerPicker.options, (v) => doDreamerDream(v), dreamerPicker)">💭 选择入梦对象</a-button>
           </template>
           <template v-else>
             <div class="prophet-result">
-              <div class="prophet-result-main">已入梦：{{ labelOf(state.nightDreamTarget) }}{{ state.nightDreamTarget && state.nightDreamTarget === dreamerObj?.mark.prevDreamTarget ? "（连梦，天亮死亡）" : "" }}</div>
+              <div v-if="state.nightDreamKill" class="prophet-result-main">💭 连续同梦：{{ labelOf(state.nightDreamKill) }}（天亮梦杀）</div>
+              <div v-else class="prophet-result-main">已入梦：{{ labelOf(state.nightDreamTarget) }}（梦游者免疫夜间伤害）</div>
             </div>
             <a-button type="primary" danger size="large" @click="doDreamerClose">摄梦人闭眼</a-button>
           </template>
@@ -1894,6 +1920,10 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
               <p class="small" style="text-align: center; color: #ff7875">预言家已出局，本晚不能验人（走流程）</p>
               <a-button type="primary" size="large" @click="doProphetClose">已确认预言家出局，进入下一步</a-button>
             </template>
+            <template v-else-if="prophetObj?.mark.skillDisabled || state.bloodMoonSeal">
+              <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "预言家被恐惧，本晚不能验人" }}</p>
+              <a-button type="primary" size="large" @click="doProphetClose">进入下一步</a-button>
+            </template>
 <template v-else>
             <a-button v-if="!checkResult" type="primary" size="large" @click="openPicker('选择查验对象', [{ value: refs.NO_CHECK, label: '🙅 不验' }, ...alivePicker.options], (v) => doProphetCheck(v), alivePicker)">🔮 确认查验</a-button>
             <div v-else class="prophet-result">
@@ -1916,6 +1946,10 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <template v-if="witchObj && !witchObj.alive">
             <p class="small" style="text-align: center; color: #ff7875">女巫已出局，本晚不能用药（走流程）</p>
             <a-button type="primary" size="large" @click="doWitchDone">已确认女巫出局，进入下一步</a-button>
+          </template>
+          <template v-else-if="witchObj?.mark.skillDisabled || state.bloodMoonSeal">
+            <p class="small" style="text-align: center; color: #ff7875">{{ state.bloodMoonSeal ? "血月封印：本夜神职技能失效" : "女巫被恐惧，本晚不能用药" }}</p>
+            <a-button type="primary" size="large" @click="doWitchDone">进入下一步</a-button>
           </template>
           <template v-else>
           <!-- 解药已用完时，女巫不需要知道被刀者，隐藏其号码姓名（仅剩毒药仍睁眼走流程） -->
@@ -2126,7 +2160,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
       </a-card>
 
       <!-- 女巫全屏操作遮罩：醒目显示当夜被刀者（解药已用完时隐藏被刀者号码姓名） -->
-      <div v-if="currentStep === 'witch' && hasWitch" class="fullscreen-overlay">
+      <div v-if="currentStep === 'witch' && hasWitch && !witchObj?.mark.skillDisabled && !state.bloodMoonSeal" class="fullscreen-overlay">
         <div class="fs-title">🧪 女巫操作</div>
         <div v-if="!state.witchSaveUsed && witchObj?.alive" class="fs-death">
           <div class="fs-death-label">{{ witchIsKillTarget && !witchCanSelfSave ? '本晚被刀（女巫自己，非首夜不能自救）' : '本晚被刀' }}</div>
@@ -2318,7 +2352,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
 
       <!-- 悬浮按钮（右侧）：展开的功能项 -->
       <TransitionGroup name="fab-pop-right" tag="div" class="right-actions-items">
-        <a-tooltip v-if="rightActionsOpen && !state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep !== 'vote'))" title="狼人自爆（白狼王可选带走目标）" key="explode">
+        <a-tooltip v-if="rightActionsOpen && !state.skipVote && !state.finished && !lastWordsShow && (currentStep === 'jinghui' || (state.phase === 'day' && currentStep === 'speech'))" title="狼人自爆（白狼王可选带走目标）" key="explode">
           <a-button class="fab fab-explode" type="primary" danger shape="circle" size="large" @click="openPicker('选择自爆狼人', wolfPlainPicker.options, (v) => doWolfBaoZha(v), wolfPlainPicker)"><img v-if="refs.roleAvatar('自爆')" :src="refs.roleAvatar('自爆')" class="fab-icon" alt="自爆" /><span v-else>💥</span></a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && state.jingHui && !state.finished" title="警徽设置（移交）" key="jinghui">

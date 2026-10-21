@@ -100,12 +100,12 @@ describe("守墓人：读取白天公投放逐阵营", () => {
     expect(gravekeeperResult(st)).toBeNull()
   })
 
-  it("先公投放逐、随后自爆入夜 → 当天放逐信息仍保留", () => {
+  it("公投放逐后不能再自爆 → 当天放逐信息保留", () => {
     const st = makeState(["狼人", "狼人", "守墓人", "预言家", "平民"], { round: 2 })
     st.phase = "day"
     expect(finishVote(st, "P1", false)).toBeNull()
-    // 另一只狼在入夜前自爆
-    expect(wolfBaoZha(st, "P2")).toBeNull()
+    // 投票宣判后自爆被拒绝（只能在发言阶段自爆）
+    expect(wolfBaoZha(st, "P2")).toContain("投票已结束")
     expect(st.lastVoteOut).toBe("P1")
     expect(gravekeeperResult(st)).toEqual({ name: "P1", isWolf: true })
   })

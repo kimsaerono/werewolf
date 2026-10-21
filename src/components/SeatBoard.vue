@@ -42,6 +42,61 @@ const leftPlayers = computed(() => props.players.slice(0, seatRows.value).revers
 /** 右列：正序，视觉「上→下」= x+1..n（座位 n 在右下角） */
 const rightPlayers = computed(() => props.players.slice(seatRows.value))
 
+const roleIdOf = (role?: string) => (role ? getRoleInstance(role)?.def.id : "")
+
+/** 摄梦人存活时才展示梦游者云雾 */
+const dreamerAlive = computed(() => props.players.some((p) => p.alive && roleIdOf(p.role) === "摄梦人"))
+/** 本夜梦游者（梦游免疫仅夜晚存在，天亮清除） */
+const dreamingNames = computed(
+  () => new Set(props.players.filter((p) => p.alive && p.mark?.dreamShield).map((p) => p.name)),
+)
+const showDreamFog = (p: Player) => dreamerAlive.value && dreamingNames.value.has(p.name)
+
+/** 野孩子榜样：标记在榜样本人座位上，便于法官对照 */
+const modelNames = computed(
+  () =>
+    new Set(
+      props.players
+        .filter((p) => roleIdOf(p.role) === "野孩子" && !!p.mark?.roleModel)
+        .map((p) => p.mark.roleModel as string),
+    ),
+)
+/** 榜样已出局、野孩子尚未黑化 → 待变身预警 */
+const wildPending = computed(
+  () =>
+    new Set(
+      props.players
+        .filter(
+          (p) =>
+            p.alive &&
+            roleIdOf(p.role) === "野孩子" &&
+            !p.mark?.isTransform &&
+            !!p.mark?.roleModel &&
+            props.players.some((m) => m.name === p.mark.roleModel && !m.alive),
+        )
+        .map((p) => p.name),
+    ),
+)
+/** 野孩子已黑化为狼阵营 */
+const wildTransformed = computed(
+  () =>
+    new Set(
+      props.players
+        .filter((p) => roleIdOf(p.role) === "野孩子" && !!p.mark?.isTransform)
+        .map((p) => p.name),
+    ),
+)
+
+function seatClasses(p: Player) {
+  return {
+    dead: !p.alive,
+    sheriff: p.name === props.jingHui,
+    "dream-fog": showDreamFog(p),
+    "wild-pending": wildPending.value.has(p.name),
+    "wild-transformed": wildTransformed.value.has(p.name),
+  }
+}
+
 // ===== 半遮面：整列默认收进一半贴屏边，点一下 / 触摸滑出完整，静止 1.5s 自动收回 =====
 // 注意：不做「再点一下收回」。展开后卡片要留给 Sortable 拖动，二次点击会先把卡片
 // 收回半屏，pointer 被裁掉，拖动根本触发不了；收回统一交给「无操作静止 1.5s」。
@@ -258,7 +313,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
+            :class="seatClasses(p)"
             :style="cardBg(p)"
             @pointerdown="openSeat"
             @pointermove="armSeatHide"
@@ -280,6 +335,9 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+            <span v-if="modelNames.has(p.name)" class="seat-model" title="野孩子榜样">🔗</span>
+            <span v-if="wildPending.has(p.name)" class="seat-wild" title="榜样已出局，入夜将黑化">⚠️</span>
+            <span v-if="wildTransformed.has(p.name)" class="seat-wild transformed" title="已黑化为狼">🐺</span>
           </div>
         </div>
         <div class="seat-col-spacer"></div>
@@ -294,7 +352,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
+            :class="seatClasses(p)"
             :style="cardBg(p)"
             @pointerdown="openSeat"
             @pointermove="armSeatHide"
@@ -316,6 +374,9 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+            <span v-if="modelNames.has(p.name)" class="seat-model" title="野孩子榜样">🔗</span>
+            <span v-if="wildPending.has(p.name)" class="seat-wild" title="榜样已出局，入夜将黑化">⚠️</span>
+            <span v-if="wildTransformed.has(p.name)" class="seat-wild transformed" title="已黑化为狼">🐺</span>
           </div>
         </div>
       </template>
@@ -325,7 +386,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
           :key="p.name"
           class="seat-card"
           :data-name="p.name"
-          :class="{ dead: !p.alive, sheriff: p.name === jingHui }"
+          :class="seatClasses(p)"
           :style="cardBg(p)"
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
@@ -353,6 +414,9 @@ function cardBg(p: Player): Record<string, string> | undefined {
             >{{ badgeText(p) }}</span>
           <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
           <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
+          <span v-if="modelNames.has(p.name)" class="seat-model" title="野孩子榜样">🔗</span>
+          <span v-if="wildPending.has(p.name)" class="seat-wild" title="榜样已出局，入夜将黑化">⚠️</span>
+          <span v-if="wildTransformed.has(p.name)" class="seat-wild transformed" title="已黑化为狼">🐺</span>
         </div>
       </template>
     </div>
@@ -897,5 +961,84 @@ function cardBg(p: Player): Record<string, string> | undefined {
   bottom: 2px;
   left: 2px;
   font-size: 11px;
+}
+
+/* 梦境/野孩子标记需盖在云雾层之上 */
+.seat-no.float,
+.seat-lover,
+.seat-sheriff,
+.seat-idiot,
+.seat-cupid-third,
+.seat-model,
+.seat-wild {
+  z-index: 3;
+}
+
+/* 野孩子榜样：标在榜样座位上，方便法官对照 */
+.seat-model {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+/* 野孩子待变身：榜样已出局 → 脉冲描边预警 */
+.seat-card.wild-pending {
+  animation: wild-pending-pulse 1.6s ease-in-out infinite;
+}
+@keyframes wild-pending-pulse {
+  0%,
+  100% {
+    border-color: #d5d9e4;
+    box-shadow: 0 0 0 0 rgba(255, 122, 0, 0);
+  }
+  50% {
+    border-color: #ff9a3d;
+    box-shadow: 0 0 0 3px rgba(255, 122, 0, 0.38);
+  }
+}
+.seat-wild {
+  position: absolute;
+  bottom: 2px;
+  left: 2px;
+  font-size: 11px;
+  pointer-events: none;
+}
+.seat-card.wild-transformed {
+  border-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.32);
+}
+
+/* 梦游者：紫色云雾缭绕（表示被摄梦人锁定，不是护盾） */
+.seat-card.dream-fog::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 28% 32%, rgba(158, 120, 232, 0.5), rgba(158, 120, 232, 0) 62%),
+    radial-gradient(circle at 72% 68%, rgba(112, 88, 200, 0.42), rgba(112, 88, 200, 0) 60%);
+  filter: blur(1.5px);
+  animation: dream-fog-sway 3.4s ease-in-out infinite;
+  z-index: 1;
+}
+@keyframes dream-fog-sway {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translateY(0) scale(1.02);
+  }
+  50% {
+    opacity: 0.9;
+    transform: translateY(-2px) scale(1.06);
+  }
 }
 </style>

@@ -341,12 +341,50 @@ describe("算分引擎", () => {
     expect(idiot.scoreRound).toBe(0)
   })
 
-  it("狼人胜利+3 3狼存活+0.5", () => {
+  it("狼人胜利+3 狼群全存活·3狼各+0.5", () => {
     const st = setup()
     st.winCamp = "wolf"
     st.players.filter((p) => p.role !== "狼人").forEach((p) => (p.alive = false))
     recalcScore(st)
     expect(g(st, "P0").scoreRound).toBe(3.5)
+  })
+
+  it("狼群全员存活：4狼各+1", () => {
+    const st = setup(["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "平民", "平民"])
+    st.winCamp = "wolf"
+    st.players.filter((p) => p.role !== "狼人").forEach((p) => (p.alive = false))
+    recalcScore(st)
+    for (const p of st.players.filter((x) => x.role === "狼人")) {
+      expect(p.scoreRound).toBe(4)
+    }
+  })
+
+  it("狼群有狼死亡：存活狼不再拿存活加成", () => {
+    const st = setup(["狼人", "狼人", "狼人", "狼人", "预言家", "女巫", "平民", "平民"])
+    st.winCamp = "wolf"
+    st.players.filter((p) => p.role !== "狼人").forEach((p) => (p.alive = false))
+    // 死一只狼：剩 3 活狼，但按「全员存活」口径无加成
+    st.players.find((p) => p.role === "狼人")!.alive = false
+    recalcScore(st)
+    for (const p of st.players.filter((x) => x.role === "狼人" && x.alive)) {
+      expect(p.scoreRound).toBe(3)
+    }
+  })
+
+  it("石像鬼/隐狼/黑化野孩子不计入狼群存活加成", () => {
+    const st = setup(["狼人", "狼人", "狼人", "石像鬼", "隐狼", "野孩子", "预言家", "平民", "平民", "平民"])
+    st.winCamp = "wolf"
+    st.players.filter((p) => !["狼人", "石像鬼", "隐狼", "野孩子"].includes(p.role)).forEach((p) => (p.alive = false))
+    // 黑化野孩子按狼计，但不计入狼群存活加成
+    byRole(st, "野孩子")!.mark.isTransform = true
+    recalcScore(st)
+    for (const p of st.players.filter((x) => x.role === "狼人")) {
+      expect(p.scoreRound).toBe(3.5)
+    }
+    // 石像鬼 +3（另有存活+0.5），隐狼 +3，黑化野孩子 +3+黑化1（无存活加成）
+    expect(byRole(st, "石像鬼")!.scoreRound).toBe(3.5)
+    expect(byRole(st, "隐狼")!.scoreRound).toBe(3)
+    expect(byRole(st, "野孩子")!.scoreRound).toBe(4)
   })
 
   it("好人胜利：神职+3 且平民+2（狼全灭同时发分）", () => {

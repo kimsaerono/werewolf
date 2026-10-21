@@ -53,9 +53,14 @@ describe("新角色界面护栏：wolfNoOne 计算属性（隐狼带刀时不隐
     expect(body).toMatch(/packWolfAlive/)
   })
 
-  it("自爆选项禁选狼美人/石像鬼", () => {
+  it("自爆选项禁选狼美人/石像鬼/恶灵骑士", () => {
     expect(PANEL).toMatch(/def\.id === "狼美人"\) return "不能自爆"/)
     expect(PANEL).toMatch(/def\.id === "石像鬼"\) return "不能自爆"/)
+    expect(PANEL).toMatch(/def\.id === "恶灵骑士"\) return "不能自爆"/)
+  })
+
+  it("自爆入口只在警上/放逐发言阶段（投票前）显示", () => {
+    expect(PANEL).toMatch(/currentStep === 'jinghui' \|\| \(state\.phase === 'day' && currentStep === 'speech'\)/)
   })
 
   it("支持多选拾取器（炸弹人票选）", () => {

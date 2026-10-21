@@ -21,8 +21,8 @@ export class WolfHunterRole extends BaseRole {
     const m = player.mark
     const wk = Number(m.huntWolfCount || 0)
     const gd = Number(m.huntGoodCount || 0)
-    if (wk > 0) entries.push({ reason: "狩猎击杀狼", delta: 1 * wk })
-    if (gd > 0) entries.push({ reason: "狩猎误伤好人", delta: -1 * gd })
+    if (wk > 0) entries.push({ reason: "狩猎击杀狼", delta: 0.5 * wk })
+    if (gd > 0) entries.push({ reason: "狩猎误伤好人", delta: -0.5 * gd })
     return entries
   }
 

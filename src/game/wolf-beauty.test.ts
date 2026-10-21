@@ -14,6 +14,7 @@ import {
   hunterShootConfirm,
   setJingHui,
   setBoardRoles,
+  recalcScore,
   type GameState,
   type Player,
 } from "./logic"
@@ -214,6 +215,18 @@ describe("狼美人·殉情者不能开技能", () => {
     expect(wk.deathReason).toBe("lover")
     // 殉情绕过死亡钩子：不置狼王开枪时机
     expect(st.wolfKingShotPending).toBe(false)
+  })
+
+  it("计分：悍跳拿警徽 +0.5（禁止被刀，无自刀项）", () => {
+    const st = setup()
+    const beauty = byRole(st, "狼美人")
+    setJingHui(st, beauty.name, false)
+    st.winCamp = "wolf"
+    recalcScore(st)
+    expect(beauty.mark.wolfHanTiaoJinghui).toBe(true)
+    expect(beauty.scoreRound).toBe(3.5)
+    expect(beauty.scoreDetail).toContain("悍跳拿警徽+0.5")
+    expect(beauty.scoreDetail.some((x) => x.includes("自刀"))).toBe(false)
   })
 
   it("被魅惑的白痴殉情后不翻牌", () => {

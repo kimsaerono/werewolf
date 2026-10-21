@@ -445,6 +445,42 @@ describe("边界矩阵 · 阵营与查验口径", () => {
     expect(guardDo(st2, "P7", false)).toContain("血月封印")
   })
 
+  it("血月封印同样拦截女巫解药与守墓人信息", () => {
+    // 女巫解药：封印时不生效
+    const a = makeState(["狼人", "血月使徒", "女巫", "平民", "平民"], { round: 2 })
+    a.phase = "day"
+    wolfBaoZha(a, "P1")
+    expect(a.bloodMoonSeal).toBe(true)
+    wolfKill(a, "P3")
+    expect(witchSave(a)).toContain("血月封印")
+    expect(a.witchSaveUsed).toBe(false)
+
+    // 守墓人：封印时无信息（对照组：未封印时能读到）
+    const b = makeState(["守墓人", "血月使徒", "狼人", "平民"], { round: 2 })
+    b.lastVoteOut = "P3"
+    expect(gravekeeperResult(b)?.name).toBe("P3")
+    b.bloodMoonSeal = true
+    expect(gravekeeperResult(b)).toBeNull()
+  })
+
+  it("噩梦恐惧同样拦截女巫/守卫/守墓人", () => {
+    const w = makeState(["噩梦之影", "女巫", "狼人", "平民"], { round: 2 })
+    nightmareFear(w, "P1")
+    expect(g(w, "P1").mark.skillDisabled).toBe(true)
+    wolfKill(w, "P3")
+    expect(witchSave(w)).toContain("被恐惧")
+    expect(witchPoison(w, "P3")).toContain("被恐惧")
+
+    const gd = makeState(["噩梦之影", "守卫", "狼人", "平民"], { round: 2 })
+    nightmareFear(gd, "P1")
+    expect(guardDo(gd, "P3", false)).toContain("被恐惧")
+
+    const gk = makeState(["噩梦之影", "守墓人", "狼人", "平民"], { round: 2 })
+    gk.lastVoteOut = "P3"
+    nightmareFear(gk, "P1")
+    expect(gravekeeperResult(gk)).toBeNull()
+  })
+
   it("血月封印不作用于石像鬼（狼非神职）", () => {
     const st = makeState(["石像鬼", "血月使徒", "平民"])
     st.bloodMoonSeal = true
@@ -579,6 +615,95 @@ describe("边界矩阵 · 免疫与克制", () => {
     finishVote(b, "P0", false)
     expect(g(b, "P2").alive).toBe(true)
   })
+
+  it("入梦即为梦游者：免疫狼刀；非连梦夜正常加免疫", () => {
+    const st = makeState(["摄梦人", "狼人", "平民", "平民"], { round: 2 })
+    dreamDo(st, "P2")
+    expect(g(st, "P2").mark.dreamShield).toBe(true)
+    wolfKill(st, "P2")
+    resolveNightEffects(st)
+    expect(g(st, "P2").alive).toBe(true)
+    expect(st.nightDreamTarget).toBe("")
+    expect(g(st, "P2").mark.dreamShield).toBe(false)
+  })
+
+  it("梦游者免疫女巫毒药（毒药照常消耗，不计毒杀分）", () => {
+    const st = makeState(["摄梦人", "女巫", "狼人", "平民", "平民"], { round: 2 })
+    dreamDo(st, "P3")
+    expect(witchPoison(st, "P3")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(g(st, "P3").alive).toBe(true)
+    expect(st.witchPoisonUsed).toBe(true)
+    expect(g(st, "P1").mark.witchPoGood).toBe(false)
+    expect(g(st, "P1").mark.witchPoWolf).toBe(false)
+  })
+
+  it("梦游者优先级最高：守卫+解药+狼刀同夜，不触发同守同救且不死", () => {
+    const st = makeState(["摄梦人", "守卫", "女巫", "狼人", "平民"], { round: 2 })
+    dreamDo(st, "P4")
+    guardDo(st, "P4", false)
+    wolfKill(st, "P4")
+    expect(witchSave(st)).toBeNull()
+    resolveNightEffects(st)
+    expect(g(st, "P4").alive).toBe(true)
+    expect(g(st, "P1").mark.guardSameSaveKill).toBe(false)
+    expect(st.witchSaveUsed).toBe(true)
+  })
+
+  it("未被摄梦：守卫+解药+狼刀仍触发同守同救（经典逻辑不变）", () => {
+    const st = makeState(["摄梦人", "守卫", "女巫", "狼人", "平民"], { round: 2 })
+    dreamDo(st, "P0")
+    guardDo(st, "P4", false)
+    wolfKill(st, "P4")
+    expect(witchSave(st)).toBeNull()
+    resolveNightEffects(st)
+    expect(g(st, "P4").alive).toBe(false)
+    expect(g(st, "P1").mark.guardSameSaveKill).toBe(true)
+  })
+
+  it("狼刀摄梦人：无解药双死；有解药两人都活（解药消耗）", () => {
+    const a = makeState(["摄梦人", "狼人", "平民", "平民"], { round: 2 })
+    dreamDo(a, "P2")
+    wolfKill(a, "P0")
+    resolveNightEffects(a)
+    expect(g(a, "P0").alive).toBe(false)
+    expect(g(a, "P2").alive).toBe(false)
+
+    const b = makeState(["摄梦人", "狼人", "女巫", "平民"], { round: 2 })
+    dreamDo(b, "P3")
+    wolfKill(b, "P0")
+    expect(witchSave(b)).toBeNull()
+    resolveNightEffects(b)
+    expect(g(b, "P0").alive).toBe(true)
+    expect(g(b, "P3").alive).toBe(true)
+    expect(b.witchSaveUsed).toBe(true)
+  })
+
+  it("猎魔人狩猎梦游者：被梦境化解，不击杀也不反噬", () => {
+    const st = makeState(["摄梦人", "猎魔人", "狼人", "平民", "平民"], { round: 2 })
+    dreamDo(st, "P3")
+    expect(hunterHunt(st, "P3")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(g(st, "P3").alive).toBe(true)
+    expect(g(st, "P1").alive).toBe(true)
+    expect(g(st, "P1").mark.huntGoodCount).toBe(0)
+    expect(g(st, "P1").mark.huntWolfCount).toBe(0)
+  })
+
+  it("连梦梦杀无视解药（第二晚同梦直接致死且清空免疫）", () => {
+    const st = makeState(["摄梦人", "狼人", "女巫", "平民"], { round: 2 })
+    g(st, "P0").mark.prevDreamTarget = "P3"
+    dreamDo(st, "P3")
+    expect(st.nightDreamKill).toBe("P3")
+    expect(g(st, "P3").mark.dreamShield).toBe(false)
+    wolfKill(st, "P3")
+    expect(witchSave(st)).toBeNull()
+    resolveNightEffects(st)
+    expect(g(st, "P3").alive).toBe(false)
+    expect(g(st, "P3").deathReason).toBe("other")
+  })
 })
 
 
@@ -702,7 +827,7 @@ describe("边界矩阵 · 死亡触发（开枪/翻牌/殉情）", () => {
     expect(st2.wolfKingShotPending).toBe(true)
   })
 
-  it("血月使徒：仅剩狼被放逐 → 延迟到天亮死亡；期间可自爆封印", () => {
+  it("血月使徒：仅剩狼被放逐 → 延迟到天亮死亡；被放逐后不能自爆", () => {
     const st = makeState(["血月使徒", "狼人", "预言家", "平民", "平民"])
     st.phase = "day"
     finishVote(st, "P1", false) // 先放逐普通狼
@@ -710,10 +835,12 @@ describe("边界矩阵 · 死亡触发（开枪/翻牌/殉情）", () => {
     finishVote(st, "P0", false)
     expect(g(st, "P0").alive).toBe(true)
     expect(g(st, "P0").mark.bloodDelayedExile).toBe(true)
+    expect(st.uiDone.vote).toBe(true)
 
-    // 延迟期间自爆：触发血月封印
-    wolfBaoZha(st, "P0")
-    expect(st.bloodMoonSeal).toBe(true)
+    // 已宣判放逐：不能再自爆，也不会触发封印（二选一）
+    expect(wolfBaoZha(st, "P0")).toContain("已被放逐出局")
+    expect(st.bloodMoonSeal).toBe(false)
+    expect(g(st, "P0").mark.bloodSealCount).toBe(0)
   })
 
   it("血月延迟出局在天亮结算（仅剩狼时）", () => {
@@ -754,6 +881,27 @@ describe("边界矩阵 · 死亡触发（开枪/翻牌/殉情）", () => {
     expect(g(st, "P0").alive).toBe(false)
     expect(g(st, "P1").alive).toBe(false)
     expect(st.skipVote).toBe(true)
+  })
+
+  it("投票宣判后：普通狼/白狼王都不能再自爆", () => {
+    const st = makeState(["狼人", "白狼王", "预言家", "平民"])
+    st.phase = "day"
+    finishVote(st, "P3", false)
+    expect(st.uiDone.vote).toBe(true)
+    expect(wolfBaoZha(st, "P0")).toContain("投票已结束")
+    expect(wolfKingBaoZha(st, "P1", "P2")).toContain("投票已结束")
+    expect(g(st, "P0").alive).toBe(true)
+    expect(g(st, "P1").alive).toBe(true)
+    expect(st.bloodMoonSeal).toBe(false)
+  })
+
+  it("同一天不能连续自爆（skipVote 守卫）", () => {
+    const st = makeState(["狼人", "狼人", "预言家", "平民"])
+    st.phase = "day"
+    expect(wolfBaoZha(st, "P0")).toBeNull()
+    expect(st.skipVote).toBe(true)
+    expect(wolfBaoZha(st, "P1")).toContain("已自爆")
+    expect(g(st, "P1").alive).toBe(true)
   })
 
   it("猎人/狼王开枪确认的边界（未出局/无时机/被毒）", () => {

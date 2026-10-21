@@ -142,6 +142,32 @@ describe("血月使徒", () => {
     resolveNightEffects(st)
     expect(g(st, "P0").alive).toBe(false)
   })
+
+  it("警上自爆：封印顺延到下一夜，并跳过当天", () => {
+    const st = makeState(["血月使徒", "预言家", "女巫", "平民", "平民"])
+    // 首夜警上发言阶段自爆
+    expect(wolfBaoZha(st, "P0")).toBeNull()
+    expect(st.bloodSealNextNight).toBe(true)
+    expect(st.skipDayAfterDawn).toBe(true)
+    expect(st.uiDone.jinghui).toBe(true)
+    expect(st.bloodMoonSeal).toBe(true)
+    expect(g(st, "P0").mark.bloodSealCount).toBe(1)
+
+    // 天亮：封印保留、跳过当天
+    expect(resolveNightEffects(st)).toBeNull()
+    expect(st.bloodMoonSeal).toBe(true)
+    expect(st.skipVote).toBe(true)
+    expect(st.bloodSealNextNight).toBe(false)
+
+    // 第二夜：神职被封印
+    nextNight(st)
+    expect(st.bloodMoonSeal).toBe(true)
+    expect(prophetCheck(st, "P1")).toContain("血月封印")
+
+    // 第二夜天亮：封印清除
+    expect(resolveNightEffects(st)).toBeNull()
+    expect(st.bloodMoonSeal).toBe(false)
+  })
 })
 
 describe("猎魔人", () => {
@@ -396,12 +422,13 @@ describe("野孩子黑化边界", () => {
   })
 })
 
-describe("血月延迟出局者当晚可自爆", () => {
-  it("延迟出局的血月使徒自爆 → 置血月封印", () => {
+describe("血月延迟出局者不能自爆", () => {
+  it("延迟出局的血月使徒自爆 → 被拒绝，不触发封印", () => {
     const st = makeState(["血月使徒", "狼人", "平民", "平民"])
     g(st, "P0").mark.bloodDelayedExile = true
-    expect(wolfBaoZha(st, "P0")).toBeNull()
-    expect(st.bloodMoonSeal).toBe(true)
+    expect(wolfBaoZha(st, "P0")).toContain("已被放逐出局")
+    expect(st.bloodMoonSeal).toBe(false)
+    expect(st.skipVote).toBe(false)
   })
 })
 

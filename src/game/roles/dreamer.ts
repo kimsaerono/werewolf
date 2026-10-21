@@ -3,7 +3,8 @@ import type { GameState } from "../logic"
 import type { RoleDef, ScoreEntry } from "./types"
 
 /**
- * 摄梦人：每夜入梦一人；连续两晚同梦 → 次日天亮目标死亡。
+ * 摄梦人：每夜入梦一人，使其成为梦游者并免疫夜间伤害（狼刀/毒药/反伤）；
+ * 连续两晚入梦同一目标 → 触发梦杀，目标天亮死亡（无视守卫/解药）。
  * 摄梦人夜间死亡时，当前梦游者随行殉情（不开枪）；白天被放逐不触发殉情。
  */
 export class DreamerRole extends BaseRole {

@@ -158,6 +158,22 @@ describe("新角色 E2E 完整对局", () => {
     expect(g(game, "P1").alive).toBe(false)
   })
 
+  it("摄梦人局：梦游者免疫狼刀", () => {
+    // P1=狼人 P2=摄梦人 P3=预言家 P4=女巫 P5=平民
+    setupGame(game, ["狼人", "摄梦人", "预言家", "女巫", "平民"])
+
+    // 第一夜：摄梦人梦平民P5；狼刀P5 → 梦游者免伤
+    game.actions.dreamDo("P5")
+    expect(g(game, "P5").mark.dreamShield).toBe(true)
+    game.actions.wolfKill("P5")
+    game.actions.prophetCheck("P1")
+    game.actions.dawnSettle()
+    expect(g(game, "P5").alive).toBe(true)
+    // 天亮后梦游免疫清除
+    expect(g(game, "P5").mark.dreamShield).toBe(false)
+    expect(game.state.nightDreamTarget).toBe("")
+  })
+
   it("野孩子局：榜样死后黑化→阵营转为狼", () => {
     // P1=野孩子 P2=狼人 P3=预言家 P4=平民 P5=平民
     setupGame(game, ["野孩子", "狼人", "预言家", "平民", "平民"])

@@ -87,16 +87,24 @@ describe("新角色计分护栏：文案 ↔ scoreRules 数值一致", () => {
     expect(SCORE_TEXT["血月使徒"]).toContain("封印")
   })
 
-  it("猎魔人：戳中狼 +1、戳错好人 -1", () => {
+  it("猎魔人：戳中狼 +0.5、戳错好人 -0.5", () => {
     const wk = findEntry("猎魔人", { huntWolfCount: 1 }, "击杀狼")
     expect(wk).toBeTruthy()
-    expect(wk!.delta).toBe(1)
-    expect(SCORE_TEXT["猎魔人"]).toContain("+1")
+    expect(wk!.delta).toBe(0.5)
+    expect(SCORE_TEXT["猎魔人"]).toContain("+0.5")
 
     const gd = findEntry("猎魔人", { huntGoodCount: 1 }, "误伤好人")
     expect(gd).toBeTruthy()
-    expect(gd!.delta).toBe(-1)
-    expect(SCORE_TEXT["猎魔人"]).toContain("-1")
+    expect(gd!.delta).toBe(-0.5)
+    expect(SCORE_TEXT["猎魔人"]).toContain("-0.5")
+  })
+
+  it("狼美人：悍跳拿警徽 +0.5（自刀项不可达已移除）", () => {
+    const han = findEntry("狼美人", { wolfHanTiaoJinghui: true }, "悍跳")
+    expect(han).toBeTruthy()
+    expect(han!.delta).toBe(0.5)
+    expect(findEntry("狼美人", { wolfSelfKillCheat: true }, "自刀")).toBeUndefined()
+    expectText("狼美人", "悍跳")
   })
 
   it("摄梦人：连梦击杀狼 +1、连梦击杀好人 -1", () => {

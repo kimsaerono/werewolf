@@ -79,7 +79,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
     id: "猎魔人", camp: "god", unique: true, emoji: "🗡️", short: "猎魔", intentKeys: [],
     nightStep: { order: 42, key: "hunterWolf", label: "猎魔人狩猎", emoji: "🗡️" },
   },
-  // 摄梦人：每夜入梦一人，连续两晚同梦天亮致死
+  // 摄梦人：每夜入梦一人（梦游者免疫夜间伤害），连续两晚同梦触发梦杀
   {
     id: "摄梦人", camp: "god", unique: true, emoji: "💭", short: "摄梦", intentKeys: [],
     nightStep: { order: 45, key: "dreamer", label: "摄梦人入梦", emoji: "💭" },

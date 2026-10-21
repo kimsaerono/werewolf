@@ -170,6 +170,10 @@ export interface Mark {
   dreadKnightEverPoisoned: boolean
   /** 恶灵骑士：反伤目标玩家名（空=未触发反伤） */
   dreadKnightRevengeTarget: string
+  /** 恶灵骑士：曾被查验但该次查验未触发反伤（可叠加计分） */
+  dreadKnightCheckNoRevenge: boolean
+  /** 恶灵骑士：曾被毒杀但该次毒药未触发反伤（可叠加计分） */
+  dreadKnightPoisonNoRevenge: boolean
   /** 石像鬼：本夜是否由石像鬼完成刀人（每夜重置） */
   gargoyleKilledTonight: boolean
   /** 本夜技能被封印/恐惧（噩梦之影恐惧神职；每夜重置） */
@@ -182,6 +186,8 @@ export interface Mark {
   roleModel: string
   /** 摄梦人：上一夜摄梦对象（连续两晚同梦触发连梦死亡） */
   prevDreamTarget: string
+  /** 摄梦人：本夜成为梦游者（免疫夜间伤害；每夜重置） */
+  dreamShield: boolean
   /** 血月使徒：被放逐但血月之力延续到天亮才死（期间可行动/自爆） */
   bloodDelayedExile: boolean
   /** 猎魔人：狩猎击杀狼次数 */
@@ -347,10 +353,16 @@ export interface GameState {
   wolfFearedTonight: boolean
   /** 血月使徒自爆封印：当夜神职技能全部失效（自爆时置入，天亮清除） */
   bloodMoonSeal: boolean
+  /** 警上自爆：血月封印顺延到下一夜（首夜警上自爆时置入，下一夜天亮清除） */
+  bloodSealNextNight: boolean
+  /** 警上自爆：天亮后跳过当天发言/投票，直接进入下一夜 */
+  skipDayAfterDawn: boolean
   /** 猎魔人本夜狩猎目标（""=未狩猎；天亮结算） */
   nightHuntTarget: string
-  /** 摄梦人本夜摄梦目标（""=未入梦；连续两晚同梦天亮致死） */
+  /** 摄梦人本夜摄梦目标（""=未入梦；连续两晚同梦触发梦杀） */
   nightDreamTarget: string
+  /** 摄梦人本夜连梦触发梦杀目标（""=无） */
+  nightDreamKill: string
   /** 炸弹人全票放逐独赢已达成（胜负直接判第三方） */
   bombVictory: boolean
   /** 模拟对局模式：不同步飞书 */
@@ -400,12 +412,15 @@ export function defaultMark(): Mark {
     dreadKnightEverChecked: false,
     dreadKnightEverPoisoned: false,
     dreadKnightRevengeTarget: "",
+    dreadKnightCheckNoRevenge: false,
+    dreadKnightPoisonNoRevenge: false,
     gargoyleKilledTonight: false,
     skillDisabled: false,
     hasKnife: false,
     isTransform: false,
     roleModel: "",
     prevDreamTarget: "",
+    dreamShield: false,
     bloodDelayedExile: false,
     huntWolfCount: 0,
     huntGoodCount: 0,
@@ -469,8 +484,11 @@ export function defaultState(): GameState {
     nightmareFearTarget: "",
     wolfFearedTonight: false,
     bloodMoonSeal: false,
+    bloodSealNextNight: false,
+    skipDayAfterDawn: false,
     nightHuntTarget: "",
     nightDreamTarget: "",
+    nightDreamKill: "",
     bombVictory: false,
     simMode: true,
     modeChosen: false,
@@ -520,8 +538,11 @@ export function normalizeState(s: GameState): GameState {
   if (typeof st.nightmareFearTarget !== "string") st.nightmareFearTarget = ""
   if (typeof st.wolfFearedTonight !== "boolean") st.wolfFearedTonight = false
   if (typeof st.bloodMoonSeal !== "boolean") st.bloodMoonSeal = false
+  if (typeof st.bloodSealNextNight !== "boolean") st.bloodSealNextNight = false
+  if (typeof st.skipDayAfterDawn !== "boolean") st.skipDayAfterDawn = false
   if (typeof st.nightHuntTarget !== "string") st.nightHuntTarget = ""
   if (typeof st.nightDreamTarget !== "string") st.nightDreamTarget = ""
+  if (typeof st.nightDreamKill !== "string") st.nightDreamKill = ""
   if (typeof st.bombVictory !== "boolean") st.bombVictory = false
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
@@ -749,6 +770,8 @@ export function startNewGame(state: GameState): void {
   state.wolfKingShotDone = false
   state.prophetReport = ""
   state.skipVote = false
+  state.bloodSealNextNight = false
+  state.skipDayAfterDawn = false
   state.winCamp = null
   state.jingHui = ""
   state.wolfSelfKill = false
@@ -1097,6 +1120,8 @@ export function manualSaveRoles(state: GameState): string | null {
   state.wolfKingShotDone = false
   state.prophetReport = ""
   state.skipVote = false
+  state.bloodSealNextNight = false
+  state.skipDayAfterDawn = false
   state.winCamp = null
   state.jingHui = ""
   state.wolfSelfKill = false
@@ -1136,12 +1161,14 @@ export function nextNight(state: GameState): void {
   state.wolfFearedTonight = false
   state.nightHuntTarget = ""
   state.nightDreamTarget = ""
+  state.nightDreamKill = ""
   // 重置每夜标记
   for (const p of state.players) {
     p.mark.dreadKnightCheckedTonight = false
     p.mark.dreadKnightPoisonedTonight = false
     p.mark.gargoyleKilledTonight = false
     p.mark.skillDisabled = false
+    p.mark.dreamShield = false
   }
   // 野孩子黑化：榜样已死且自己存活 → 本夜变身；并刷新隐狼刀人权
   checkWildChildTransform(state)
@@ -1337,7 +1364,7 @@ export function hunterHunt(state: GameState, sel: string): string | null {
   return null
 }
 
-/** 摄梦人入梦：选择目标；连续两晚同梦天亮致死；自己夜间死亡则梦游者殉情 */
+/** 摄梦人入梦：选择目标成为梦游者（免疫夜间伤害）；连续两晚同一目标触发梦杀 */
 export function dreamDo(state: GameState, sel: string): string | null {
   const dm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "摄梦人")
   if (!dm) return "本局没有摄梦人"
@@ -1348,12 +1375,25 @@ export function dreamDo(state: GameState, sel: string): string | null {
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为入梦对象`
-  state.nightDreamTarget = sel
-  state.nightSteps.dreamer = true
+  // 同一夜改选目标时，先清空旧的梦游免疫，避免多人同时带盾
+  for (const p of state.players) p.mark.dreamShield = false
   const linked = !!dm.mark.prevDreamTarget && dm.mark.prevDreamTarget === sel
-  pushNightLog(state, `💭摄梦人进入 ${sel} 的梦境${linked ? "（连续第二晚同梦，天亮结算）" : ""}`)
-  pushGlobalLog(state, `💭摄梦人今晚入梦：${sel}${linked ? "（连续同梦）" : ""}`)
-  pushFlow(state, "摄梦人入梦", sel, linked ? "连梦" : "")
+  if (linked) {
+    state.nightDreamKill = sel
+    state.nightDreamTarget = sel
+    state.nightSteps.dreamer = true
+    pushNightLog(state, `💭摄梦人连续两晚梦${sel}，触发梦杀`)
+    pushGlobalLog(state, `💭摄梦人连续两晚入梦：${sel}，梦杀即将生效`)
+    pushFlow(state, "摄梦人入梦", sel, "连梦梦杀")
+    return null
+  }
+  state.nightDreamTarget = sel
+  state.nightDreamKill = ""
+  state.nightSteps.dreamer = true
+  target.mark.dreamShield = true
+  pushNightLog(state, `💭摄梦人进入 ${sel} 的梦境（梦游者免疫夜间伤害）`)
+  pushGlobalLog(state, `💭摄梦人今晚入梦：${sel}（梦游者免疫夜间伤害）`)
+  pushFlow(state, "摄梦人入梦", sel)
   return null
 }
 
@@ -1421,6 +1461,8 @@ export function prophetCheck(state: GameState, sel: string): string | { name: st
     targetRole.onBeingChecked(state, prophet ? prophet.name : "")
     target.mark.dreadKnightCheckedTonight = true
     target.mark.dreadKnightEverChecked = true
+    // 反伤已用掉时，本次查验必然不会反伤，直接累计「吸引查验未反伤」
+    if (target.mark.dreadKnightRevengeUsed) target.mark.dreadKnightCheckNoRevenge = true
   }
   // 记录验人结果用于记分（预言家存活时才记分）
   if (prophet && prophet.alive) {
@@ -1593,13 +1635,17 @@ export function witchPoison(state: GameState, sel: string): string | null {
   state.nightUsedDrug = "poison"
   state.nightWitchPoison = sel
   state.nightSteps.witch = true
-  // 恶灵骑士/猎魔人：毒药被免疫（消耗但不毒死），不设 witchPoWolf/witchPoGood
+  // 恶灵骑士：免疫夜间所有伤害（反伤用掉后仍不会被毒死；毒药照常消耗）
+  // 猎魔人毒免；梦游者夜间免伤
   const tarRoleId = getRoleInstance(tar.role)?.def.id
-  const isImmune = tarRoleId === "恶灵骑士" || tarRoleId === "猎魔人"
+  const isImmune = tarRoleId === "恶灵骑士" || tarRoleId === "猎魔人" || tar.mark.dreamShield
   if (tarRoleId === "恶灵骑士") {
     tar.mark.dreadKnightPoisonedTonight = true
     tar.mark.dreadKnightEverPoisoned = true
-  } else if (!isImmune && isEffectiveWolf(tar)) {
+    // 反伤已用掉时，本次毒药必然不会反伤，直接累计「吸引毒药未反伤」
+    if (tar.mark.dreadKnightRevengeUsed) tar.mark.dreadKnightPoisonNoRevenge = true
+  }
+  if (!isImmune && isEffectiveWolf(tar)) {
     witch.mark.witchPoWolf = true
   } else if (!isImmune) {
     witch.mark.witchPoGood = true
@@ -1859,6 +1905,8 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     // 记录白天公投出局者（守墓人次夜读取；血月延迟也计入，天亮结算死讯）
     state.lastVoteOut = outName
   }
+  // 本日投票已结束：之后不能再自爆（只能在此前的警上/放逐发言阶段自爆）
+  state.uiDone.vote = true
   return null
 }
 
@@ -1870,11 +1918,24 @@ export function wolfBaoZha(state: GameState, sel: string): string | null {
   if (!isEffectiveWolf(p)) return "只能狼阵营玩家自爆"
   if (getRoleInstance(p.role)?.def.id === "狼美人") return "狼美人不能自爆"
   if (getRoleInstance(p.role)?.def.id === "石像鬼") return "石像鬼不能自爆"
+  if (getRoleInstance(p.role)?.def.id === "恶灵骑士") return "恶灵骑士不能自爆"
+  // 自爆只能在警上发言 / 放逐发言阶段（投票之前）
+  if (p.mark.bloodDelayedExile) return "已被放逐出局，不能自爆"
+  if (state.uiDone?.vote) return "投票已结束，只能在警上/放逐发言阶段自爆"
+  if (state.skipVote) return "本日已自爆/跳过投票，请直接进入夜晚"
+  // 警上自爆：结束竞选、跳过天亮后的白天（首夜末尾的警长竞选）
+  const isJinghuiSelfBomb = state.phase === "night" && state.round <= 1
+  if (isJinghuiSelfBomb) {
+    state.skipDayAfterDawn = true
+    state.uiDone.jinghui = true
+  }
   killPlayer(state, sel, "selfBomb")
   state.skipVote = true
   // 血月使徒自爆：当夜神职技能全部失效
   if (getRoleInstance(p.role)?.def.id === "血月使徒") {
     state.bloodMoonSeal = true
+    // 警上自爆发生在天亮前：封印顺延到下一夜
+    if (isJinghuiSelfBomb) state.bloodSealNextNight = true
     p.mark.bloodSealCount = (p.mark.bloodSealCount || 0) + 1
     pushGlobalLog(state, `🌕血月当空！今夜神职技能全部失效！`)
     pushFlow(state, "血月封印", sel, "当夜神职失效")
@@ -1901,6 +1962,14 @@ export function wolfKingBaoZha(state: GameState, sel: string, tar: string): stri
   if (!t) return "未找到目标玩家"
   if (!t.alive) return "目标已出局"
   if (t.name === p.name) return "不能带走自己"
+  // 自爆只能在警上发言 / 放逐发言阶段（投票之前）
+  if (state.uiDone?.vote) return "投票已结束，只能在警上/放逐发言阶段自爆"
+  if (state.skipVote) return "本日已自爆/跳过投票，请直接进入夜晚"
+  // 警上自爆：结束竞选、跳过天亮后的白天
+  if (state.phase === "night" && state.round <= 1) {
+    state.skipDayAfterDawn = true
+    state.uiDone.jinghui = true
+  }
   killPlayer(state, sel, "selfBomb")
   killPlayer(state, tar, "other")
   // 记录自爆带走目标，供计分判定（女巫有药 / 守卫 / 未开技能骑士 +0.5）
@@ -1927,7 +1996,13 @@ import { getRoleInstance } from "./roles/builtin"
 
 export function recalcScore(state: GameState): void {
   const win = state.winCamp
-  const aliveWolfCount = state.players.filter((x) => x.alive && isEffectiveWolf(x)).length
+  // 狼群存活加成：只算狼群角色（不含石像鬼/隐狼/黑化野孩子；人狼恋第三方不计）
+  const wgChain = getChainType(state) === "WG"
+  const wolfPackMembers = state.players.filter(
+    (p) => isWolfPackRole(p.role) && !(wgChain && isThirdMember(state, p)),
+  )
+  const wolfPackAllAlive = wolfPackMembers.length > 0 && wolfPackMembers.every((p) => p.alive)
+  const wolfPackCount = wolfPackMembers.length
   state.players.forEach((p) => {
     const detail: string[] = []
     let s = 0
@@ -1964,13 +2039,14 @@ export function recalcScore(state: GameState): void {
     if (win === "wolf" && isEffectiveWolf(p) && !isWGCamp) {
       s += 3
       detail.push("狼人胜利+3")
-      if (p.alive) {
-        if (aliveWolfCount >= 4) {
+      // 狼群全员存活才加成（石像鬼/隐狼/黑化野孩子不计入，也不拿此加成）
+      if (p.alive && wolfPackAllAlive && wolfPackMembers.some((w) => w.name === p.name)) {
+        if (wolfPackCount >= 4) {
           s += 1
-          detail.push("4狼存活+1")
-        } else if (aliveWolfCount === 3) {
+          detail.push("狼群全存活·4狼+1")
+        } else if (wolfPackCount === 3) {
           s += 0.5
-          detail.push("3狼存活+0.5")
+          detail.push("狼群全存活·3狼+0.5")
         }
       }
     }

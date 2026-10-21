@@ -47,13 +47,11 @@ export function resolveNightEffects(state: GameState): string | null {
         blocked.set(effect.target, effect.source)
         break
       case "kill": {
-        // 恶灵骑士/猎魔人毒药免疫：女巫毒他时毒药消耗但不产生击杀效果
+        // 猎魔人毒免；恶灵骑士免疫夜间所有伤害（反伤用掉后仍不会被毒死）
         if (effect.source === "女巫毒药") {
           const targetPlayer = state.players.find((x) => x.name === effect.target)
           const tid = targetPlayer ? getRoleInstance(targetPlayer.role)?.def.id : ""
-          if (tid === "恶灵骑士" || tid === "猎魔人") {
-            break
-          }
+          if (tid === "恶灵骑士" || tid === "猎魔人") break
         }
         const reason: DieReason =
           effect.source === "女巫毒药" ? "poison" :
@@ -68,6 +66,15 @@ export function resolveNightEffects(state: GameState): string | null {
         }
         break
       }
+    }
+  }
+
+  // 梦游免疫：梦游者免疫夜间伤害（狼刀/毒药/反伤），优先级最高
+  for (const p of state.players) {
+    if (p.mark.dreamShield && p.alive) {
+      saved.delete(p.name)
+      blocked.delete(p.name)
+      killed.delete(p.name)
     }
   }
 
@@ -127,7 +134,15 @@ export function resolveNightEffects(state: GameState): string | null {
   if (state.nightHuntTarget) {
     const hunter = state.players.find((p) => getRoleInstance(p.role)?.def.id === "猎魔人")
     const target = state.players.find((x) => x.name === state.nightHuntTarget)
-    if (hunter && target && target.alive) {
+    if (hunter && target && target.alive && target.mark.dreamShield) {
+      // 梦游者被梦境环绕：狩猎落空，不结算反噬
+      pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被梦境化解：${target.name}是梦游者，毫发无伤`)
+      pushFlow(state, "猎魔人结算", target.name, "梦境化解")
+    } else if (hunter && target && target.alive && getRoleInstance(target.role)?.def.id === "恶灵骑士") {
+      // 恶灵骑士免疫夜间所有伤害：狩猎无法击杀（仍是狼，不反噬）
+      pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
+      pushFlow(state, "猎魔人结算", target.name, "护体挡下")
+    } else if (hunter && target && target.alive) {
       if (isEffectiveWolf(target)) {
         hunter.mark.huntWolfCount = (hunter.mark.huntWolfCount || 0) + 1
         deathList.push(...killPlayer(state, target.name, "other", "猎魔人狩猎"))
@@ -150,6 +165,9 @@ export function resolveNightEffects(state: GameState): string | null {
     const dreamTarget = state.nightDreamTarget
       ? state.players.find((x) => x.name === state.nightDreamTarget)
       : null
+    const dreamKillTarget = state.nightDreamKill
+      ? state.players.find((x) => x.name === state.nightDreamKill)
+      : null
     const dreamerDiedTonight = !dreamer.alive && (killed.has(dreamer.name) || deathList.includes(dreamer.name))
     if (dreamerDiedTonight) {
       // 摄梦人夜间死亡 → 梦游者殉情（不开枪：不走 killPlayer 钩子）；白天放逐不触发
@@ -161,21 +179,24 @@ export function resolveNightEffects(state: GameState): string | null {
         pushGlobalLog(state, `💔梦游者${dreamTarget.name}因摄梦人${dreamer.name}夜间死亡而殉情`)
         pushFlow(state, "梦游者殉情", dreamTarget.name)
       }
-    } else if (dreamTarget && dreamer.alive && state.nightDreamTarget === dreamer.mark.prevDreamTarget) {
-      // 连续两晚同梦 → 天亮连梦死亡
-      if (dreamTarget.alive) {
-        if (isEffectiveWolf(dreamTarget)) {
+    } else if (dreamKillTarget && dreamer.alive) {
+      if (dreamKillTarget.alive && getRoleInstance(dreamKillTarget.role)?.def.id === "恶灵骑士") {
+        // 恶灵骑士免疫夜间所有伤害：连梦梦杀无效
+        pushGlobalLog(state, `💭连续两晚同梦，但${dreamKillTarget.name}的恶灵护体挡下了梦杀`)
+        pushFlow(state, "摄梦连梦结算", dreamKillTarget.name, "护体挡下")
+      } else if (dreamKillTarget.alive) {
+        if (isEffectiveWolf(dreamKillTarget)) {
           dreamer.mark.dreamKillWolf = (dreamer.mark.dreamKillWolf || 0) + 1
         } else {
           dreamer.mark.dreamKillGood = (dreamer.mark.dreamKillGood || 0) + 1
         }
-        deathList.push(...killPlayer(state, dreamTarget.name, "other", "摄梦连梦"))
-        pushGlobalLog(state, `💭连续两晚同梦，${dreamTarget.name}在梦境中死去`)
-        pushFlow(state, "摄梦连梦结算", dreamTarget.name)
+        deathList.push(...killPlayer(state, dreamKillTarget.name, "other", "摄梦连梦"))
+        pushGlobalLog(state, `💭连续两晚同梦，${dreamKillTarget.name}在梦境中死去`)
+        pushFlow(state, "摄梦连梦结算", dreamKillTarget.name)
       }
     }
     // 更新连梦基准（当晚未入梦则链断裂）
-    dreamer.mark.prevDreamTarget = state.nightDreamTarget || ""
+    dreamer.mark.prevDreamTarget = state.nightDreamTarget || state.nightDreamKill || ""
   }
 
   // 血月使徒延迟出局：白天被放逐但血月之力延续到天亮，期间可行动/自爆
@@ -195,15 +216,29 @@ export function resolveNightEffects(state: GameState): string | null {
     p.mark.gargoyleKilledTonight = false
     // 恐惧封印仅持续当夜
     p.mark.skillDisabled = false
+    // 梦游免疫仅持续当夜
+    p.mark.dreamShield = false
   }
-  // 清理夜晚状态（血月封印作用于当夜，天亮清除）
+  // 清理夜晚状态（血月封印作用于当夜，天亮清除；警上自爆则顺延到下一夜）
   state.guardLastTarget = state.nightGuardTarget
   state.nightmareFearTarget = ""
   state.wolfFearedTonight = false
-  state.bloodMoonSeal = false
+  if (state.bloodSealNextNight) {
+    // 警上自爆：封印留给下一夜，下一夜天亮再清除
+    state.bloodSealNextNight = false
+  } else {
+    state.bloodMoonSeal = false
+  }
   state.nightHuntTarget = ""
   state.nightDreamTarget = ""
-  state.skipVote = false
+  state.nightDreamKill = ""
+  if (state.skipDayAfterDawn) {
+    // 警上自爆：跳过天亮后的白天（发言/投票），直接进入下一夜
+    state.skipDayAfterDawn = false
+    state.skipVote = true
+  } else {
+    state.skipVote = false
+  }
   state.phase = "day"
   // 新白天开始：清空"上一白天放逐者"。守墓人已在刚结束的夜晚读取过，不受影响；
   // 当天若无人被公投放逐（无人出局/骑士跳票/自爆），下一夜即无信息。

@@ -3,9 +3,12 @@ import {
   defaultState,
   wolfKill,
   wolfEmptyKill,
+  wolfBaoZha,
   prophetCheck,
   witchPoison,
   witchSave,
+  hunterHunt,
+  dreamDo,
   guardDo,
   killPlayer,
   nextNight,
@@ -150,8 +153,8 @@ describe("恶灵骑士", () => {
     st.players[2].deathReason = ""
     // 反伤已用掉
     st.players[1].mark.dreadKnightRevengeUsed = true
-    // 预言家再验恶灵骑士
-    wolfKill(st, "P6")
+    // 预言家再验恶灵骑士（P6 已出局，本夜空刀完成狼人步骤）
+    wolfEmptyKill(st)
     prophetCheck(st, "P2")
     resolveNightEffects(st)
     // 预言家安全（反伤已用）
@@ -167,7 +170,7 @@ describe("恶灵骑士", () => {
     expect(checkEntry!.delta).toBe(0.5)
   })
 
-  it("反伤用掉后女巫再毒 → 不再反弹，女巫安全", () => {
+  it("反伤用掉后女巫再毒 → 不再反弹，恶灵骑士仍免疫夜间伤害", () => {
     // 第1夜：女巫毒恶灵骑士 → 反弹女巫
     wolfKill(st, "P6")
     witchPoison(st, "P2")
@@ -182,14 +185,15 @@ describe("恶灵骑士", () => {
     st.witchPoisonUsed = false
     st.nightUsedDrug = null
     st.players[1].mark.dreadKnightRevengeUsed = true
-    // 女巫再毒恶灵骑士
-    wolfKill(st, "P6")
+    // 女巫再毒恶灵骑士（P6 已出局，本夜空刀完成狼人步骤）
+    wolfEmptyKill(st)
     witchPoison(st, "P2")
     resolveNightEffects(st)
     // 女巫安全
     expect(st.players[3].alive).toBe(true)
-    // 恶灵骑士安全（毒被免疫）
+    // 反伤已用掉：不再反弹，但夜间免伤依然生效
     expect(st.players[1].alive).toBe(true)
+    expect(st.players[1].deathReason || "").toBe("")
     // 计分：吸引毒药未反伤 +0.5
     const role = getRoleInstance("恶灵骑士")!
     const entries = role.scoreRules(st, { name: "P2", role: "恶灵骑士", mark: st.players[1].mark })
@@ -207,6 +211,120 @@ describe("恶灵骑士", () => {
     const revengeEntry = entries.find((e) => e.reason === "反伤×1")
     expect(revengeEntry).toBeTruthy()
     expect(revengeEntry!.delta).toBe(1)
+  })
+
+  it("计分：反伤命中预言家时，不再叠加「吸引查验未反伤」", () => {
+    wolfKill(st, "P6")
+    prophetCheck(st, "P2")
+    resolveNightEffects(st)
+    const role = getRoleInstance("恶灵骑士")!
+    const entries = role.scoreRules(st, { name: "P2", role: "恶灵骑士", mark: st.players[1].mark })
+    expect(entries.find((e) => e.reason === "反伤×1")?.delta).toBe(1)
+    expect(entries.find((e) => e.reason === "吸引查验未反伤")).toBeUndefined()
+    const total = entries.reduce((sum, e) => sum + e.delta, 0)
+    expect(total).toBe(1)
+  })
+
+  it("计分：反伤命中女巫时，不再叠加「吸引毒药未反伤」", () => {
+    wolfKill(st, "P6")
+    witchPoison(st, "P2")
+    resolveNightEffects(st)
+    const role = getRoleInstance("恶灵骑士")!
+    const entries = role.scoreRules(st, { name: "P2", role: "恶灵骑士", mark: st.players[1].mark })
+    expect(entries.find((e) => e.reason === "反伤×1")?.delta).toBe(1)
+    expect(entries.find((e) => e.reason === "吸引毒药未反伤")).toBeUndefined()
+    expect(entries.reduce((sum, e) => sum + e.delta, 0)).toBe(1)
+  })
+
+  it("计分：同夜验+毒只反弹预言家 → 仅毒药侧计「未反伤」+0.5", () => {
+    wolfKill(st, "P6")
+    witchPoison(st, "P2")
+    prophetCheck(st, "P2")
+    resolveNightEffects(st)
+    const role = getRoleInstance("恶灵骑士")!
+    const entries = role.scoreRules(st, { name: "P2", role: "恶灵骑士", mark: st.players[1].mark })
+    expect(entries.find((e) => e.reason === "反伤×1")?.delta).toBe(1)
+    expect(entries.find((e) => e.reason === "吸引查验未反伤")).toBeUndefined()
+    expect(entries.find((e) => e.reason === "吸引毒药未反伤")?.delta).toBe(0.5)
+    expect(entries.reduce((sum, e) => sum + e.delta, 0)).toBe(1.5)
+  })
+
+  it("不能自爆", () => {
+    expect(wolfBaoZha(st, "P2")).toContain("不能自爆")
+    expect(st.players[1].alive).toBe(true)
+    expect(st.skipVote).toBe(false)
+  })
+
+  it("反伤用掉后女巫毒 → 毒药消耗，恶灵骑士仍不死", () => {
+    // 第1夜：预言家验 → 触发反伤
+    wolfKill(st, "P6")
+    prophetCheck(st, "P2")
+    resolveNightEffects(st)
+    expect(st.players[1].mark.dreadKnightRevengeUsed).toBe(true)
+
+    // 第2夜：女巫毒恶灵骑士 → 反伤已用掉，正常毒死
+    nextNight(st)
+    wolfEmptyKill(st)
+    expect(witchPoison(st, "P2")).toBeNull()
+    resolveNightEffects(st)
+    expect(st.players[1].alive).toBe(true)
+    expect(st.players[1].deathReason || "").toBe("")
+    expect(st.players[3].alive).toBe(true)
+    expect(st.players[3].mark.witchPoWolf).toBe(false)
+  })
+
+  it("反伤未触发时免疫猎魔人狩猎；反伤用掉后会被狩猎击杀", () => {
+    st.players[4].role = "猎魔人"
+    st.boardRoles = ["狼人", "恶灵骑士", "预言家", "女巫", "猎魔人", "平民", "平民", "平民"]
+    st.round = 2
+
+    // 反伤未触发：狩猎无效，猎魔人也不反噬
+    expect(hunterHunt(st, "P2")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(st.players[1].alive).toBe(true)
+    expect(st.players[4].alive).toBe(true)
+    expect(st.players[4].mark.huntWolfCount || 0).toBe(0)
+
+    // 反伤用掉后：夜间免伤依然生效，狩猎仍无法击杀
+    nextNight(st)
+    st.players[1].mark.dreadKnightRevengeUsed = true
+    expect(hunterHunt(st, "P2")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(st.players[1].alive).toBe(true)
+    expect(st.players[4].alive).toBe(true)
+    expect(st.players[4].mark.huntWolfCount || 0).toBe(0)
+  })
+
+  it("反伤未触发时免疫摄梦连梦；反伤用掉后会被梦杀", () => {
+    st.players[4].role = "摄梦人"
+    st.boardRoles = ["狼人", "恶灵骑士", "预言家", "女巫", "摄梦人", "平民", "平民", "平民"]
+    st.round = 2
+    st.players[4].mark.prevDreamTarget = "P2"
+
+    expect(dreamDo(st, "P2")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(st.players[1].alive).toBe(true)
+    expect(st.players[4].mark.dreamKillWolf || 0).toBe(0)
+
+    nextNight(st)
+    st.players[1].mark.dreadKnightRevengeUsed = true
+    st.players[4].mark.prevDreamTarget = "P2"
+    expect(dreamDo(st, "P2")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(st.players[1].alive).toBe(true)
+    expect(st.players[4].mark.dreamKillWolf || 0).toBe(0)
+  })
+
+  it("白天被猎人开枪可击杀，猎人不反噬", () => {
+    const killed = killPlayer(st, "P2", "shot", "猎人开枪")
+    expect(killed).toContain("P2")
+    expect(st.players[1].alive).toBe(false)
+    expect(st.players[1].deathReason).toBe("shot")
+    expect(st.players[1].mark.dreadKnightRevengeUsed).toBe(false)
   })
 
   it("白狼王自爆带走恶灵骑士 → 正常出局（不被拦截）", () => {
