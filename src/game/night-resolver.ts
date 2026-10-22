@@ -1,6 +1,6 @@
 import type { GameState } from "./logic"
 import type { DieReason, Effect } from "./roles/types"
-import { killPlayer, pushNightLog, pushGlobalLog, pushFlow, isWolfPackRole, isEffectiveWolf, hiddenWolfCanKnife } from "./logic"
+import { killPlayer, pushNightLog, pushGlobalLog, pushFlow, isWolfPackRole, isEffectiveWolf, isEffectiveWolfPack, hiddenWolfCanKnife } from "./logic"
 import { getRoleInstance } from "./roles/builtin"
 
 /**
@@ -12,7 +12,7 @@ export function resolveNightEffects(state: GameState): string | null {
 
   // 检查狼人步骤是否完成（狼群或隐狼带刀时需要刀人步骤；被恐空刀也需确认空刀；石像鬼走自身步骤）
   const aliveWolfExists =
-    state.players.some((p) => p.alive && isWolfPackRole(p.role)) || hiddenWolfCanKnife(state)
+    state.players.some((p) => p.alive && isEffectiveWolfPack(p)) || hiddenWolfCanKnife(state)
   if (aliveWolfExists && !state.nightSteps.wolf) {
     return "狼人刀人步骤未完成，请先确认狼人刀人"
   }
@@ -26,6 +26,12 @@ export function resolveNightEffects(state: GameState): string | null {
       const roleEffects = role.onNightResolve(state)
       effects.push(...roleEffects)
     }
+  }
+
+  // 统一狼刀：只要还有存活的有效狼群成员（含黑化野孩子），就提交狼刀击杀。
+  // 避免“噩梦/血月/恶灵骑士为唯一带刀狼”时只有刀口、没有击杀效果。
+  if (state.nightWolfKill && state.players.some((p) => p.alive && isEffectiveWolfPack(p))) {
+    effects.push({ type: "kill", target: state.nightWolfKill, source: "狼人刀人" })
   }
 
   // 按优先级排序：save > block > kill
@@ -122,8 +128,13 @@ export function resolveNightEffects(state: GameState): string | null {
   }
 
   // 执行死亡（猎人/狼王开枪判定由各自的 onAfterDeath 钩子在 killPlayer 内触发）
+  // 按夜间行动顺序结算：狼刀 → 女巫毒 → 恶灵骑士反伤；先达成条件者锁定胜局
+  const sourcePriority: Record<string, number> = { 狼人刀人: 0, 女巫毒药: 1, 恶灵骑士反伤: 2 }
   const deathList: string[] = []
-  for (const [name, { reason, source }] of killed) {
+  const orderedDeaths = [...killed.entries()].sort(
+    (a, b) => (sourcePriority[a[1].source] ?? 9) - (sourcePriority[b[1].source] ?? 9),
+  )
+  for (const [name, { reason, source }] of orderedDeaths) {
     const p = state.players.find((x) => x.name === name)
     if (p && p.alive) {
       deathList.push(...killPlayer(state, name, reason, source))
@@ -134,26 +145,36 @@ export function resolveNightEffects(state: GameState): string | null {
   if (state.nightHuntTarget) {
     const hunter = state.players.find((p) => getRoleInstance(p.role)?.def.id === "猎魔人")
     const target = state.players.find((x) => x.name === state.nightHuntTarget)
-    if (hunter && target && target.alive && target.mark.dreamShield) {
-      // 梦游者被梦境环绕：狩猎落空，不结算反噬
-      pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被梦境化解：${target.name}是梦游者，毫发无伤`)
-      pushFlow(state, "猎魔人结算", target.name, "梦境化解")
-    } else if (hunter && target && target.alive && getRoleInstance(target.role)?.def.id === "恶灵骑士") {
-      // 恶灵骑士免疫夜间所有伤害：狩猎无法击杀（仍是狼，不反噬）
-      pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
-      pushFlow(state, "猎魔人结算", target.name, "护体挡下")
-    } else if (hunter && target && target.alive) {
-      if (isEffectiveWolf(target)) {
-        hunter.mark.huntWolfCount = (hunter.mark.huntWolfCount || 0) + 1
-        deathList.push(...killPlayer(state, target.name, "other", "猎魔人狩猎"))
-        pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎命中：${target.name}是狼，出局`)
-        pushFlow(state, "猎魔人结算", target.name, "戳中狼")
+    if (hunter && target && target.alive) {
+      const targetDreamImmune = !!target.mark.dreamShield
+      const hunterDreamImmune = !!hunter.mark.dreamShield
+      if (getRoleInstance(target.role)?.def.id === "恶灵骑士") {
+        // 恶灵骑士免疫夜间所有伤害：狩猎无法击杀（仍是狼，不反噬）
+        pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
+        pushFlow(state, "猎魔人结算", target.name, "护体挡下")
+      } else if (isEffectiveWolf(target)) {
+        if (targetDreamImmune) {
+          // 目标的梦免只挡击杀，不牵涉反噬（狼目标本来就没有反噬）
+          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎命中${target.name}是狼，但击杀被梦境免疫`)
+          pushFlow(state, "猎魔人结算", target.name, "梦免击杀")
+        } else {
+          hunter.mark.huntWolfCount = (hunter.mark.huntWolfCount || 0) + 1
+          deathList.push(...killPlayer(state, target.name, "other", "猎魔人狩猎"))
+          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎命中：${target.name}是狼，出局`)
+          pushFlow(state, "猎魔人结算", target.name, "戳中狼")
+        }
       } else {
+        // 好人目标：猎魔人反噬（目标的梦免只挡击杀，不挡反噬）
         hunter.mark.huntGoodCount = (hunter.mark.huntGoodCount || 0) + 1
         if (hunter.alive) {
-          deathList.push(...killPlayer(state, hunter.name, "other", "猎魔人反噬"))
-          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}，反噬出局`)
-          pushFlow(state, "猎魔人结算", hunter.name, "戳错反噬")
+          if (hunterDreamImmune) {
+            pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}，反噬被梦境免疫`)
+            pushFlow(state, "猎魔人结算", hunter.name, "反噬梦免")
+          } else {
+            deathList.push(...killPlayer(state, hunter.name, "other", "猎魔人反噬"))
+            pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}${targetDreamImmune ? "（目标被梦境免疫）" : ""}，反噬出局`)
+            pushFlow(state, "猎魔人结算", hunter.name, "戳错反噬")
+          }
         }
       }
     }

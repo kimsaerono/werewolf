@@ -566,6 +566,9 @@ describe("E2E 完整游戏流程", () => {
     game.actions.dawnSettle()
 
     expect(g(game, "P6").alive).toBe(false)
+    // 猎人死亡触发枪：先处理（放弃开枪），再继续白天放逐
+    expect(game.state.hunterShotPending).toBe(true)
+    game.actions.hunterGiveUp()
 
     // 第三天：放逐狼人P3
     game.actions.finishVote("P3", false)
@@ -801,5 +804,24 @@ describe("E2E 完整游戏流程", () => {
     game.actions.dawnSettle()
 
     expect(g(game, "P6").alive).toBe(true) // 守中
+  })
+})
+describe("诸神之战模式", () => {
+  let game: ReturnType<typeof useGame>
+
+  beforeEach(() => {
+    game = useGame()
+    game.actions.clearAllData()
+  })
+
+  it("默认屠城且不可切换；切回普通恢复可切换", () => {
+    game.actions.setSimVariant("gods")
+    expect(game.state.winMode).toBe("city")
+    game.actions.setWinMode("edge")
+    expect(game.state.winMode).toBe("city") // 诸神之战锁死屠城
+
+    game.actions.setSimVariant("normal")
+    game.actions.setWinMode("edge")
+    expect(game.state.winMode).toBe("edge")
   })
 })

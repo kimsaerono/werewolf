@@ -269,13 +269,17 @@ function onPoolPointerEnd(e: PointerEvent) {
     <a-card :bordered="false">
       <div class="setup-section">
 
-        <div class="section-divider">⚔️ 胜负模式</div>
+        <div class="section-divider">⚔️ 胜负模式<template v-if="state.simVariant === 'gods'">（诸神之战）</template></div>
+        <p v-if="state.simVariant === 'gods'" class="small" style="margin: -2px 0 6px; color: #8f9ab5">
+          诸神之战固定屠城（第三方也须清零），角色可自定义；不可切换到屠边。
+        </p>
         <div class="win-mode-tabs">
           <button
             v-for="m in winModeOptions"
             :key="m.value"
             class="win-mode-tab"
-            :class="{ active: state.winMode === m.value }"
+            :class="{ active: state.winMode === m.value, disabled: state.simVariant === 'gods' && m.value === 'edge' }"
+            :disabled="state.simVariant === 'gods' && m.value === 'edge'"
             @click="actions.setWinMode(m.value)"
           >
             <span class="win-mode-icon">{{ m.icon }}</span>

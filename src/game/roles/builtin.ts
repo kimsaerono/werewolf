@@ -101,7 +101,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
     nightStep: { order: 70, key: "knight", label: "骑士睁眼", emoji: "⚔️", enabled: (c) => c.round <= 1 && c.boardRoles.includes("骑士") },
   },
   {
-    id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", countsAsGod: false, intentKeys: [],
+    id: "白痴", camp: "god", unique: true, emoji: "🙊", short: "痴", intentKeys: [],
     nightStep: { order: 60, key: "idiotOpen", label: "白痴睁眼", emoji: "🙊", enabled: (c) => c.round <= 1 && c.boardRoles.includes("白痴") },
   },
   {
@@ -116,7 +116,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
     },
   },
   { id: "平民", camp: "villager", unique: false, emoji: "👤", short: "民", intentKeys: [] },
-  // 野孩子：首夜选榜样，榜样死后黑化为狼
+  // 野孩子：首夜选榜样；榜样死后黑化为狼，下一夜起入狼群/共享狼刀
   {
     id: "野孩子", camp: "villager", unique: true, emoji: "🌱", short: "野孩", intentKeys: [],
     nightStep: {
@@ -125,7 +125,7 @@ export const BUILTIN_ROLES: RoleDef[] = [
       enabled: (c) => c.round <= 1 && c.boardRoles.includes("野孩子") && !c.nightSteps.wildChild,
     },
   },
-  // 炸弹人：被放逐时引爆炸弹，全票放逐独赢
+  // 炸弹人：被放逐时引爆炸弹；全票放逐/只剩自己独赢
   {
     id: "炸弹人", camp: "third", unique: true, emoji: "💣", short: "炸弹", intentKeys: [],
     nightStep: {

@@ -4,7 +4,9 @@ import type { RoleDef, ScoreEntry } from "./types"
 
 /**
  * 炸弹人（第三方独赢）：白天被投票放逐时引爆炸弹，炸死所有投他的玩家（不开枪）。
- * 若场上除他外全部存活玩家都投了他（全票放逐）→ 达成独赢，游戏立即结束判第三方胜。
+ * - 全票放逐（除自己外所有存活玩家都投他）→ 第三方胜；
+ * - 最后只剩自己存活 → 第三方胜；
+ * - 两种胜利都拿最终胜利分 +4，炸狼/炸好人技能分照常。
  * 未被放逐/被狼刀不触发；首夜只需认人（无夜间技能）。
  */
 export class BombermanRole extends BaseRole {
@@ -24,8 +26,8 @@ export class BombermanRole extends BaseRole {
     const gd = Number(m.bombGoodCount || 0)
     if (wk > 0) entries.push({ reason: "炸弹炸狼", delta: 1 * wk })
     if (gd > 0) entries.push({ reason: "炸弹炸好人", delta: -1 * gd })
-    if (state.winCamp === "third" && state.bombVictory) {
-      entries.push({ reason: "全票放逐独赢", delta: 4 })
+    if (state.winCamp === "third" && (state.winningThird === "bomber" || state.bombVictory)) {
+      entries.push({ reason: state.bombVictory ? "全票放逐独赢" : "存活到最后独赢", delta: 4 })
     }
     return entries
   }

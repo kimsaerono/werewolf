@@ -446,11 +446,53 @@ describe("狼王枪计分（神牌+0.5 / 狼-1 / 其余不加分）", () => {
     expect(wk.scoreRound).toBe(0)
   })
 
-  it("枪带白痴（名义神职但不计神牌）不加分", () => {
+  it("枪带白痴（始终神职）算神牌 +0.5", () => {
     const { st, wk } = withWolfKing()
     expect(wolfKingShootConfirm(st, byRole(st, "白痴")!.name)).toBeNull()
     recalcScore(st)
-    expect(wk.scoreRound).toBe(0)
+    expect(wk.scoreRound).toBe(0.5)
+  })
+
+  it("人狼恋狼恋人仍是狼：女巫毒/猎人带/炸弹炸按狼 +1", () => {
+    const st = setup(["炸弹人", "狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
+    started(st)
+    cupidConnect(st, ["P2", "P8"]) // P2 狼恋人 + P8 好人恋人，P7 丘比特
+    byRole(st, "女巫")!.mark.witchPoWolf = true
+    byRole(st, "猎人")!.mark.hunterKillWolf = true
+    byRole(st, "炸弹人")!.mark.bombWolfCount = 1
+    recalcScore(st)
+    expect(byRole(st, "女巫")!.scoreRound).toBe(1)
+    expect(byRole(st, "猎人")!.scoreRound).toBe(1)
+    expect(byRole(st, "炸弹人")!.scoreRound).toBe(1)
+  })
+
+  it("人狼恋好人恋人/丘比特：女巫毒/猎人带/炸弹炸按好人 -1", () => {
+    // 非狼阵营的第三方成员（好人恋人、丘比特）在技能计分上按好人处理
+    const st = setup(["炸弹人", "狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
+    started(st)
+    cupidConnect(st, ["P2", "P8"]) // P2 狼恋人 + P8 好人恋人，P7 丘比特
+    byRole(st, "女巫")!.mark.witchPoGood = true
+    byRole(st, "猎人")!.mark.hunterKillGood = true
+    byRole(st, "炸弹人")!.mark.bombGoodCount = 1
+    recalcScore(st)
+    expect(byRole(st, "女巫")!.scoreRound).toBe(-1)
+    expect(byRole(st, "猎人")!.scoreRound).toBe(-1)
+    expect(byRole(st, "炸弹人")!.scoreRound).toBe(-1)
+  })
+
+  it("枪带人狼恋第三方（狼恋人/好人恋人/丘比特）不加分", () => {
+    for (const target of ["狼人", "平民", "丘比特"]) {
+      const st = setup(["狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
+      started(st)
+      const wk = byRole(st, "狼王")!
+      wk.alive = false
+      st.wolfKingShotPending = true
+      cupidConnect(st, ["P1", "P7"]) // P1 狼恋人，P7 好人恋人，P6 丘比特
+      const tar = target === "狼人" ? byRole(st, "狼人")! : target === "平民" ? byRole(st, "平民")! : byRole(st, "丘比特")!
+      expect(wolfKingShootConfirm(st, tar.name)).toBeNull()
+      recalcScore(st)
+      expect(wk.scoreRound).toBe(0)
+    }
   })
 
   it("枪带第三方（丘比特）不加分", () => {
@@ -568,13 +610,17 @@ describe("胜负判定", () => {
     expect(st.winCamp).toBe("wolf")
   })
 
-  it("白痴翻牌后不计神职存活 → 屠神判狼胜", () => {
+  it("白痴翻牌后仍算神职 → 屠神未成立", () => {
     const st = started(setup())
     ;["预言家", "女巫", "猎人", "守卫"].forEach((r) => {
       st.players.find((p) => p.role === r)!.alive = false
     })
     const idiot = byRole(st, "白痴")!
     idiot.mark.idiotFlipped = true
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+    // 白痴真正出局后才屠神成功
+    killPlayer(st, idiot.name, "wolfKill")
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
   })
@@ -971,13 +1017,23 @@ describe("丘比特 / 情侣", () => {
     expect(g(st2, "P10").alive).toBe(false)
   })
 
-  it("互刀限制：狼恋人不能作为刀人目标", () => {
+  it("刀口限制：人狼恋（WG）狼恋人可被刀且不算自刀；好人恋人也可被刀", () => {
     const st = setupQ()
-    cupidConnect(st, ["P0", "P8"]) // P0 狼恋人
+    cupidConnect(st, ["P0", "P8"]) // P0 狼恋人 + P8 好人恋人
     nextNight(st)
-    const err = wolfKill(st, "P0")
-    expect(err).toContain("互刀")
-    expect(wolfKill(st, "P8")).toBeNull() // 好人恋人可以被刀
+    // WG 狼恋人属第三方，按口径可被狼队刀，且不算「自刀骗解药」
+    expect(wolfKill(st, "P0")).toBeNull()
+    expect(st.nightWolfKill).toBe("P0")
+    expect(st.wolfSelfKill).toBe(false)
+    expect(wolfKill(st, "P8")).toBeNull() // 好人恋人可被刀
+  })
+
+  it("互刀限制：狼狼恋（WW）双狼情侣不可互刀", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P1"]) // 双狼情侣
+    nextNight(st)
+    expect(wolfKill(st, "P0")).toContain("互刀")
+    expect(wolfKill(st, "P1")).toContain("互刀")
   })
 
   it("第三方胜：只剩丘比特+情侣时直接获胜", () => {
@@ -1056,21 +1112,25 @@ describe("丘比特 / 情侣", () => {
     expect(st.winCamp).toBe("wolf")
   })
 
-  it("屠边不含丘比特：丘比特活着也算屠神成功", () => {
+  it("丘比特在人人恋是神：屠边需连丘比特一起死", () => {
     const st = setupQ()
-    cupidConnect(st, ["P8", "P9"]) // 人人恋，丘比特属好人但不计神
+    cupidConnect(st, ["P8", "P9"]) // 人人恋，丘比特是神
     st.round = 2
     st.phase = "day"
     ;["P4", "P5", "P6"].forEach((n) => (g(st, n).alive = false)) // 预女猎死光
     ;["P8", "P9"].forEach((n) => (g(st, n).alive = false)) // 情侣已死（无第三方影响）
     checkWin(st)
-    expect(st.winCamp).toBe("wolf") // 屠神成功（丘比特活着也不算神）
+    expect(st.winCamp).toBeNull() // 丘比特是神，仍活着
+    g(st, "P7").alive = false // 丘比特也出局 → 神全灭
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
   })
 
   it("第三方算分：丘比特+情侣各+3", () => {
     const st = setupQ()
     cupidConnect(st, ["P0", "P8"])
     st.winCamp = "third"
+    st.winningThird = "WG"
     recalcScore(st)
     expect(g(st, "P7").scoreRound).toBe(3)
     expect(g(st, "P0").scoreRound).toBe(3)
@@ -1118,6 +1178,39 @@ describe("丘比特 / 情侣", () => {
     // 存活：P7 丘比特 + P11 一个平民
     checkWin(st)
     expect(st.winCamp).toBe("draw")
+  })
+
+  it("人狼恋：第三方票数多于平民 → 不判平局（第三方可逐日投出平民）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"]) // P0 狼恋人 + P8 好人恋人，P7 丘比特
+    st.round = 3
+    st.phase = "day"
+    ;["P1", "P2", "P3", "P4", "P5", "P6", "P9", "P10"].forEach((n) => (g(st, n).alive = false))
+    // 存活：P0/P7/P8 第三方 3 票 vs P11 平民 1 票
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：平票但平民是警长 → 不判平局（警长 1.5 票可投出第三方）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9", "P10"].forEach((n) => (g(st, n).alive = false))
+    st.jingHui = "P11" // 唯一平民是警长
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+  })
+
+  it("人狼恋：平票但第三方是警长 → 不判平局（第三方 1.5 票可投出平民）", () => {
+    const st = setupQ()
+    cupidConnect(st, ["P0", "P8"])
+    st.round = 3
+    st.phase = "day"
+    ;["P0", "P8", "P1", "P2", "P3", "P4", "P5", "P6", "P9", "P10"].forEach((n) => (g(st, n).alive = false))
+    st.jingHui = "P7" // 丘比特是警长
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
   })
 
   it("人狼恋常驻：丘比特死但好人恋人活+狼全灭 → 不判好人胜", () => {
@@ -1762,13 +1855,13 @@ describe("结算阵营统计 campPlayerCounts", () => {
     expect(c.villager).toBe(2)
   })
 
-  it("白狼王/狼王计入狼人阵营，丘比特单列第三方", () => {
+  it("白狼王/狼王计入狼人阵营，未连人的丘比特按神计（非第三方）", () => {
     const st = setup(["白狼王", "狼人", "狼王", "预言家", "女巫", "平民", "平民", "丘比特"])
     const c = campPlayerCounts(st)
     expect(c.wolf).toBe(3)
-    expect(c.god).toBe(2)
+    expect(c.god).toBe(3) // 预言家/女巫/丘比特
     expect(c.villager).toBe(2)
-    expect(c.third).toBe(1)
+    expect(c.third).toBe(0)
   })
 
   it("未分配身份的玩家不计入任何阵营", () => {
@@ -1776,6 +1869,32 @@ describe("结算阵营统计 campPlayerCounts", () => {
     st.players = makePlayers(["狼人", "", "", "平民"])
     const c = campPlayerCounts(st)
     expect(c).toEqual({ wolf: 1, god: 0, villager: 1, third: 0 })
+  })
+
+  it("生效阵营：黑化野孩子计狼、不再计平民", () => {
+    const st = setup(["野孩子", "狼人", "预言家", "平民", "平民"])
+    g(st, "P0").mark.isTransform = true
+    const c = campPlayerCounts(st)
+    expect(c.wolf).toBe(2)
+    expect(c.villager).toBe(2)
+  })
+
+  it("生效阵营：人狼恋三人计第三方，不重复计狼/神/民", () => {
+    const st = setup(["狼人", "狼人", "预言家", "女巫", "平民", "平民", "丘比特"])
+    cupidConnect(st, ["P1", "P5"]) // 狼恋人 P1 + 平民恋人 P5，丘比特 P6
+    const c = campPlayerCounts(st)
+    expect(c.third).toBe(3)
+    expect(c.wolf).toBe(1) // P0 单身狼
+    expect(c.villager).toBe(1) // P4 平民
+    expect(c.god).toBe(2) // 预言家/女巫
+  })
+
+  it("生效阵营：GG 的丘比特仍计神，炸弹人计第三方", () => {
+    const st = setup(["狼人", "平民", "平民", "丘比特", "炸弹人"])
+    cupidConnect(st, ["P1", "P2"]) // GG
+    const c = campPlayerCounts(st)
+    expect(c.god).toBe(1) // 丘比特
+    expect(c.third).toBe(1) // 炸弹人
   })
 })
 

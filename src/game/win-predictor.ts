@@ -108,12 +108,17 @@ export function predictWinRate(state: GameState): WinPrediction {
     }
   }
 
-  const aliveWolfCount = state.players.filter(p => p.alive && isEffectiveWolf(p)).length
-  const aliveGoodCount = state.players.filter(p => p.alive && !isEffectiveWolf(p)).length
   const isThird = (p: { name: string; role: string }) => isThirdMember(state, p)
   const chain = getChainType(state)
-  const thirdAlive = alivePlayers.filter(p => isThird(p))
-  const hasThird = chain === "WG"
+  const bomberAlive = alivePlayers.some((p) => getRoleInstance(p.role)?.def.id === "炸弹人")
+  // 人狼恋第三方不算狼队/好人队人数；狼恋人虽参与狼刀，但胜利与人数归第三方
+  const aliveWolfCount = state.players.filter(p => p.alive && isEffectiveWolf(p) && !isThird(p)).length
+  const aliveGoodCount = state.players.filter(p => p.alive && !isEffectiveWolf(p) && !isThird(p)).length
+  // 第三方存活单位：人狼恋成员 + 炸弹人（炸弹人是独立第三方）
+  const thirdAlive = alivePlayers.filter(
+    (p) => isThird(p) || getRoleInstance(p.role)?.def.id === "炸弹人",
+  )
+  const hasThird = (chain === "WG" && thirdAlive.length > 0) || bomberAlive
   const boardRoles = getBoardRoles(state) ?? []
 
   const factors: string[] = []
@@ -140,11 +145,19 @@ export function predictWinRate(state: GameState): WinPrediction {
     if (BASE.wolfSkill[role]) wolf += BASE.wolfSkill[role]
   }
 
-  // ② 狼人出局增减
+  // ② 狼人出局增减：板子狼数 - 存活狼队人数。
+  //    黑化野孩子会让「实际狼数」比板子多 1，先把它补进起始狼数，避免差值变负；
+  //    人狼恋狼恋人归第三方（不在 aliveWolfCount 里），从起始狼数里扣掉，避免误算成「已倒」。
   const boardWolfCount = boardRoles.filter(r => isWolfRole(r)).length
-  const deadWolfCount = boardWolfCount - aliveWolfCount
+  const transformedWild = state.players.filter(
+    (p) => p.role === "野孩子" && !!p.mark?.isTransform,
+  ).length
+  const startedWolfCount = boardWolfCount + transformedWild
+  const deadWolfCount = Math.max(0, startedWolfCount - aliveWolfCount - (chain === "WG" ? 1 : 0))
   wolf -= deadWolfCount * BASE.delta.wolfDie
   if (deadWolfCount > 0) factors.push(`🐺 已倒 ${deadWolfCount} 狼`)
+  if (chain === "WG") factors.push("💘 人狼恋·狼队少 1 人")
+  if (bomberAlive) factors.push("💣 炸弹人存活·独立第三方")
 
   // ③ 神职/技能消耗增减
   const aliveRole = (r: string) => alivePlayers.find(p => p.role === r)
@@ -255,12 +268,18 @@ export function predictWinRate(state: GameState): WinPrediction {
 
   // ⑤ 涂边临近提示
   const aliveGods = alivePlayers.filter(p => {
+    if (isThird(p)) return false
     const role = getRoleInstance(p.role)
-    return role && role.def.camp === "god"
+    // 非人狼恋的丘比特（GG/WW/未连）按神职计
+    if (role?.def.id === "丘比特") return chain !== "WG"
+    return role?.def.camp === "god"
   }).length
   const aliveCivils = alivePlayers.filter(p => {
+    if (isThird(p)) return false
+    // 黑化野孩子按狼计，不再算平民（否则屠民提示会多算一个人）
+    if (isEffectiveWolf(p)) return false
     const role = getRoleInstance(p.role)
-    return role && role.def.camp === "villager"
+    return role?.def.camp === "villager"
   }).length
   if (aliveWolfCount > 0 && aliveGods === 1) {
     wolf += BASE.delta.edgeGodOneLeft

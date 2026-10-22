@@ -2,7 +2,7 @@
 import { computed, h, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
-import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult } from "@/game/logic"
+import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult, isEffectiveWolf } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
 import { computeStepKeys } from "@/game/step-flow"
 import { playSfx, type SfxName } from "@/utils/sfx"
@@ -306,7 +306,13 @@ const wildChildPicker = computed(() =>
 )
 /** 猎魔人狩猎 / 摄梦人入梦：全员显示，已出局禁选 */
 const hunterWolfPicker = computed(() => buildPickerOptions((p) => (!p.alive ? "已出局" : null)))
-const dreamerPicker = computed(() => buildPickerOptions((p) => (!p.alive ? "已出局" : null)))
+const dreamerPicker = computed(() =>
+  buildPickerOptions((p) => {
+    if (!p.alive) return "已出局"
+    if (p.name === dreamerObj.value?.name) return "不能梦自己"
+    return null
+  }),
+)
 /** 炸弹人票选名单：被投票者多选（可多选，除炸弹人自己外存活玩家） */
 const bombVoterPicker = computed(() =>
   buildPickerOptions((p) => {
@@ -494,7 +500,7 @@ const wolfAliveOptions = computed(() =>
 const wolfPlainPicker = computed(() =>
   buildPickerOptions((p) => {
     if (!p.alive) return "已出局"
-    if (!refs.isWolfRole(p.role)) return "非狼阵营"
+    if (!isEffectiveWolf(p)) return "非狼阵营"
     if (getRoleInstance(p.role)?.def.id === "狼美人") return "不能自爆"
     if (getRoleInstance(p.role)?.def.id === "石像鬼") return "不能自爆"
     if (getRoleInstance(p.role)?.def.id === "恶灵骑士") return "不能自爆"
@@ -547,7 +553,9 @@ const wolfNeed = computed(() => wolfCampStatus.value["狼人"]?.need || 0)
 const wolfCount = computed(() => wolfCampStatus.value["狼人"]?.have || 0)
 /** 普通狼（狼群成员）配额与存活：用于判断本夜狼人环节是否有人睁眼 */
 const packWolfQuota = computed(() => boardRolesArr.value.filter((r) => refs.isWolfPackRole(r)).length)
-const packWolfAlive = computed(() => state.players.some((p) => p.alive && refs.isWolfPackRole(p.role)))
+const packWolfAlive = computed(() =>
+  state.players.some((p) => p.alive && (refs.isWolfPackRole(p.role) || (p.role === "野孩子" && p.mark.isTransform))),
+)
 /** 本夜狼人环节无人睁眼：板子无普通狼，或普通狼全部出局且隐狼无刀（仍照常念台词，杜绝语音暗示） */
 const wolfNoOne = computed(
   () => packWolfQuota.value === 0
@@ -1642,6 +1650,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
             <p class="small" style="text-align: center">
               狼人阵营已确认，请开始商量刀人（选中即自动标记自刀）
               <template v-if="hiddenWolfObj?.alive && hiddenWolfObj?.mark.hasKnife"><br /><b style="color:#ff7875">🐺 隐狼已获得刀人能力（其余狼出局）</b></template>
+              <template v-if="state.players.some((p) => p.alive && p.role === '野孩子' && p.mark.isTransform)"><br /><b style="color:#ff7875">🐺 黑化野孩子已加入狼队，参与狼刀</b></template>
             </p>
             <a-button v-if="!state.nightWolfKill" danger size="large" @click="openPicker('选择被刀对象', wolfKillPicker.options, (v) => doWolfKill(v), wolfKillPicker)">🌑 确认刀人</a-button>
             <a-button v-if="!state.nightWolfKill" size="large" @click="doWolfEmptyKill">🈳 空刀（不刀人）</a-button>

@@ -154,18 +154,26 @@ describe("checkWin 与求解器口径一致", () => {
     expect(s.winCamp).toBe("wolf")
   })
 
-  it("翻牌白痴计入平民桶：他活着时屠城不判狼胜，出局后才判", () => {
-    // 翻牌只是免去神职身份与投票权，人还是活的好人 → 屠城没打完
+  it("翻牌白痴仍计入神职：他活着时屠城不判狼胜，出局后才判", () => {
+    // 翻牌只失去投票权，人还是神职 → 屠城没打完
     const s = build(["狼人", "白痴", "平民"], [true, true, false], "city")
     s.players[1].mark.idiotFlipped = true
     let r = checkWin(s)
     expect(r.ended).toBe(false)
     expect(s.winCamp).toBeNull()
-    // 翻牌白痴出局（毒药无视翻牌）→ 好人清零，狼胜成立
+    // 翻牌白痴出局（毒药无视翻牌）→ 神/民清零，狼胜成立
     s.players[1].alive = false
     r = checkWin(s)
     expect(r.ended).toBe(true)
     expect(s.winCamp).toBe("wolf")
+  })
+
+  it("翻牌白痴在求解器中仍算神：狼需先刀掉他才能屠城", () => {
+    const s = build(["狼人", "白痴"], [], "city")
+    s.players[1].mark.idiotFlipped = true
+    const r = certainty(s)
+    expect(r.winner).toBe("wolf")
+    expect(r.minNights).toBe(1)
   })
 
   it("未翻牌白痴仍算神职：屠边要等他出局", () => {
@@ -176,6 +184,14 @@ describe("checkWin 与求解器口径一致", () => {
     r = checkWin(s)
     expect(r.ended).toBe(true)
     expect(s.winCamp).toBe("wolf")
+  })
+
+  it("人狼恋第三方存活：狼队清空也不判好人胜（第三方必须先解决）", () => {
+    const s = build(["狼人", "预言家", "平民", "丘比特"], [false, true, true, true])
+    s.lovers = ["P1", "P3"] // P1 狼恋人已死，P3 好人恋人 + P4 丘比特仍在
+    expect(checkWin(s).ended).toBe(false)
+    expect(s.winCamp).toBeNull()
+    expect(certainty(s).winner).toBeNull()
   })
 
   it("屠城 + 丘比特存活：checkWin 不判胜，求解器也不报必胜（两边同口径）", () => {
@@ -380,5 +396,46 @@ describe("记忆化键编码", () => {
       true,
     )
     if (twoIdiots === oneIdiotPlusWitch) throw new Error("记忆化键撞键：2 个翻牌白痴 与 1 个翻牌白痴+女巫存活 同键")
+  })
+})
+
+describe("必然结束求解器 · 炸弹人第三方", () => {
+  it("狼全灭但炸弹人存活 → 不提前报好人必胜（保守均势）", () => {
+    const s = build(["炸弹人", "平民", "平民"])
+    const r = certainty(s)
+    expect(r.winner).toBeNull()
+    expect(r.tier).toBe("even")
+  })
+
+  it("狼人存活 + 炸弹人 → 不提前报狼人/好人必胜", () => {
+    const s = build(["狼人", "炸弹人", "平民"])
+    const r = certainty(s)
+    expect(r.winner).toBeNull()
+    expect(r.tier).toBe("even")
+  })
+
+  it("只剩炸弹人 → 第三方必胜", () => {
+    const s = build(["炸弹人", "平民"], [true, false])
+    const r = certainty(s)
+    expect(r.tier).toBe("forced")
+    expect(r.winner).toBe("third")
+    expect(r.minNights).toBe(0)
+  })
+})
+
+describe("必然结束求解器 · 第三方僵持票数", () => {
+  it("第三方票数多于平民 → 不报平局（保守均势）", () => {
+    const s = build(["丘比特", "狼人", "平民", "平民", "平民"])
+    s.lovers = ["P2", "P3"] // 丘比特 P1 + 狼恋人 P2 + 平民恋人 P3 = 第三方 3；P4/P5 平民 2
+    const r = certainty(s)
+    expect(r.winner).not.toBe("draw")
+    expect(r.tier).toBe("even")
+  })
+
+  it("第三方与平民票数持平 → 平局", () => {
+    const s = build(["狼人", "平民", "平民", "平民"])
+    s.lovers = ["P1", "P2"] // 第三方 2（狼恋人+平民恋人）vs P3/P4 平民 2
+    const r = certainty(s)
+    expect(r.winner).toBe("draw")
   })
 })

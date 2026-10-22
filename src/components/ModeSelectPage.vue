@@ -3,12 +3,34 @@ import { ref, onMounted, onBeforeUnmount, computed } from "vue"
 import type { Game } from "@/types"
 import VersionSwitcher from "@/components/VersionSwitcher.vue"
 import StaticVersionSelector from "@/components/StaticVersionSelector.vue"
+import { DEFAULT_BOARD } from "@/game/logic"
 
 const props = defineProps<{ game: Game }>()
 const { state, actions } = props.game
 
 const sel = ref<"real" | "sim">(state.simMode ? "sim" : "real")
 const entering = ref(false)
+const variant = ref<"normal" | "gods">(state.simVariant === "gods" ? "gods" : "normal")
+let variantStartX: number | null = null
+
+/** 左右滑动切换：右滑=普通，左滑=诸神之战 */
+function onVariantPointerDown(e: PointerEvent) {
+  variantStartX = e.clientX
+}
+function onVariantPointerMove(e: PointerEvent) {
+  if (variantStartX === null) return
+  const dx = e.clientX - variantStartX
+  if (dx > 36) {
+    variant.value = "normal"
+    variantStartX = null
+  } else if (dx < -36) {
+    variant.value = "gods"
+    variantStartX = null
+  }
+}
+function onVariantPointerUp() {
+  variantStartX = null
+}
 
 const isLocalHost = computed(() => {
   const hostname = window.location.hostname
@@ -51,7 +73,27 @@ let enterTimer: ReturnType<typeof setTimeout> | null = null
 function enter() {
   if (entering.value) return
   entering.value = true
-  actions.setSimMode(sel.value === "sim")
+  const isSim = sel.value === "sim"
+  const prevVariant = state.simVariant
+  actions.setSimMode(isSim)
+  if (!isSim) {
+    // 真实对局只走普通模式；从诸神之战切回时恢复默认板子/屠边
+    if (prevVariant === "gods") {
+      actions.setSimVariant("normal")
+      actions.setWinMode("edge")
+      actions.setBoard(DEFAULT_BOARD)
+    }
+  } else {
+    actions.setSimVariant(variant.value)
+    if (variant.value === "gods") {
+      // 诸神之战：默认屠城（仍允许在板子页手动切换）
+      actions.setWinMode("city")
+    } else if (prevVariant === "gods") {
+      // 切回普通模拟：恢复默认板子和屠边
+      actions.setWinMode("edge")
+      actions.setBoard(DEFAULT_BOARD)
+    }
+  }
   // 先播 800ms 的成功涟漪，再切到下一步；重复调用 setModeChosen 会让涟漪根本看不见
   enterTimer = setTimeout(() => {
     entering.value = false
@@ -185,6 +227,23 @@ interface Particle {
             <span class="detail-label">{{ d.label }}</span>
             <span class="detail-value">{{ d.value }}</span>
           </div>
+        </div>
+
+        <div
+          v-if="o.key === 'sim' && sel === 'sim'"
+          class="sim-variant"
+          @click.stop
+          @pointerdown.stop="onVariantPointerDown"
+          @pointermove.stop="onVariantPointerMove"
+          @pointerup.stop="onVariantPointerUp"
+          @pointercancel.stop="onVariantPointerUp"
+        >
+          <div class="sim-variant-track" :class="{ gods: variant === 'gods' }">
+            <span class="sim-variant-thumb"></span>
+            <button type="button" class="sim-variant-opt" :class="{ active: variant === 'normal' }" @click.stop="variant = 'normal'">普通模拟</button>
+            <button type="button" class="sim-variant-opt" :class="{ active: variant === 'gods' }" @click.stop="variant = 'gods'">诸神之战</button>
+          </div>
+          <div class="sim-variant-hint">{{ variant === "gods" ? "角色可自定义 · 固定屠城 · 第三方仍须清零" : "标准板子 · 默认屠边" }}</div>
         </div>
 
         <div class="mode-card-check">{{ sel === o.key ? "● 已选择" : "○ 点击选择" }}</div>
@@ -357,6 +416,59 @@ interface Particle {
 .detail-icon { font-size: 12px; flex-shrink: 0; width: 18px; text-align: center; }
 .detail-label { color: #888; font-size: 11px; flex-shrink: 0; width: 44px; }
 .detail-value { color: #ddd; font-size: 11px; font-weight: 500; flex: 1; text-align: right; }
+.sim-variant {
+  width: 100%;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  touch-action: none;
+}
+.sim-variant-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: 280px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sim-variant-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1668dc, #7a4dff);
+  box-shadow: 0 2px 10px rgba(60, 100, 255, 0.45);
+  transition: transform 0.22s ease;
+}
+.sim-variant-track.gods .sim-variant-thumb {
+  transform: translateX(100%);
+}
+.sim-variant-opt {
+  position: relative;
+  z-index: 1;
+  background: none;
+  border: 0;
+  color: #cbd3e7;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 4px;
+  cursor: pointer;
+}
+.sim-variant-opt.active {
+  color: #fff;
+}
+.sim-variant-hint {
+  font-size: 11px;
+  color: #8f9ab5;
+  line-height: 1.4;
+}
 .mode-card-check {
   font-size: 12px;
   color: #66bb6a;

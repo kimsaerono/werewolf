@@ -18,6 +18,7 @@ import {
   wildChildPick,
   checkWildChildTransform,
   hunterHunt,
+  cupidConnect,
   dreamDo,
   prophetCheck,
   prophetNoCheck,
@@ -41,6 +42,7 @@ import {
   nextNight,
   checkWin,
   recalcScore,
+  getChainType,
   GOD_LIST,
   DEFAULT_VOICES,
 } from "./logic"
@@ -134,12 +136,12 @@ describe("边界矩阵 · 全角色元数据", () => {
     expect(third.sort()).toEqual(["丘比特", "炸弹人"].sort())
   })
 
-  it("神职列表 = camp god，白痴名义神职但枪带不算神牌", () => {
+  it("神职列表 = camp god，白痴始终是神职（枪带算神牌）", () => {
     const gods = roleIds().filter((id) => getRole(id)!.camp === "god")
     expect(GOD_LIST.sort()).toEqual(gods.sort())
     expect(GOD_LIST).toContain("猎魔人")
     expect(GOD_LIST).toContain("摄梦人")
-    expect(getRoleInstance("白痴")!.countsAsGod()).toBe(false)
+    expect(getRoleInstance("白痴")!.countsAsGod()).toBe(true)
     expect(getRoleInstance("猎魔人")!.countsAsGod()).toBe(true)
   })
 
@@ -680,16 +682,43 @@ describe("边界矩阵 · 免疫与克制", () => {
     expect(b.witchSaveUsed).toBe(true)
   })
 
-  it("猎魔人狩猎梦游者：被梦境化解，不击杀也不反噬", () => {
+  it("猎魔人狩猎梦游者（好人）：目标击杀被梦免，但猎魔人反噬照常", () => {
     const st = makeState(["摄梦人", "猎魔人", "狼人", "平民", "平民"], { round: 2 })
     dreamDo(st, "P3")
     expect(hunterHunt(st, "P3")).toBeNull()
     wolfEmptyKill(st)
     resolveNightEffects(st)
+    // 目标的梦免只挡击杀；好人本来就不会被狩猎击杀
+    expect(g(st, "P3").alive).toBe(true)
+    // 猎魔人自己没有梦免 → 反噬死亡
+    expect(g(st, "P1").alive).toBe(false)
+    expect(g(st, "P1").deathReason).toBe("other")
+    expect(g(st, "P1").mark.huntGoodCount).toBe(1)
+    expect(g(st, "P1").mark.huntWolfCount).toBe(0)
+  })
+
+  it("猎魔人自己是梦游者：狩猎好人的反噬被梦免", () => {
+    const st = makeState(["摄梦人", "猎魔人", "狼人", "平民", "平民"], { round: 2 })
+    dreamDo(st, "P1")
+    expect(hunterHunt(st, "P3")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    // 好人目标不被击杀；猎魔人自己的梦免挡下反噬 → 两人都活
     expect(g(st, "P3").alive).toBe(true)
     expect(g(st, "P1").alive).toBe(true)
-    expect(g(st, "P1").mark.huntGoodCount).toBe(0)
+    expect(g(st, "P1").mark.huntGoodCount).toBe(1)
+  })
+
+  it("猎魔人狩猎梦游者（狼）：狼的击杀被梦免，无反噬", () => {
+    const st = makeState(["摄梦人", "猎魔人", "狼人", "平民"], { round: 2 })
+    dreamDo(st, "P2")
+    expect(hunterHunt(st, "P2")).toBeNull()
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    expect(g(st, "P2").alive).toBe(true)
+    expect(g(st, "P1").alive).toBe(true)
     expect(g(st, "P1").mark.huntWolfCount).toBe(0)
+    expect(g(st, "P1").mark.huntGoodCount).toBe(0)
   })
 
   it("连梦梦杀无视解药（第二晚同梦直接致死且清空免疫）", () => {
@@ -992,9 +1021,12 @@ describe("边界矩阵 · 胜负", () => {
   it("隐狼按狼计：仅剩隐狼也构成狼阵营存活", () => {
     const st = makeState(["隐狼", "预言家"])
     checkWin(st)
-    expect(st.winCamp).toBe("wolf")
+    expect(st.winCamp).toBeNull() // 神还活着；板子无平民，不能靠“民=0”判狼胜
     const counts = aliveCampCounts(st)
     expect(counts.wolf).toBe(1)
+    killPlayer(st, "P1", "wolfKill")
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
   })
 
   it("黑化野孩子按狼计", () => {
@@ -1206,5 +1238,203 @@ describe("边界矩阵 · 全角色冒烟", () => {
       expect(typeof r, `${id} 验人失败`).toBe("object")
       expect((r as { role: string }).role, `${id} 验人结果`).toBe(id)
     }
+  })
+})
+
+
+// ===================== 11. 胜负时序 / 第三方 / 黑化野孩子 =====================
+
+describe("胜负时序 · 先达成者锁定", () => {
+  it("狼刀最后一神后，女巫毒杀狼仍判狼胜", () => {
+    const st = makeState(["狼人", "女巫"])
+    wolfKill(st, "P1")
+    expect(witchPoison(st, "P0")).toBeNull()
+    resolveNightEffects(st)
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+
+  it("狼刀最后一神后，猎魔人狩猎杀狼仍判狼胜", () => {
+    const st = makeState(["狼人", "猎魔人"], { round: 2 })
+    hunterHunt(st, "P0")
+    wolfKill(st, "P1")
+    resolveNightEffects(st)
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+
+  it("狼刀最后一神后，猎人开枪带走狼仍判狼胜", () => {
+    const st = makeState(["狼人", "猎人"])
+    wolfKill(st, "P1")
+    resolveNightEffects(st)
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+    expect(st.hunterShotPending).toBe(true)
+    expect(hunterShootConfirm(st, "P0")).toBeNull()
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+  })
+
+  it("好人先放逐最后狼王，随后狼王开枪带走最后好人仍判好人胜", () => {
+    const st = makeState(["狼王", "猎人"])
+    st.phase = "day"
+    finishVote(st, "P0", false)
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+    expect(st.wolfKingShotPending).toBe(true)
+    expect(wolfKingShootConfirm(st, "P1")).toBeNull()
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+  })
+})
+
+describe("炸弹人 · 独存/全票与第三方记分", () => {
+  it("只剩炸弹人 → 第三方胜，炸弹人拿最终胜利分 +4", () => {
+    const st = makeState(["炸弹人", "平民"])
+    killPlayer(st, "P1", "vote")
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("bomber")
+    recalcScore(st)
+    expect(g(st, "P0").scoreRound).toBe(4)
+  })
+
+  it("好人胜需要炸弹人出局：炸弹人活着时狼全灭不结束", () => {
+    const st = makeState(["狼人", "炸弹人", "平民"])
+    killPlayer(st, "P0", "vote")
+    checkWin(st)
+    expect(st.winCamp).toBeNull()
+    killPlayer(st, "P1", "vote")
+    checkWin(st)
+    expect(st.winCamp).toBe("civil") // 剩余好人只有平民
+  })
+})
+
+describe("丘比特 · WG第三方 / GG-WW神", () => {
+  it("人狼恋：死掉一名第三方成员，剩余第三方仍可获胜（死亡成员也+3）", () => {
+    const st = makeState(["狼人", "平民", "丘比特"])
+    cupidConnect(st, ["P0", "P1"]) // 三人第三方，无外人
+    killPlayer(st, "P1", "vote") // 好情侣死亡 → 狼情侣殉情，只剩丘比特
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("WG")
+    recalcScore(st)
+    expect(g(st, "P0").scoreRound).toBe(3)
+    expect(g(st, "P1").scoreRound).toBe(3)
+    expect(g(st, "P2").scoreRound).toBe(3)
+  })
+
+  it("丘比特连自己：两人也算第三方", () => {
+    const st = makeState(["狼人", "平民", "丘比特"])
+    cupidConnect(st, ["P0", "P2"]) // 丘比特 + 狼
+    killPlayer(st, "P1", "vote") // 清掉外人
+    expect(aliveCampCounts(st)).toEqual({ wolf: 0, god: 0, civil: 0, third: 2 })
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("WG")
+  })
+
+  it("人狼恋第三方计数：丘比特+好人恋人+狼恋人全算第三方", () => {
+    const st = makeState(["狼人", "狼人", "预言家", "平民", "丘比特"])
+    cupidConnect(st, ["P0", "P3"]) // 狼恋人 P0 + 好人恋人 P3，丘比特 P4
+    expect(aliveCampCounts(st)).toEqual({ wolf: 1, god: 1, civil: 0, third: 3 })
+  })
+
+  it("GG/WW 的丘比特是神：神职计数 +1，第三方为 0", () => {
+    const gg = makeState(["狼人", "平民", "平民", "丘比特"])
+    cupidConnect(gg, ["P1", "P2"])
+    const gc = aliveCampCounts(gg)
+    expect(gc.god).toBe(1)
+    expect(gc.third).toBe(0)
+
+    const ww = makeState(["狼人", "狼人", "平民", "丘比特"])
+    cupidConnect(ww, ["P0", "P1"])
+    const wc = aliveCampCounts(ww)
+    expect(wc.god).toBe(1)
+    expect(wc.third).toBe(0)
+  })
+
+  it("人狼恋第三方胜时，炸弹人赢不会给丘比特/情侣 +3", () => {
+    const st = makeState(["炸弹人", "狼人", "平民", "丘比特"])
+    cupidConnect(st, ["P1", "P2"]) // WG
+    st.winCamp = "third"
+    st.winningThird = "bomber"
+    recalcScore(st)
+    expect(g(st, "P0").scoreRound).toBe(4) // 炸弹人
+    expect(g(st, "P3").scoreRound).toBe(0) // 丘比特不蹭分
+  })
+})
+
+describe("黑化野孩子 · 入狼群与刀人", () => {
+  it("唯一带刀的噩梦之影也能正常狼刀（补齐狼刀效果缺口）", () => {
+    const st = makeState(["噩梦之影", "预言家", "平民"])
+    expect(wolfKill(st, "P1")).toBeNull()
+    resolveNightEffects(st)
+    expect(g(st, "P1").alive).toBe(false)
+  })
+
+  it("黑化野孩子成为最后一只狼后仍保留狼刀", () => {
+    const st = makeState(["野孩子", "狼人", "平民", "平民"])
+    st.players[0].mark.roleModel = "P2"
+    st.players[0].mark.isTransform = true
+    st.players[1].alive = false // 原狼死亡
+    expect(wolfKill(st, "P3")).toBeNull()
+    resolveNightEffects(st)
+    expect(g(st, "P3").alive).toBe(false)
+  })
+
+  it("摄梦人不能梦自己", () => {
+    const st = makeState(["摄梦人", "狼人", "平民"])
+    expect(dreamDo(st, "P0")).toContain("不能对自己")
+    expect(g(st, "P0").mark.dreamShield).toBe(false)
+  })
+
+  it("白痴(已翻牌)+炸弹人+一个民：狼刀完其他神 → 屠神未成立，游戏继续", () => {
+    const st = makeState(["狼人", "预言家", "女巫", "猎人", "白痴", "炸弹人", "平民"])
+    g(st, "P4").mark.idiotFlipped = true
+    killPlayer(st, "P1", "wolfKill")
+    killPlayer(st, "P2", "wolfKill")
+    killPlayer(st, "P3", "wolfKill")
+    checkWin(st)
+    expect(g(st, "P4").alive).toBe(true) // 翻牌白痴仍是神
+    expect(g(st, "P5").alive).toBe(true) // 炸弹人（第三方）
+    expect(g(st, "P6").alive).toBe(true) // 还有一个民
+    expect(st.winCamp).toBeNull() // 屠神未成立；民也还在
+  })
+
+  it("黑化野孩子可以自爆", () => {
+    const st = makeState(["野孩子", "平民", "预言家"])
+    st.players[0].mark.isTransform = true
+    st.phase = "day"
+    expect(wolfBaoZha(st, "P0")).toBeNull()
+    expect(g(st, "P0").alive).toBe(false)
+  })
+})
+
+describe("WG 丘比特 · 屠边阵营存在性", () => {
+  it("无神板子（唯一神位是 WG 丘比特）第三方被清后，狼人不能误判屠神", () => {
+    const st = makeState(["狼人", "狼人", "丘比特", "平民", "平民"])
+    cupidConnect(st, ["P2", "P0"]) // 丘比特 + 狼人 = WG；P1 是单身狼，P3/P4 平民
+    expect(getChainType(st)).toBe("WG")
+    st.phase = "day"
+    st.round = 2
+    killPlayer(st, "P0", "vote") // 狼恋人出局 → 丘比特殉情，第三方被清
+    expect(g(st, "P0").alive).toBe(false)
+    expect(g(st, "P2").alive).toBe(false)
+    checkWin(st)
+    // 场上还有 P1 狼 + P3/P4 平民；板子没有真神，狼应继续屠民，而不是屠神
+    expect(st.winCamp).toBeNull()
+  })
+})
+
+describe("退化板子 · 无神无民（仅狼 + WG 丘比特）", () => {
+  it("第三方被清后狼人按「非狼清零」获胜，不卡死", () => {
+    const st = makeState(["狼人", "狼人", "丘比特"])
+    cupidConnect(st, ["P2", "P0"]) // 丘比特 + 狼人 = WG；P1 是单身狼
+    st.phase = "day"
+    st.round = 2
+    killPlayer(st, "P0", "vote") // 狼恋人出局 → 丘比特殉情，第三方被清
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
   })
 })

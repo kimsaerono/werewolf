@@ -44,13 +44,19 @@ const rightPlayers = computed(() => props.players.slice(seatRows.value))
 
 const roleIdOf = (role?: string) => (role ? getRoleInstance(role)?.def.id : "")
 
-/** 摄梦人存活时才展示梦游者云雾 */
-const dreamerAlive = computed(() => props.players.some((p) => p.alive && roleIdOf(p.role) === "摄梦人"))
-/** 本夜梦游者（梦游免疫仅夜晚存在，天亮清除） */
-const dreamingNames = computed(
-  () => new Set(props.players.filter((p) => p.alive && p.mark?.dreamShield).map((p) => p.name)),
-)
-const showDreamFog = (p: Player) => dreamerAlive.value && dreamingNames.value.has(p.name)
+/**
+ * 当前最新被摄梦者：
+ * - 夜里优先当前梦免目标（dreamShield）
+ * - 白天/平时取 dreamer.mark.prevDreamTarget（上一夜目标）
+ * - 被恐惧/未行动时 prevDreamTarget 会被清空 → 标记消失（连梦中断）
+ */
+const dreamTargetName = computed(() => {
+  const shielded = props.players.find((p) => p.alive && p.mark?.dreamShield)
+  if (shielded) return shielded.name
+  const dreamer = props.players.find((p) => roleIdOf(p.role) === "摄梦人")
+  return dreamer?.mark?.prevDreamTarget || ""
+})
+const showDreamFog = (p: Player) => dreamTargetName.value === p.name
 
 /** 野孩子榜样：标记在榜样本人座位上，便于法官对照 */
 const modelNames = computed(
@@ -95,7 +101,15 @@ function seatClasses(p: Player) {
     "model-mark": modelNames.value.has(p.name),
     "wild-pending": wildPending.value.has(p.name),
     "wild-transformed": wildTransformed.value.has(p.name),
+    // 第三方阵营标识：人狼恋三成员 + 炸弹人（独立第三方）
+    "third-camp": isThirdCamp(p),
   }
+}
+
+/** 是否第三方阵营（丘比特/情侣由 GamePanel 传入，炸弹人按底牌判定） */
+function isThirdCamp(p: Player): boolean {
+  if (props.thirdMembers.includes(p.name)) return true
+  return getRoleInstance(p.role)?.def.id === "炸弹人"
 }
 
 // ===== 半遮面：整列默认收进一半贴屏边，点一下 / 触摸滑出完整，静止 1.5s 自动收回 =====
@@ -949,6 +963,11 @@ function cardBg(p: Player): Record<string, string> | undefined {
 }
 .seat-lover.third {
   background: #9a6fe8;
+}
+/* 第三方阵营：紫色描边（人狼恋三成员 + 炸弹人） */
+.seat-card.third-camp {
+  outline: 2px solid #9a6fe8;
+  outline-offset: -2px;
 }
 .seat-sheriff {
   position: absolute;

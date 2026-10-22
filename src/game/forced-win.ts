@@ -1,6 +1,6 @@
 import type { GameState } from "./logic"
 import { isEffectiveWolf } from "./logic"
-import { aliveCampCounts, getChainType, goodWinNow, isGameStarted, isThirdMember, wolfWinNow } from "./win-checker"
+import { aliveCampCounts, boardSidePresence, getChainType, goodWinNow, isGameStarted, isThirdMember, wolfWinNow } from "./win-checker"
 import type { CampCounts } from "./win-checker"
 import { getRoleInstance } from "./roles/builtin"
 
@@ -108,6 +108,8 @@ interface Ctx {
    */
   exists: boolean
   mode: WinMode
+  /** 板子里实际存在的阵营（屠边只统计存在的阵营） */
+  sides: { god: boolean; civil: boolean }
   /** 本次搜索的节点上限：可达性搜索分支更宽（双方失误都算路径），单独给更小的额度 */
   budgetLimit: number
 }
@@ -142,17 +144,18 @@ function isTargetCtrl(ctx: Ctx, ctrl: Controller): boolean {
 }
 
 function godsOf(s: GoodNode): number {
-  return s.g + (s.witch ? 1 : 0) + (s.guard ? 1 : 0) + (s.hunter ? 1 : 0) + (s.knight ? 1 : 0)
+  // 白痴翻牌后仍是神职（只是失去投票权），屠神必须杀掉
+  return s.g + s.flipped + (s.witch ? 1 : 0) + (s.guard ? 1 : 0) + (s.hunter ? 1 : 0) + (s.knight ? 1 : 0)
 }
 
-/** 平民桶：与 checkWin 口径一致，含已翻牌的白痴（翻牌只是失去神职与投票权，人还是活的好人） */
+/** 平民桶：与 checkWin 口径一致，翻牌白痴不转平民 */
 function civsOf(s: GoodNode): number {
-  return s.c + s.flipped
+  return s.c
 }
 
 /** 好人票数：翻牌白痴失去投票权 */
 function votesOf(s: GoodNode): number {
-  return godsOf(s) + s.c
+  return godsOf(s) - s.flipped + s.c
 }
 
 function countOf(s: GoodNode, k: Kind): number {
@@ -212,7 +215,7 @@ function campOf(s: GoodNode): CampCounts {
 /** 终局判定：true = 目标方已胜，false = 目标方已败，null = 未分胜负 */
 function terminal(s: GoodNode, ctx: Ctx): boolean | null {
   const c = campOf(s)
-  if (wolfWinNow(c, ctx.mode)) return ctx.target === "wolf"
+  if (wolfWinNow(c, ctx.mode, ctx.sides)) return ctx.target === "wolf"
   if (goodWinNow(c)) return ctx.target === "good"
   return null
 }
@@ -241,8 +244,12 @@ function maxEliminations(s: GoodNode, target: Camp, depth: number): number {
 function eliminationsNeeded(s: GoodNode, ctx: Ctx): number {
   if (ctx.target !== "wolf") return s.w
   const c = campOf(s)
-  // 屠边打空任意一侧即可，屠城要两侧都打光
-  return ctx.mode === "city" ? c.god + c.civil : Math.min(c.god, c.civil)
+  // 屠边打空存在的任意一侧即可，屠城要两侧都打光
+  if (ctx.mode === "city") return c.god + c.civil
+  if (ctx.sides.god && ctx.sides.civil) return Math.min(c.god, c.civil)
+  if (ctx.sides.god) return c.god
+  if (ctx.sides.civil) return c.civil
+  return 0
 }
 
 /** 数量上就已经够不到终局 → 无论怎么打都赢不了，直接判负 */
@@ -757,7 +764,7 @@ function packKey(ctx: Ctx, s: GoodNode, depth: number, atNight: boolean): number
 
 /** 仅供测试：验证记忆化键的字段编码不会互相撞键 */
 export function __packKeyForTest(node: GoodNode, depth: number, atNight: boolean, mode: WinMode = "edge"): number {
-  return packKey({ target: "wolf", reach: false, exists: false, mode, budgetLimit: 0 }, node, depth, atNight)
+  return packKey({ target: "wolf", reach: false, exists: false, mode, sides: { god: true, civil: true }, budgetLimit: 0 }, node, depth, atNight)
 }
 
 /** 剩余可访问节点数（每次顶层求解重置） */
@@ -818,7 +825,7 @@ function solveFrom(ctx: Ctx, node: GoodNode, startAt: "night" | "day"): Result {
 
 /** 目标方是否存在必胜策略（forced 模式：对手每个决策点都要输） */
 function hasForcedStrategy(state: GameState, node: GoodNode, target: Camp): Result | null {
-  const ctx: Ctx = { target, reach: false, exists: false, mode: state.winMode, budgetLimit: NODE_BUDGET }
+  const ctx: Ctx = { target, reach: false, exists: false, mode: state.winMode, sides: boardSidePresence(state), budgetLimit: NODE_BUDGET }
   const r = solveFrom(ctx, node, state.phase === "day" ? "day" : "night")
   return r.win ? r : null
 }
@@ -831,7 +838,7 @@ function hasForcedStrategy(state: GameState, node: GoodNode, target: Camp): Resu
  * - null  预算用尽、结论不可靠 → 保守按「可能还有路径」处理，绝不误报 A 档
  */
 function canReachWin(state: GameState, node: GoodNode, target: Camp): boolean | null {
-  const ctx: Ctx = { target, reach: true, exists: true, mode: state.winMode, budgetLimit: REACH_BUDGET }
+  const ctx: Ctx = { target, reach: true, exists: true, mode: state.winMode, sides: boardSidePresence(state), budgetLimit: REACH_BUDGET }
   const r = solveFrom(ctx, node, state.phase === "day" ? "day" : "night")
   // 预算用尽说明这棵树没被完整看过，「无路径」不可信 → 交给上层按 B 档处理，绝不误报 A 档
   //
@@ -913,32 +920,12 @@ function trivialCertainty(state: GameState): Certainty | null {
   const chain = getChainType(state)
   const hasThird = chain === "WG"
   const thirdAlive = alivePlayers.filter((p) => isThirdMember(state, p))
+  const bomberAlive = alivePlayers.some((p) => getRoleInstance(p.role)?.def.id === "炸弹人")
+  // 非人狼恋的丘比特是神，但求解器节点不建模丘比特 → 保守返回 EVEN
+  const cupidAlive = alivePlayers.some((p) => getRoleInstance(p.role)?.def.id === "丘比特")
+  if (cupidAlive && chain !== "WG") return EVEN
 
-  // ① 狼全灭 → 好人必胜
-  if (counts.wolf === 0) {
-    return {
-      tier: "forced",
-      winner: "good",
-      underdog: null,
-      reason: "所有狼人已出局",
-      detail: "场上已无存活狼人，好人阵营必胜",
-      facts: [],
-      minNights: 0,
-    }
-  }
-  // ② 无好人存活 → 狼人必胜
-  if (counts.god + counts.civil === 0 && thirdAlive.length === 0) {
-    return {
-      tier: "forced",
-      winner: "wolf",
-      underdog: null,
-      reason: "无好人存活",
-      detail: "场上已无存活好人，狼人阵营必胜",
-      facts: [],
-      minNights: 0,
-    }
-  }
-  // ③ 仅剩第三方成员 → 第三方必胜
+  // ① 仅剩第三方成员 → 第三方必胜
   if (hasThird && thirdAlive.length > 0 && alivePlayers.length === thirdAlive.length) {
     return {
       tier: "forced",
@@ -950,32 +937,76 @@ function trivialCertainty(state: GameState): Certainty | null {
       minNights: 0,
     }
   }
-  // ④ 第三方与平民票数僵持 → 平局
+  // ①b 仅剩炸弹人 → 炸弹人第三方必胜（与 computeWin 的终局分支一致）
+  if (alivePlayers.length === 1 && bomberAlive) {
+    return {
+      tier: "forced",
+      winner: "third",
+      underdog: null,
+      reason: "场上只剩炸弹人",
+      detail: "场上仅剩炸弹人，炸弹人第三方必胜",
+      facts: [],
+      minNights: 0,
+    }
+  }
+  // ①c 炸弹人仍与其他阵营共存时不求解：
+  // 求解器节点不建模炸弹人（全票放逐独赢 / 存活到最后独赢 / 好胜需炸弹人出局），
+  // 放进搜索会把「狼全灭但炸弹人还在」误报成好人必胜，故保守返回均势。
+  if (bomberAlive) return EVEN
+  // ② 第三方与平民票数严格持平 → 平局（警长票 1.5）
   if (hasThird && counts.wolf === 0) {
     const aliveNonThird = alivePlayers.filter((p) => !isThirdMember(state, p))
     const onlyCivil = aliveNonThird.every((p) => {
       const role = getRoleInstance(p.role)
       return !!role && role.def.camp === "villager"
     })
-    if (onlyCivil && aliveNonThird.length <= thirdAlive.length) {
+    const sheriff = alivePlayers.find((p) => p.name === state.jingHui)
+    const thirdVotes = thirdAlive.length + (sheriff && isThirdMember(state, sheriff) ? 0.5 : 0)
+    const nonThirdVotes = aliveNonThird.length + (sheriff && !isThirdMember(state, sheriff) ? 0.5 : 0)
+    if (onlyCivil && nonThirdVotes === thirdVotes) {
       return {
         tier: "forced",
         winner: "draw",
         underdog: null,
         reason: "第三方与平民僵持",
-        detail: "第三方人数不少于平民，票数与存活僵持，无法继续放逐",
+        detail: "第三方人数与平民票数持平，无法继续放逐",
         facts: [],
         minNights: 0,
       }
     }
   }
-  // ⑤ 第三方仍在场时不求解：
+  // ③ 第三方仍在场时不求解：
   //    人狼恋活跃时好/狼都不判胜，交给 checkWin 的第三方分支；
-  //    屠城局还要求第三方角色（丘比特）清零才判狼胜 —— 他既不在神桶也不在民桶，
-  //    而节点不建模丘比特，放进搜索会把他当成不存在、误报「狼人必胜」，故直接返回均势。
+  //    即使狼队（不含狼恋人）已清空、或好人已清空，只要第三方还有人，都必须先解决第三方。
+  //    屠城局还要求第三方角色（丘比特等）清零才判狼胜 —— 节点不建模丘比特，
+  //    放进搜索会把他当成不存在、误报「狼人必胜」，故直接返回均势。
   //    情侣（人人恋/狼狼恋）按自己的角色进神/民桶，不走这条兜底，正常参与求解
   if (hasThird && thirdAlive.length > 0) return EVEN
   if (state.winMode === "city" && counts.third > 0) return EVEN
+  // ④ 狼全灭 → 好人必胜（第三方已在上面拦截）
+  if (counts.wolf === 0) {
+    return {
+      tier: "forced",
+      winner: "good",
+      underdog: null,
+      reason: "所有狼人已出局",
+      detail: "场上已无存活狼人，好人阵营必胜",
+      facts: [],
+      minNights: 0,
+    }
+  }
+  // ⑤ 无好人存活 → 狼人必胜
+  if (counts.god + counts.civil === 0) {
+    return {
+      tier: "forced",
+      winner: "wolf",
+      underdog: null,
+      reason: "无好人存活",
+      detail: "场上已无存活好人，狼人阵营必胜",
+      facts: [],
+      minNights: 0,
+    }
+  }
   // ⑥ 双方都还有存活单位 → 需要 minimax
   return null
 }

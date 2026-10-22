@@ -296,8 +296,8 @@ describe("警徽复杂流转", () => {
 describe("丘比特复杂场景", () => {
   it("人狼恋+丘比特死+情侣死：第三方解散，好人胜", () => {
     const st = setup()
-    setBoardRoles(st, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "丘比特"])
-    st.players = makePlayers(["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "白痴", "平民", "丘比特"])
+    setBoardRoles(st, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "平民", "平民", "丘比特"])
+    st.players = makePlayers(["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "守卫", "平民", "平民", "丘比特"])
     cupidConnect(st, ["P0", "P8"]) // 人狼恋
     started(st)
     // 丘比特死
@@ -340,6 +340,7 @@ describe("丘比特复杂场景", () => {
     killPlayer(st, "P6", "vote")
     killPlayer(st, "P7", "vote")
     killPlayer(st, "P8", "vote")
+    killPlayer(st, "P9", "vote") // 狼狼恋的丘比特是神，需一起屠神
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
     recalcScore(st)
@@ -404,8 +405,8 @@ describe("胜负边界情况", () => {
     killPlayer(st, "P6", "vote")
     killPlayer(st, "P7", "vote")
     checkWin(st)
-    // 狼全灭时，若神也全灭，则平民胜利（wc = "civil"）
-    expect(st.winCamp).toBe("civil")
+    // 先达成者锁定：最后一狼出局瞬间神仍存活 → 好人胜（god）；之后杀神不改判
+    expect(st.winCamp).toBe("god")
   })
 
   it("屠边模式：神全灭 = 狼胜", () => {
@@ -416,7 +417,7 @@ describe("胜负边界情况", () => {
     killPlayer(st, "P4", "vote")
     killPlayer(st, "P5", "vote")
     killPlayer(st, "P6", "vote")
-    killPlayer(st, "P7", "vote")
+    killPlayer(st, "P7", "wolfKill") // 白痴被“投票”会翻牌，这里用夜死使其真正出局
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
   })

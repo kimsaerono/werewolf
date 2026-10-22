@@ -36,6 +36,10 @@ export interface GameRecord {
     log: string[]
     /** 情侣名单（用于第三方胜负判定） */
     lovers: string[]
+    /** 结算时的最终链型；野孩子作为情侣黑化会改变链型，历史面板据此显示第三方 */
+    chain?: "GG" | "WW" | "WG" | ""
+    /** 第三方胜方（WG 人狼恋 / bomber 炸弹人 / 空） */
+    winningThird?: "WG" | "bomber" | ""
     /** 是否已同步到飞书（防止重复累加） */
     synced: boolean
     /** 是否模拟对局（真实/模拟各自独立历史与编号） */
@@ -268,6 +272,8 @@ function settle(reason: string, skipFinish = false): void {
     })),
     log: [...state.globalLog],
     lovers: [...state.lovers],
+    chain: g.getChainType(state),
+    winningThird: state.winningThird,
     synced: false,
     sim: state.simMode,
     mvp: state.mvp,
@@ -285,9 +291,12 @@ function settle(reason: string, skipFinish = false): void {
 
 /** 每次操作后调用：重算分数 + 自动判胜负（判出则保存本局、锁定对局、弹窗） */
 function refresh(): void {
-  g.recalcScore(state)
   const r = g.checkWin(state)
-  if (r.ended && r.text) settle(r.reason)
+  g.recalcScore(state)
+  // 胜局可能已由死亡事件锁定（recordWin）；若有猎人/狼王开枪待处理，先结算完技能再结束
+  if (state.winCamp && !state.finished && !state.hunterShotPending && !state.wolfKingShotPending) {
+    settle(state.winReason || r.reason)
+  }
   persist()
 }
 
@@ -329,11 +338,18 @@ export function useGame() {
       persist()
     },
     setWinMode(m: "edge" | "city") {
-      state.winMode = m
+      // 诸神之战固定屠城，不可切换
+      state.winMode = state.simVariant === "gods" ? "city" : m
       persist()
     },
     setSimMode(v: boolean) {
       state.simMode = v
+      if (!v) state.simVariant = "normal"
+      persist()
+    },
+    setSimVariant(v: "normal" | "gods") {
+      state.simVariant = v
+      if (v === "gods") state.winMode = "city"
       persist()
     },
     setModeChosen(v: boolean) {

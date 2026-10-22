@@ -311,3 +311,77 @@ describe("绝地翻盘：只有被持续压制过的阵营才算翻盘", () => {
     expect(s.underdogCamp).toBeNull()
   })
 })
+
+describe("胜率预测 · 黑化野孩子 / 炸弹人第三方", () => {
+  function predictState(roles: string[], lovers: string[] = [], transformed: string[] = []) {
+    const s = defaultState()
+    s.boardRoles = [...roles]
+    s.phase = "night"
+    s.round = 1
+    roles.forEach((role, i) => {
+      const p = newPlayer(`P${i}`)
+      p.role = role
+      s.players.push(p)
+    })
+    if (transformed.length) {
+      for (const name of transformed) {
+        const p = s.players.find((x) => x.name === name)
+        if (p) p.mark.isTransform = true
+      }
+    }
+    s.lovers = lovers
+    renumberPlayers(s)
+    return predictWinRate(s)
+  }
+
+  it("黑化野孩子不再算平民：只剩 1 个真平民时给出屠民提示", () => {
+    const r = predictState(["野孩子", "平民", "狼人", "狼人"], [], ["P0"])
+    expect(r.factors).toContain("⚰️ 平民仅剩 1 · 屠民在即")
+  })
+
+  it("黑化野孩子不会让「已倒狼数」变负 / 凭空多报已倒", () => {
+    const r = predictState(["野孩子", "平民", "狼人", "狼人"], [], ["P0"])
+    expect(r.factors.some((f) => f.includes("已倒 -"))).toBe(false)
+    expect(r.factors.some((f) => f.includes("已倒 1 狼"))).toBe(false)
+  })
+
+  it("WG→WW：黑化后第三方解散，hasThird=false、第三方胜率 0", () => {
+    const r = predictState(["野孩子", "狼人", "丘比特", "平民"], ["P0", "P1"], ["P0"])
+    expect(r.hasThird).toBe(false)
+    expect(r.rates.third).toBe(0)
+  })
+
+  it("GG→WG：黑化后第三方成立，hasThird=true、第三方胜率 > 0", () => {
+    const r = predictState(["野孩子", "狼人", "丘比特", "平民"], ["P0", "P3"], ["P0"])
+    expect(r.hasThird).toBe(true)
+    expect(r.rates.third).toBeGreaterThan(0)
+    expect(r.factors).toContain("💘 人狼恋·第三方")
+  })
+
+  it("炸弹人存活：hasThird=true，并给出独立第三方提示", () => {
+    const r = predictState(["炸弹人", "狼人", "平民"])
+    expect(r.hasThird).toBe(true)
+    expect(r.rates.third).toBeGreaterThan(0)
+    expect(r.factors).toContain("💣 炸弹人存活·独立第三方")
+  })
+})
+
+describe("胜率预测 · GG→WG 起始狼数边界", () => {
+  it("黑化野孩子归第三方时不应被误算成已倒狼", () => {
+    const s = defaultState()
+    const roles = ["野孩子", "狼人", "丘比特", "平民"]
+    s.boardRoles = [...roles]
+    s.phase = "night"
+    s.round = 1
+    roles.forEach((role, i) => {
+      const p = newPlayer(`P${i}`)
+      p.role = role
+      s.players.push(p)
+    })
+    s.players[0].mark.isTransform = true // GG→WG：野孩子=狼恋人，P1=狼恋人，均为第三方
+    s.lovers = ["P0", "P3"]
+    renumberPlayers(s)
+    const r = predictWinRate(s)
+    expect(r.factors.some((f) => f.includes("已倒"))).toBe(false)
+  })
+})

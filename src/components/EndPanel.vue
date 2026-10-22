@@ -2,7 +2,7 @@
 import { computed, ref, onMounted } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
-import { ROLE_EMOJI, roleShort, campPlayerCounts, getRoleInstance } from "@/game/logic"
+import { ROLE_EMOJI, roleShort, campPlayerCounts } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 
 const { message } = AntApp.useApp()
@@ -66,7 +66,9 @@ const timelineEvents = computed(() => {
 const stats = computed(() => {
   const alive = state.players.filter(p => p.alive)
   const dead = state.players.filter(p => !p.alive)
+  // campPlayerCounts 已按「生效阵营」统计：黑化野孩子计狼、人狼恋三人计第三方、炸弹人计第三方
   const camps = campPlayerCounts(state)
+  const isWG = state.lovers.length === 2 && refs.getChainType(state) === "WG"
 
   return {
     total: state.players.length,
@@ -75,8 +77,8 @@ const stats = computed(() => {
     wolves: camps.wolf,
     gods: camps.god,
     villagers: camps.villager,
-    // 独立第三方（炸弹人；丘比特不计入，避免与情侣阵营重复展示）
-    thirds: state.players.filter((p) => p.role && p.role !== "丘比特" && getRoleInstance(p.role)?.def.camp === "third").length,
+    thirds: camps.third,
+    thirdIcon: isWG ? "💘" : "💣",
     rounds: state.round,
     winCamp: state.winCamp,
     comeback: state.comeback
@@ -233,7 +235,7 @@ async function doFinish() {
           </a-col>
           <a-col v-if="stats.thirds > 0" :xs="12" :sm="6" :lg="4">
             <div class="stat-card third">
-              <span class="stat-icon">💣</span>
+              <span class="stat-icon">{{ stats.thirdIcon }}</span>
               <div class="stat-value">{{ stats.thirds }}</div>
               <div class="stat-label">第三方</div>
             </div>

@@ -32,8 +32,12 @@ import {
   wolfKingShootConfirm,
   DEFAULT_VOICES,
   isWolfPackRole,
+  cupidConnect,
+  getChainType,
+  isThirdMember,
 } from "./logic"
 import type { GameState, Player } from "./logic"
+import { aliveCampCounts } from "./win-checker"
 import { resolveNightEffects } from "./night-resolver"
 
 function mk(name: string, no: number, role: string): Player {
@@ -711,5 +715,130 @@ describe("DEFAULT_VOICES 新角色台词", () => {
       expect(typeof DEFAULT_VOICES[k], `缺少台词 ${k}`).toBe("string")
       expect((DEFAULT_VOICES[k] ?? "").length, `台词 ${k} 为空`).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("野孩子作为情侣黑化：链型动态重算（GG→WG / WG→WW）", () => {
+  /** 杀掉榜样后再入夜触发黑化（checkWildChildTransform 的真实入口） */
+  function blacken(st: GameState, model: string) {
+    wildChildPick(st, model)
+    killPlayer(st, model, "vote")
+    checkWildChildTransform(st)
+    expect(g(st, "P0").mark.isTransform).toBe(true)
+  }
+
+  it("GG→WG：第三方成立，丘比特+两情侣都算第三方", () => {
+    const st = makeState(["野孩子", "狼人", "丘比特", "平民", "狼人"])
+    expect(cupidConnect(st, ["P0", "P3"])).toBeNull() // 野孩子 + 平民 = GG
+    expect(getChainType(st)).toBe("GG")
+    expect(isThirdMember(st, g(st, "P2"))).toBe(false) // 丘比特是神
+
+    blacken(st, "P4") // 榜样=另一只狼，杀掉后野孩子黑化（P1 单身狼仍在，好人不提前胜）
+    expect(getChainType(st)).toBe("WG")
+    expect(st.globalLog.some((l) => l.includes("第三方阵营成立"))).toBe(true)
+    expect(isThirdMember(st, g(st, "P0"))).toBe(true) // 黑化野孩子（狼恋人）
+    expect(isThirdMember(st, g(st, "P2"))).toBe(true) // 丘比特
+    expect(isThirdMember(st, g(st, "P3"))).toBe(true) // 好人恋人
+
+    // 清掉单身狼 P1 → 场上只剩三人，第三方胜（不要求三人全活）
+    killPlayer(st, "P1", "vote")
+    expect(aliveCampCounts(st)).toEqual({ wolf: 0, god: 0, civil: 0, third: 3 })
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("WG")
+  })
+
+  it("GG→WG：第三方胜时三人各 +3，黑化野孩子另有变身 +1", () => {
+    const st = makeState(["野孩子", "狼人", "丘比特", "平民", "狼人"])
+    cupidConnect(st, ["P0", "P3"])
+    blacken(st, "P4")
+    killPlayer(st, "P1", "vote")
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    recalcScore(st)
+    for (const n of ["P0", "P2", "P3"]) {
+      expect(g(st, n).scoreDetail).toContain("第三方胜利+3")
+    }
+    // 野孩子黑化 +1 与第三方 +3 叠加
+    expect(g(st, "P0").scoreDetail).toContain("黑化变身+1")
+    expect(g(st, "P0").scoreRound).toBe(4)
+    // 已出局的单身狼不拿第三方/狼胜分
+    expect(g(st, "P1").scoreDetail ?? []).not.toContain("第三方胜利+3")
+  })
+
+  it("WG→WW：野孩子（好人恋人）黑化后第三方解散，丘比特变回神", () => {
+    const st = makeState(["野孩子", "狼人", "丘比特", "平民", "狼人"])
+    expect(cupidConnect(st, ["P0", "P1"])).toBeNull() // 野孩子 + 狼人 = WG
+    expect(getChainType(st)).toBe("WG")
+    expect(isThirdMember(st, g(st, "P2"))).toBe(true)
+
+    blacken(st, "P3") // 榜样=平民，杀掉后野孩子黑化 → 双狼（P4 单身狼仍在，不提前分胜负）
+    expect(getChainType(st)).toBe("WW")
+    expect(st.globalLog.some((l) => l.includes("第三方解散"))).toBe(true)
+    expect(isThirdMember(st, g(st, "P0"))).toBe(false)
+    expect(isThirdMember(st, g(st, "P2"))).toBe(false) // 丘比特不再是第三方
+    // 丘比特按神计，第三方清零；三只生效狼计入狼
+    expect(aliveCampCounts(st)).toEqual({ wolf: 3, god: 1, civil: 0, third: 0 })
+  })
+
+  it("WG→WW：第三方解散后按普通胜负判定（不再误判第三方胜）", () => {
+    const st = makeState(["野孩子", "狼人", "丘比特", "平民", "狼人"])
+    cupidConnect(st, ["P0", "P1"])
+    blacken(st, "P3")
+    // P3（唯一平民）已死，场上 3 狼 + 丘比特 → 屠民，狼胜；旧实现会误判第三方胜
+    checkWin(st)
+    expect(st.winCamp).toBe("wolf")
+    expect(st.winningThird).toBe("")
+  })
+
+  it("WG→WW：狼情侣出局后只剩丘比特 → 好人胜，丘比特 +3", () => {
+    // 多留一个平民，避免「屠民」在狼情侣出局前就先锁定狼胜
+    const st = makeState(["野孩子", "狼人", "丘比特", "平民", "狼人", "平民"])
+    cupidConnect(st, ["P0", "P1"])
+    blacken(st, "P3") // 榜样平民 P3 出局，P5 平民仍在
+    expect(getChainType(st)).toBe("WW")
+    killPlayer(st, "P0", "vote") // 狼恋人出局 → 另一位殉情
+    killPlayer(st, "P4", "vote") // 清掉最后一只单身狼
+    checkWin(st)
+    expect(st.winCamp).toBe("god")
+    recalcScore(st)
+    expect(g(st, "P2").scoreDetail).toContain("好人胜利·丘比特+3")
+    expect(g(st, "P0").scoreDetail ?? []).not.toContain("第三方胜利+3")
+  })
+})
+
+describe("狼刀 × 人狼恋刀口", () => {
+  it("WG 狼恋人可被刀，且不算自刀骗解药", () => {
+    const st = makeState(["野孩子", "狼人", "狼人", "丘比特", "平民"])
+    cupidConnect(st, ["P0", "P1"]) // 野孩子 + 狼人 P1 = WG
+    expect(getChainType(st)).toBe("WG")
+    expect(wolfKill(st, "P1")).toBeNull()
+    expect(st.nightWolfKill).toBe("P1")
+    expect(st.wolfSelfKill).toBe(false)
+  })
+
+  it("WG→WW 后双狼情侣恢复互刀限制（黑化野孩子按生效狼拦）", () => {
+    const st = makeState(["野孩子", "狼人", "狼人", "丘比特", "平民"])
+    cupidConnect(st, ["P0", "P1"]) // WG
+    wildChildPick(st, "P4")
+    killPlayer(st, "P4", "vote")
+    checkWildChildTransform(st)
+    expect(getChainType(st)).toBe("WW")
+    expect(wolfKill(st, "P0")).toContain("互刀")
+    expect(wolfKill(st, "P1")).toContain("互刀")
+  })
+})
+
+describe("夜间结算 · 狼刀效果去重", () => {
+  it("狼人/狼美人与统一狼刀重复提交同一目标，只结算一次", () => {
+    const st = makeState(["狼人", "狼美人", "平民", "预言家"])
+    st.nightWolfKill = "P2"
+    st.nightSteps.wolf = true
+    expect(resolveNightEffects(st)).toBeNull()
+    expect(g(st, "P2").alive).toBe(false)
+    const dawn = st.globalLog.find((l) => l.includes("昨夜死亡"))
+    expect(dawn).toBeTruthy()
+    // 目标在死亡播报里只出现一次（重复 effect 未造成重复结算）
+    expect((dawn!.match(/P2/g) ?? []).length).toBe(1)
   })
 })

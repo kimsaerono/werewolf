@@ -19,11 +19,15 @@ function timeHM(t: string): string {
   return s.slice(0, 5)
 }
 
-/** 历史对局玩家是否属于人狼恋第三方，返回标注（第三阵营·原角色） */
+/** 历史对局玩家是否属于第三方，返回标注（第三阵营·原角色 / 第三方·炸弹人） */
 function thirdLabel(h: GameRecord, p: { name: string; role: string }): string {
-  const chain = refs.getChainType({ lovers: h.lovers, players: h.players } as never)
-  if (chain !== "WG") return ""
   const role = getRoleInstance(p.role)
+  // 炸弹人是独立第三方，与链型无关
+  if (role && role.def.id === "炸弹人") return `第三方·${p.role}`
+  // 优先用结算时固化的链型：野孩子作为情侣黑化后链型会变（GG→WG / WG→WW），
+  // 旧记录没有 chain 时才回退到按历史玩家重算（effectiveCampOf 已兼容缺失 mark）。
+  const chain = h.chain ?? refs.getChainType({ lovers: h.lovers, players: h.players } as never)
+  if (chain !== "WG") return ""
   if (h.lovers.includes(p.name) || (role && role.def.id === "丘比特")) return `第三阵营·${p.role}`
   return ""
 }

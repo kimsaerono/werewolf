@@ -338,30 +338,33 @@ describe("胜利条件 · 屠城必须杀光好人", () => {
     expect(st.winCamp).toBe("wolf")
   })
 
-  it("屠边不受丘比特影响：神全灭照判狼胜（屠边按类别屠，丘比特不算神也不算民）", () => {
+  it("丘比特在非人狼恋时是神：屠边需连同丘比特一起死", () => {
     const st = setupQ("edge")
-    ;[4, 5, 6].forEach((i) => (st.players[i].alive = false)) // 神全死
-    const r = checkWin(st)
+    ;[4, 5, 6].forEach((i) => (st.players[i].alive = false)) // 预女猎死光
+    let r = checkWin(st)
+    expect(r.ended).toBe(false) // 丘比特是神，仍活着
+    expect(st.winCamp).toBeNull()
+    killPlayer(st, "P7", "vote") // 丘比特出局 → 神全灭
+    r = checkWin(st)
     expect(r.ended).toBe(true)
     expect(st.winCamp).toBe("wolf")
   })
 
-  it("屠城：翻牌白痴活着 → 不判狼胜；屠边仍按「神全灭」照判", () => {
+  it("翻牌白痴仍算神职：屠城/屠边都不因白痴翻牌而判狼胜", () => {
     const st = setup()
     st.winMode = "city"
-    st.players.forEach((p, i) => {
-      if (i >= 3 && i !== 7) p.alive = false // 神+民死，白痴 P7 留着
-    })
+    // 只杀其他神；保留白痴与平民（避免触发屠民边）
+    ;[3, 4, 5, 6].forEach((i) => (st.players[i].alive = false))
     g(st, "P7").mark.idiotFlipped = true
     let r = checkWin(st)
     expect(g(st, "P7").alive).toBe(true)
-    expect(r.ended).toBe(false) // 屠城：活的翻牌白痴＝好人没杀完
+    expect(r.ended).toBe(false) // 屠城：白痴仍是神，没杀完
     expect(st.winCamp).toBeNull()
-    // 同一组存活状态切成屠边：神全灭这条边成立，翻牌白痴不挡
+    // 同一组存活状态切成屠边：白痴仍是神 → 神未全灭，不判狼胜
     st.winMode = "edge"
     r = checkWin(st)
-    expect(r.ended).toBe(true)
-    expect(st.winCamp).toBe("wolf")
+    expect(r.ended).toBe(false)
+    expect(st.winCamp).toBeNull()
   })
 })
 

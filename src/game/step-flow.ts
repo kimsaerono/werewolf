@@ -10,7 +10,8 @@ export type { NightStepCtx } from "./roles/types"
  *
  * 夜晚步骤顺序与启用条件由**角色注册表派生**（新增角色只要声明 nightStep 即自动纳入），
  * 与角色无关的特殊步骤（情侣认亲）单独列出。
- * 顺序为：丘比特 → 情侣认亲 → 守卫 → 狼人 → 女巫 → 预言家 → 白痴 → 骑士 → 猎人 → 警长 → 天亮
+ * 顺序按注册表 nightStep.order 升序；首夜石像鬼会被 computeStepKeys 额外挪到所有夜间步骤末尾
+ * （需要目标的完整身份，必须等首夜角色分配完毕），第 2 夜起回归正常顺序。
  */
 
 interface NightStep {

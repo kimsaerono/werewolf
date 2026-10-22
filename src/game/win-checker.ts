@@ -1,7 +1,7 @@
 import type { GameState } from "./logic"
 import type { Camp } from "./roles/types"
 import { getRoleInstance } from "./roles/builtin"
-import { isEffectiveWolf, GOD_LIST } from "./logic"
+import { isEffectiveWolf, GOD_LIST, getBoardRoles } from "./logic"
 
 export type WinCamp = Camp | "civil" | "draw" | null
 
@@ -14,6 +14,8 @@ const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", string> = {
 }
 
 export function isThirdMember(state: GameState, p: { name: string; role: string }): boolean {
+  // 只有人狼恋（WG）才形成第三方；GG/WW 的丘比特是神，不是第三方
+  if (getChainType(state) !== "WG") return false
   const role = getRoleInstance(p.role)
   if (role && role.def.id === "丘比特") return true
   return state.lovers.includes(p.name)
@@ -24,7 +26,8 @@ export function getChainType(state: GameState): "WG" | "GG" | "WW" | "" {
   const [a, b] = state.lovers
   const pa = state.players.find((p) => p.name === a)
   const pb = state.players.find((p) => p.name === b)
-  if (!pa || !pb) return ""
+  // 与 logic.getChainType 保持一致：角色未分配时链型未定，返回空串而不是默认 GG
+  if (!pa || !pb || !pa.role || !pb.role) return ""
   const wa = isEffectiveWolf(pa)
   const wb = isEffectiveWolf(pb)
   if (wa && wb) return "WW"
@@ -44,27 +47,34 @@ export interface CampCounts {
 /**
  * 存活阵营计数（checkWin 与必然结束求解器共用，避免两处口径不一致）。
  * 口径：
- * - 神职桶：注册表 camp==="god"（不含已翻牌的白痴）
- * - 平民桶：camp==="villager"，**外加已翻牌的白痴** —— 翻牌只免去神职身份与投票权，
- *   人还活着、还是好人，屠城（杀光好人）没打完就不能判狼胜
- * - 第三方桶：camp==="third"（丘比特）。人狼恋时由第三方分支单独判定，此处只服务屠城口径
+ * - 神职桶：注册表 camp==="god"；白痴始终计入（翻牌只失去投票权）
+ * - 平民桶：camp==="villager"
+ * - 第三方桶：camp==="third"；人狼恋时丘比特+情侣（2/3人）统一计入第三方
  */
 export function aliveCampCounts(state: GameState): CampCounts {
   let wolf = 0
   let god = 0
   let civil = 0
   let third = 0
+  const wg = getChainType(state) === "WG"
   for (const p of state.players) {
     if (!p.alive) continue
+    // 人狼恋第三方：丘比特 + 两情侣（可 2 人或 3 人）统一计入第三方；
+    // 其中的狼恋人不算狼队队友，好人恋人也不计入神/民。
+    if (wg && isThirdMember(state, p)) {
+      third++
+      continue
+    }
     const role = getRoleInstance(p.role)
     // 黑化野孩子按狼计（isEffectiveWolf 先于 camp 桶判定）
     if (isEffectiveWolf(p)) {
       wolf++
       continue
     }
-    // 翻牌白痴：失去神职身份 → 计入平民桶（仍是要屠完的好人）
-    if (role?.def.id === "白痴" && p.mark.idiotFlipped) {
-      civil++
+    // 白痴（含已翻牌）：始终是神职；翻牌只失去投票权
+    // 非人狼恋的丘比特是神
+    if (role?.def.id === "丘比特") {
+      god++
       continue
     }
     if (GOD_LIST.includes(p.role)) god++
@@ -79,9 +89,31 @@ export function aliveCampCounts(state: GameState): CampCounts {
  * 屠边是「按类别屠」，丘比特既不算神也不算民，他活着不挡屠边；
  * 屠城是「杀光好人」，活着的丘比特就是没杀完。
  */
-export function wolfWinNow(c: CampCounts, mode: "edge" | "city"): boolean {
+/** 板子里实际存在的阵营：屠边只统计存在的阵营，避免“无平民板子 civil=0 开局即狼胜” */
+export function boardSidePresence(state: GameState): { god: boolean; civil: boolean } {
+  const roles = getBoardRoles(state)
+  // 人狼恋（WG）的丘比特属第三方，不再算神职边；GG/WW/未连人时丘比特仍是神。
+  // 否则「唯一神位是 WG 丘比特」的无神板子会在第三方被清后误判狼人屠神获胜。
+  const wg = getChainType(state) === "WG"
+  return {
+    god: roles.some((r) => (r === "丘比特" ? !wg : GOD_LIST.includes(r))),
+    civil: roles.some((r) => getRoleInstance(r)?.def.camp === "villager"),
+  }
+}
+
+export function wolfWinNow(
+  c: CampCounts,
+  mode: "edge" | "city",
+  sides: { god: boolean; civil: boolean } = { god: true, civil: true },
+): boolean {
   if (c.wolf === 0) return false
-  return mode === "city" ? c.god === 0 && c.civil === 0 && c.third === 0 : c.god === 0 || c.civil === 0
+  if (mode === "city") return c.god === 0 && c.civil === 0 && c.third === 0
+  // 退化板子（如只有狼 + WG 丘比特）：WG 丘比特属第三方，清掉第三方后既无神边也无民边。
+  // 此时不能因为没有可屠的边而永远不判胜，按「所有非狼单位清零」判狼胜。
+  if (!sides.god && !sides.civil) return c.god === 0 && c.civil === 0 && c.third === 0
+  const godWiped = sides.god && c.god === 0
+  const civilWiped = sides.civil && c.civil === 0
+  return godWiped || civilWiped
 }
 
 /** 好人此刻是否已达成胜利条件（狼人全灭；与 checkWin 的 else 分支一致） */
@@ -98,33 +130,18 @@ export function isGameStarted(state: GameState): boolean {
   return allAssigned && (state.phase !== "idle" || state.round > 0)
 }
 
-/**
- * 角色驱动的胜负判定。
- * 遍历所有角色的 winRule，收集判定结果，按优先级排序后返回最终胜负。
- */
-export function checkWin(state: GameState): { ended: boolean; text: string; reason: string } {
-  if (!isGameStarted(state)) {
-    return { ended: false, text: "", reason: "" }
-  }
-  // 本局已结算：不再重判（提前结束写好的 winCamp 不能被后续 refresh 覆盖成 null）
-  if (state.finished) {
-    return { ended: false, text: "", reason: "" }
-  }
-  // 炸弹人独赢：全票放逐达成，即时判第三方胜（炸弹人可能已被放逐而死，不走存活 winRule）
+type ResultCamp = "wolf" | "god" | "civil" | "third" | "draw"
+type WinResult = { camp: ResultCamp; reason: string; winningThird: "WG" | "bomber" | "" }
+
+/** 纯计算当前局面胜负；不写 state。先达成者由 recordWin 锁定。 */
+export function computeWin(state: GameState): WinResult | null {
+  // 炸弹人全票放逐：即使炸弹人已死，也优先判第三方胜
   if (state.bombVictory) {
-    const prev = state.winCamp
-    state.winCamp = "third"
-    const ended = prev !== "third"
-    return {
-      ended,
-      text: ended ? WIN_TEXT.third : "",
-      reason: "炸弹人全票放逐，炸弹引爆达成独赢",
-    }
+    return { camp: "third", reason: "炸弹人全票放逐，炸弹引爆达成独赢", winningThird: "bomber" }
   }
 
-  // 收集所有角色的胜负判定
+  // 角色自身 winRule（丘比特人狼恋第三方/平局）
   const judgments: Array<{ camp: WinCamp; reason: string; priority: number }> = []
-
   for (const player of state.players) {
     if (!player.alive) continue
     const role = getRoleInstance(player.role)
@@ -139,73 +156,112 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
       }
     }
   }
-
-  // 按优先级排序（数字小者优先）
   judgments.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
-
-  // 取最高优先级的判定结果
-  let wc: WinCamp = null
-  let reason = ""
-
   if (judgments.length > 0) {
     const top = judgments[0]
-    wc = top.camp
-    reason = top.reason
-  } else {
-    // 默认规则：屠边/屠城
-    const aliveWolf = state.players.filter((p) => p.alive && isEffectiveWolf(p))
-    const aliveAll = state.players.filter((p) => p.alive)
-    const counts = aliveCampCounts(state)
-    const aliveWolfCount = counts.wolf
-    const aliveGodCount = counts.god
-    const aliveCivilCount = counts.civil
+    return { camp: top.camp as ResultCamp, reason: top.reason, winningThird: top.camp === "third" ? "WG" : "" }
+  }
 
-    const chain = getChainType(state)
-    const thirdAlive = state.players.some((p) => p.alive && isThirdMember(state, p))
-    const thirdActive = chain === "WG" && thirdAlive
+  const aliveAll = state.players.filter((p) => p.alive)
+  const counts = aliveCampCounts(state)
+  const chain = getChainType(state)
+  const thirdAlive = state.players.some((p) => p.alive && isThirdMember(state, p))
+  const thirdActive = chain === "WG" && thirdAlive
+  const bomberAlive = aliveAll.some((p) => getRoleInstance(p.role)?.def.id === "炸弹人")
 
-    if (thirdActive) {
-      // ① 第三方胜：存活玩家全部是第三方成员（丘比特/恋人）
-      if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
-        wc = "third"
-        reason = "场上只剩丘比特与人狼情侣，第三方存活到最后"
-      }
-      // ② 平局：狼全灭 + 剩余全是平民，且平民投票无法放逐第三方（票数不足/平票 → 僵局）
-      else if (aliveWolfCount === 0) {
-        const aliveNonThird = aliveAll.filter((p) => !isThirdMember(state, p))
-        const onlyCivil = aliveNonThird.every((p) => {
-          const role = getRoleInstance(p.role)
-          return role && role.def.camp === "villager"
-        })
-        const thirdAliveCount = aliveAll.filter((p) => isThirdMember(state, p)).length
-        if (onlyCivil && aliveNonThird.length <= thirdAliveCount) {
-          wc = "draw"
-          reason = "第三方与平民票数持平僵持，无法继续放逐，平局"
-        }
-      }
-      // 否则：情侣未死前，好/狼一律不判胜（第三方保留）
-    } else if (aliveWolfCount > 0) {
-      // 屠边：神或民任一全灭；屠城：神与民全灭
-      if (wolfWinNow(counts, state.winMode)) {
-        wc = "wolf"
-        reason = state.winMode === "city"
-          ? "屠城：狼人存活，神职与平民全灭"
-          : aliveGodCount === 0
-            ? "屠边：神职全灭"
-            : "屠边：平民全灭"
-      }
-    } else {
-      wc = aliveGodCount > 0 ? "god" : "civil"
-      reason = "所有狼人已出局，好人胜利"
+  // 只剩炸弹人：炸弹人第三方胜利（技能分照常，另加最终胜利分）
+  if (aliveAll.length === 1 && bomberAlive) {
+    return { camp: "third", reason: "场上只剩炸弹人，炸弹人第三方胜利", winningThird: "bomber" }
+  }
+
+  if (thirdActive) {
+    // 人狼恋第三方：有第三方成员且场上无外人 → 第三方胜（不要求三人全活）
+    if (aliveAll.length > 0 && aliveAll.every((p) => isThirdMember(state, p))) {
+      return { camp: "third", reason: "场上只剩丘比特与人狼情侣，第三方存活到最后", winningThird: "WG" }
     }
+    // 平局：狼全灭 + 剩余全是平民，且双方票数严格持平（警长票 1.5）
+    if (counts.wolf === 0) {
+      const aliveNonThird = aliveAll.filter((p) => !isThirdMember(state, p))
+      const onlyCivil = aliveNonThird.every((p) => {
+        const role = getRoleInstance(p.role)
+        return role && role.def.camp === "villager"
+      })
+      const thirdAliveCount = aliveAll.filter((p) => isThirdMember(state, p)).length
+      // 第三方票数多于平民 → 能逐日投出平民，最终第三方胜，不是平局；
+      // 平民票数多于第三方 → 能投出第三方，也不是平局；只有票数完全相等才僵持。
+      const sheriff = aliveAll.find((p) => p.name === state.jingHui)
+      const thirdVotes = thirdAliveCount + (sheriff && isThirdMember(state, sheriff) ? 0.5 : 0)
+      const nonThirdVotes = aliveNonThird.length + (sheriff && !isThirdMember(state, sheriff) ? 0.5 : 0)
+      if (onlyCivil && nonThirdVotes === thirdVotes) {
+        return { camp: "draw", reason: "第三方与平民票数持平僵持，无法继续放逐，平局", winningThird: "" }
+      }
+    }
+    // 第三方存活期间，好/狼不判胜
+    return null
   }
 
-  const prev = state.winCamp
-  state.winCamp = wc as import("./logic").WinCamp
-  const ended = prev !== wc && wc !== null
-  return {
-    ended,
-    text: ended ? WIN_TEXT[wc as "wolf" | "god" | "civil" | "third" | "draw"] : "",
-    reason,
+  if (counts.wolf > 0) {
+    // 屠边：只统计板子里实际存在的阵营；屠城：神+民+第三方全灭
+    const sides = boardSidePresence(state)
+    if (wolfWinNow(counts, state.winMode, sides)) {
+      const reason = state.winMode === "city"
+        ? "屠城：狼人存活，神职、平民与第三方全灭"
+        : sides.god && counts.god === 0
+          ? "屠边：神职全灭"
+          : "屠边：平民全灭"
+      return { camp: "wolf", reason, winningThird: "" }
+    }
+    return null
   }
+
+  // 狼全灭：若还有第三方（炸弹人）存活，好人尚未获胜
+  if (bomberAlive) return null
+  // 全员出局（没有锁定的先达成胜方）→ 平局
+  if (aliveAll.length === 0) {
+    return { camp: "draw", reason: "全员出局，平局", winningThird: "" }
+  }
+  const wc: ResultCamp = counts.god > 0 ? "god" : "civil"
+  return { camp: wc, reason: "所有狼人已出局，好人胜利", winningThird: "" }
+}
+
+/** 首个达成胜负条件时锁定；后续死亡/开枪不能改判 */
+export function recordWin(state: GameState): void {
+  if (!isGameStarted(state) || state.finished || state.winCamp || state.winPending) return
+  const r = computeWin(state)
+  if (!r) return
+  // 只记录“先达成”，等 checkWin 消费后再写入 winCamp（保持 ended 只报一次）
+  state.winPending = r
+}
+
+/**
+ * 角色驱动的胜负判定。
+ * 已锁定则直接返回锁定结果；否则计算并写入。
+ */
+export function checkWin(state: GameState): { ended: boolean; text: string; reason: string } {
+  if (!isGameStarted(state)) {
+    return { ended: false, text: "", reason: "" }
+  }
+  if (state.finished) {
+    return { ended: false, text: "", reason: "" }
+  }
+  if (state.winCamp) {
+    // 已锁定：ended 只在首次判出时为 true，避免 UI 重复弹窗
+    return { ended: false, text: "", reason: "" }
+  }
+  if (state.winPending) {
+    const p = state.winPending
+    state.winCamp = p.camp
+    state.winReason = p.reason
+    state.winningThird = p.winningThird
+    state.winPending = null
+    return { ended: true, text: WIN_TEXT[p.camp], reason: p.reason }
+  }
+  const r = computeWin(state)
+  if (!r) {
+    return { ended: false, text: "", reason: "" }
+  }
+  state.winCamp = r.camp
+  state.winReason = r.reason
+  state.winningThird = r.winningThird
+  return { ended: true, text: WIN_TEXT[r.camp], reason: r.reason }
 }

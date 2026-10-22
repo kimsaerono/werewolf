@@ -72,7 +72,7 @@ export interface RoleDef {
   short: string
   /**
    * 是否视为"神牌"（狼王枪带人计分口径）。
-   * 默认取 camp === "god"；白痴等名义神职但按口径不算神牌的角色显式设为 false。
+   * 默认取 camp === "god"。
    */
   countsAsGod?: boolean
 

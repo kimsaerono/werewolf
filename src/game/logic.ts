@@ -53,14 +53,22 @@ export function isWolfPackRole(role: string): boolean {
  * 玩家当前生效阵营：野孩子黑化后视为狼，其余取角色注册表阵营（未分配返回 ""）。
  * 胜负/计分/查验等「按人判定阵营」的口径统一走这里。
  */
-export function effectiveCampOf(p: { role: string; mark: Mark }): string {
-  if (p.role === "野孩子" && p.mark.isTransform) return "wolf"
+export function effectiveCampOf(p: { role: string; mark?: Mark }): string {
+  // mark 允许缺失：历史对局记录（GameRecord.players）只有角色没有 mark，
+  // 链型展示等只读场景不能因此崩溃。
+  if (p.role === "野孩子" && p.mark?.isTransform) return "wolf"
   return getRole(p.role)?.camp ?? ""
 }
 
 /** 玩家当前是否为狼阵营（野孩子黑化计入；查验/计分/胜负共用） */
-export function isEffectiveWolf(p: { role: string; mark: Mark }): boolean {
+export function isEffectiveWolf(p: { role: string; mark?: Mark }): boolean {
   return effectiveCampOf(p) === "wolf"
+}
+
+/** 当前是否属于“狼群”（与狼同睁眼、参与狼刀）：狼群角色，或已黑化的野孩子 */
+export function isEffectiveWolfPack(p: { role: string; mark?: Mark }): boolean {
+  if (isWolfPackRole(p.role)) return true
+  return p.role === "野孩子" && !!p.mark?.isTransform
 }
 
 /** 隐狼当前能否刀人：场上有存活隐狼，且除隐狼外无其他存活狼阵营玩家 */
@@ -328,6 +336,12 @@ export interface GameState {
   nightLog: string[]
   recordText: string
   winCamp: WinCamp
+  /** 胜负锁定原因（首个达成条件时写入，后续不再覆盖） */
+  winReason: string
+  /** 获胜的是哪个第三方：WG=人狼恋；bomber=炸弹人；""=非第三方 */
+  winningThird: "WG" | "bomber" | ""
+  /** 已达成但尚未被 checkWin 消费的胜局（死亡事件顺序锁定用） */
+  winPending: { camp: NonNullable<WinCamp>; reason: string; winningThird: "WG" | "bomber" | "" } | null
   jingHui: string
   /** 待处理警长的名字（警长出局且未被移交/流失时由 BadgeService 置入，UI 消费） */
   badgePending: string
@@ -367,6 +381,8 @@ export interface GameState {
   bombVictory: boolean
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
+  /** 模拟对局变体：normal=普通模拟；gods=诸神之战（默认屠城，角色自定义） */
+  simVariant: "normal" | "gods"
   /** 是否已在首页选择了对局模式（唯一首页入口，选择后才可进入） */
   modeChosen: boolean
   /**
@@ -467,6 +483,9 @@ export function defaultState(): GameState {
     nightLog: [],
     recordText: "",
     winCamp: null,
+    winReason: "",
+    winningThird: "",
+    winPending: null,
     jingHui: "",
     badgePending: "",
     wolfSelfKill: false,
@@ -491,6 +510,7 @@ export function defaultState(): GameState {
     nightDreamKill: "",
     bombVictory: false,
     simMode: true,
+    simVariant: "normal",
     modeChosen: false,
     underdogs: [],
     comeback: false,
@@ -545,6 +565,10 @@ export function normalizeState(s: GameState): GameState {
   if (typeof st.nightDreamKill !== "string") st.nightDreamKill = ""
   if (typeof st.bombVictory !== "boolean") st.bombVictory = false
   if (typeof st.simMode !== "boolean") st.simMode = true
+  if (st.simVariant !== "gods" || !st.simMode) st.simVariant = "normal"
+  if (typeof st.winReason !== "string") st.winReason = ""
+  if (st.winningThird !== "WG" && st.winningThird !== "bomber") st.winningThird = ""
+  if (!st.winPending || typeof st.winPending !== "object") st.winPending = null
   if (typeof st.modeChosen !== "boolean") st.modeChosen = false
   if (!Array.isArray(st.underdogs)) st.underdogs = []
   if (typeof st.comeback !== "boolean") st.comeback = false
@@ -773,6 +797,9 @@ export function startNewGame(state: GameState): void {
   state.bloodSealNextNight = false
   state.skipDayAfterDawn = false
   state.winCamp = null
+  state.winReason = ""
+  state.winningThird = ""
+  state.winPending = null
   state.jingHui = ""
   state.wolfSelfKill = false
   state.knightDuelUsed = false
@@ -891,6 +918,7 @@ export function applyLoverDeaths(state: GameState): string[] {
     if (partner && partner.alive) {
       partner.alive = false
       partner.deathReason = "lover"
+      recordWinEvent(state)
       killed.push(partnerName)
       // 殉情不递归走 killPlayer，警徽 pending 必须在此补置，否则 GamePanel 的移交弹窗永不触发、警徽卡在死人身上
       if (state.jingHui === partnerName) state.badgePending = partnerName
@@ -969,6 +997,8 @@ export function killPlayer(state: GameState, name: string, reason: DieReason, so
 
   p.alive = false
   p.deathReason = reason
+  // 死亡事件级判胜：先达成条件者锁定，后续死亡/开枪不能改判
+  recordWinEvent(state)
   const killed = [name]
   killed.push(...applyLoverDeaths(state))
   // 警长出局 → 置待处理标记，由 BadgeService/UI 决策移交或流失
@@ -1060,6 +1090,7 @@ export function resetWholeGame(state: GameState): GameState {
   const judgeScores = state.judgeScores
   const winMode = state.winMode
   const simMode = state.simMode
+  const simVariant = state.simVariant
   const modeChosen = state.modeChosen
   const s = defaultState()
   s.board = board
@@ -1068,6 +1099,7 @@ export function resetWholeGame(state: GameState): GameState {
   s.judgeScores = judgeScores
   s.winMode = winMode
   s.simMode = simMode
+  s.simVariant = simVariant
   s.modeChosen = modeChosen
   return s
 }
@@ -1123,6 +1155,9 @@ export function manualSaveRoles(state: GameState): string | null {
   state.bloodSealNextNight = false
   state.skipDayAfterDawn = false
   state.winCamp = null
+  state.winReason = ""
+  state.winningThird = ""
+  state.winPending = null
   state.jingHui = ""
   state.wolfSelfKill = false
   state.knightDuelUsed = false
@@ -1197,10 +1232,15 @@ export function wolfKill(state: GameState, sel: string): string | null {
   // 恶灵骑士禁止被刀（不能自刀）
   if (getRoleInstance(target.role)?.def.id === "恶灵骑士") return `${sel}是恶灵骑士，禁止被刀`
   // 石像鬼不与狼群见面：狼误刀他不算自刀（不标"自刀"提示，女巫救他也不给狼队"骗解药"分）
-  // 黑化野孩子按狼计：狼刀他算自刀
-  const isSelf = isEffectiveWolf(target) && getRoleInstance(target.role)?.def.id !== "石像鬼"
-  // 情侣不能互刀：狼恋人不可作为刀人目标
-  if (isLover(state, sel) && isWolfRole(target.role)) {
+  // 人狼恋（WG）的狼恋人属第三方，狼队可以刀他；这不算自刀，也不给"自刀骗解药"分。
+  // 黑化野孩子按狼计：不在 WG 第三方时，狼刀他仍算自刀。
+  const isSelf =
+    isEffectiveWolf(target) &&
+    getRoleInstance(target.role)?.def.id !== "石像鬼" &&
+    !isThirdMember(state, target)
+  // 情侣不能互刀：仅狼狼恋（WW）双狼情侣互刀被禁止；
+  // 人狼恋（WG）的狼恋人属第三方，按口径可被狼队刀。
+  if (isLover(state, sel) && getChainType(state) === "WW") {
     return `情侣不能互刀，请重新选择刀人对象（${sel}是狼人恋人）`
   }
   const prev = state.nightWolfKill
@@ -1336,10 +1376,23 @@ export function checkWildChildTransform(state: GameState): void {
     if (p.role !== "野孩子" || !p.alive || p.mark.isTransform || !p.mark.roleModel) continue
     const model = state.players.find((x) => x.name === p.mark.roleModel)
     if (model && !model.alive) {
+      const before = getChainType(state)
       p.mark.isTransform = true
+      const after = getChainType(state)
       pushGlobalLog(state, `🐺野孩子${p.name}目睹榜样死亡，黑化为狼人阵营！`)
       pushNightLog(state, `🐺野孩子${p.name}黑化变身`)
       pushFlow(state, "野孩子变身", p.name, "黑化为狼")
+      // 野孩子是情侣时，黑化会改变链型：GG→WG 第三方成立；WG→WW 第三方解散。
+      // 在变身当刻播报，避免界面只显示「黑化」却看不出阵营关系已变。
+      if (before !== after && after === "WG") {
+        pushGlobalLog(state, "💘链型变为 人狼恋（WG）：第三方阵营成立！")
+        pushNightLog(state, "💘链型变为 人狼恋（WG）：第三方成立")
+        pushFlow(state, "链型变化", "人狼恋（WG）", "第三方成立")
+      } else if (before !== after && after === "WW") {
+        pushGlobalLog(state, "💔链型变为 狼狼恋（WW）：第三方解散，丘比特变回神")
+        pushNightLog(state, "💔链型变为 狼狼恋（WW）：第三方解散")
+        pushFlow(state, "链型变化", "狼狼恋（WW）", "第三方解散")
+      }
     }
   }
 }
@@ -1372,6 +1425,7 @@ export function dreamDo(state: GameState, sel: string): string | null {
   if (dm.mark.skillDisabled) return "摄梦人被恐惧，本夜无法行动"
   if (state.bloodMoonSeal) return "血月封印：本夜神职技能失效"
   if (!sel) return "请选择入梦对象"
+  if (sel === dm.name) return "摄梦人不能对自己入梦"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为入梦对象`
@@ -1417,17 +1471,19 @@ function bombExileDetonate(state: GameState, outP: Player, voters: string[]): vo
   const allVoted = aliveOthers.length > 0 && aliveOthers.every((p) => voterSet.includes(p.name))
   pushGlobalLog(state, `💣炸弹人${outP.name}被放逐，引爆炸弹！炸死：${voterSet.join("、")}`)
   pushFlow(state, "炸弹引爆", voterSet.join("、"))
+  // 先置独赢标记：爆炸致死者按“先达成者”锁定第三方胜
+  if (allVoted) {
+    state.bombVictory = true
+    pushGlobalLog(state, `💣全票放逐！炸弹人${outP.name}达成独赢条件！`)
+    pushFlow(state, "炸弹人独赢", outP.name, "全票放逐")
+    recordWinEvent(state)
+  }
   for (const v of voterSet) {
     const vp = state.players.find((x) => x.name === v)
     if (!vp) continue
     if (isEffectiveWolf(vp)) outP.mark.bombWolfCount = (outP.mark.bombWolfCount || 0) + 1
     else outP.mark.bombGoodCount = (outP.mark.bombGoodCount || 0) + 1
     killPlayer(state, v, "bomb", "炸弹人炸弹")
-  }
-  if (allVoted) {
-    state.bombVictory = true
-    pushGlobalLog(state, `💣全票放逐！炸弹人${outP.name}达成独赢条件！`)
-    pushFlow(state, "炸弹人独赢", outP.name, "全票放逐")
   }
 }
 
@@ -1783,9 +1839,14 @@ export function wolfKingShootConfirm(state: GameState, tarName: string): string 
   if (!target) return "未找到目标玩家"
   const targetRole = getRoleInstance(target.role)
   killPlayer(state, tarName, "shot")
-  // 计分口径：带狼 -1；带神牌 +0.5；带平民/白痴/第三方不加分
-  if (isEffectiveWolf(target)) wk.mark.wolfKingShotWolf = true
-  else if (targetRole?.countsAsGod()) wk.mark.wolfKingShotGood = true
+  // 计分口径：带狼 -1；带神牌 +0.5；带平民/第三方不加分。
+  // 人狼恋第三方（丘比特/情侣）一律不加分，狼恋人也不按狼枪计分。
+  const isWgThird =
+    getChainType(state) === "WG" && (target.role === "丘比特" || isLover(state, target.name))
+  if (!isWgThird) {
+    if (isEffectiveWolf(target)) wk.mark.wolfKingShotWolf = true
+    else if (targetRole?.countsAsGod()) wk.mark.wolfKingShotGood = true
+  }
   // 被带走的猎人能否开枪，由 HunterRole.onAfterDeath 处理
   state.wolfKingShotPending = false
   state.wolfKingShotDone = true
@@ -1874,7 +1935,13 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
     pushFlow(state, "放逐", outName, "白痴翻牌")
   } else if (isBomber) {
-    // 炸弹人放逐：先出局再引爆（引爆用校验过的名单）
+    // 炸弹人放逐：先判断全票独赢（在炸弹人死亡前置标记，避免先被其他胜负锁定）
+    const voterSet = [...new Set((bombVoters ?? []).filter(Boolean))]
+    const aliveOthers = state.players.filter((p) => p.alive && p.name !== outName)
+    if (aliveOthers.length > 0 && aliveOthers.every((p) => voterSet.includes(p.name))) {
+      state.bombVictory = true
+    }
+    // 先出局再引爆（引爆用校验过的名单）
     killPlayer(state, outName, "vote")
     state.lastVoteOut = outName
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
@@ -2061,7 +2128,7 @@ export function recalcScore(state: GameState): void {
       s += 2
       detail.push("平民胜利+2")
     }
-    if (win === "third" && isThirdMember(state, p)) {
+    if (win === "third" && state.winningThird === "WG" && isThirdMember(state, p)) {
       s += 3
       detail.push("第三方胜利+3")
     }
@@ -2085,8 +2152,9 @@ export const WIN_TEXT: Record<"wolf" | "god" | "civil" | "third" | "draw", strin
 }
 
 /** 第三方成员：丘比特 + 两位恋人（人狼恋时三人一体） */
-function isThirdMember(state: GameState, p: Player): boolean {
-  // 使用角色系统判断是否为丘比特
+export function isThirdMember(state: GameState, p: Player): boolean {
+  // 只有人狼恋（WG）才形成第三方；GG/WW 的丘比特是神，不是第三方
+  if (getChainType(state) !== "WG") return false
   const role = getRoleInstance(p.role)
   return (role && role.def.id === "丘比特") || isLover(state, p.name)
 }
@@ -2104,7 +2172,7 @@ export function checkWin(state: GameState): { ended: boolean; text: string; reas
   return checkWinRoleDriven(state)
 }
 
-import { checkWin as checkWinRoleDriven } from "./win-checker"
+import { checkWin as checkWinRoleDriven, recordWin as recordWinEvent } from "./win-checker"
 
 // ===================== 荣誉 / 结算 / 导出 =====================
 
@@ -2236,7 +2304,30 @@ export function campPlayerCounts(state: GameState): { wolf: number; god: number;
   let god = 0
   let villager = 0
   let third = 0
+  const wg = getChainType(state) === "WG"
   for (const p of state.players) {
+    if (!p.role) continue
+    // 人狼恋第三方：丘比特 + 两情侣统一归第三方，不再按底牌重复计入狼/神/民
+    if (wg && isThirdMember(state, p)) {
+      third++
+      continue
+    }
+    const role = getRoleInstance(p.role)
+    // 炸弹人是独立第三方
+    if (role?.def.id === "炸弹人") {
+      third++
+      continue
+    }
+    // 黑化野孩子按生效阵营计狼，不再算平民
+    if (isEffectiveWolf(p)) {
+      wolf++
+      continue
+    }
+    // 非人狼恋的丘比特是神
+    if (role?.def.id === "丘比特") {
+      god++
+      continue
+    }
     const camp = getRole(p.role)?.camp
     if (camp === "wolf") wolf++
     else if (camp === "god") god++

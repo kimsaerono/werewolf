@@ -92,3 +92,44 @@ describe("新角色界面护栏：语音映射 key 覆盖", () => {
     }
   })
 })
+
+const ROLE_HELP = readFileSync(new URL("../../components/RoleHelp.vue", import.meta.url), "utf8")
+const RECORD_PANEL = readFileSync(new URL("../../components/RecordPanel.vue", import.meta.url), "utf8")
+const END_PANEL = readFileSync(new URL("../../components/EndPanel.vue", import.meta.url), "utf8")
+const SEAT_BOARD = readFileSync(new URL("../../components/SeatBoard.vue", import.meta.url), "utf8")
+
+describe("第三方/野孩子链型 · 界面与文档护栏", () => {
+  it("首夜石像鬼在炸弹人之后（实际被挪到所有夜间步骤末尾）", () => {
+    expect(ROLE_HELP).toContain("炸弹人睁眼→石像鬼查验")
+    expect(ROLE_HELP).not.toContain("守卫→石像鬼→隐狼睁眼")
+  })
+
+  it("狼人帮助：仅 WW 不可互刀，WG 狼恋人可被刀", () => {
+    expect(ROLE_HELP).toContain("仅狼狼恋（WW）双狼情侣不可互刀")
+    expect(ROLE_HELP).toContain("人狼恋（WG）的狼恋人可被狼队刀")
+  })
+
+  it("野孩子/丘比特帮助：说明 GG→WG 成立、WG→WW 解散", () => {
+    expect(ROLE_HELP).toContain("GG→WG 第三方成立")
+    expect(ROLE_HELP).toContain("WG→WW 第三方解散")
+  })
+
+  it("丘比特帮助：好人恋人/丘比特被技能命中的计分口径", () => {
+    expect(ROLE_HELP).toContain("好人恋人/丘比特被女巫毒/猎人带/炸弹炸按好人-1")
+  })
+
+  it("历史记录优先用结算时固化的 chain，且炸弹人标第三方", () => {
+    expect(RECORD_PANEL).toContain("h.chain")
+    expect(RECORD_PANEL).toContain("第三方·")
+  })
+
+  it("结算面板第三方统计包含人狼恋与炸弹人", () => {
+    expect(END_PANEL).toContain("refs.getChainType")
+    expect(END_PANEL).toContain("thirdIcon")
+  })
+
+  it("座位牌给第三方阵营（含炸弹人）紫色描边", () => {
+    expect(SEAT_BOARD).toContain("third-camp")
+    expect(SEAT_BOARD).toContain("炸弹人")
+  })
+})
