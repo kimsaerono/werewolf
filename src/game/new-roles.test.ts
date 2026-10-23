@@ -9,6 +9,7 @@ import {
   killPlayer,
   nextNight,
   finishVote,
+  finishBombLastWords,
   wolfBaoZha,
   nightmareFear,
   wildChildPick,
@@ -270,6 +271,7 @@ describe("炸弹人", () => {
     st.phase = "day"
     expect(finishVote(st, "P0", false, ["P1", "P2", "P3"])).toBeNull()
     expect(st.bombVictory).toBe(true)
+    finishBombLastWords(st)
     const r = checkWin(st)
     expect(st.winCamp).toBe("third")
     expect(r.reason).toContain("炸弹")
@@ -696,6 +698,7 @@ describe("隐狼/血月 × 胜负", () => {
     const st = makeState(["炸弹人", "狼人", "平民"])
     st.phase = "day"
     finishVote(st, "P0", false, ["P1", "P2"])
+    finishBombLastWords(st)
     checkWin(st)
     expect(st.winCamp).toBe("third")
   })

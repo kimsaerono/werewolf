@@ -247,9 +247,9 @@ describe("getActiveNightStepKeys · 新角色步序", () => {
     )
     expect(keys).toEqual([
       "wildChild",
-      "hiddenWolf",
       "nightmare",
       "wolf",
+      "hiddenWolf",
       "prophet",
       "hunterWolf",
       "dreamer",
@@ -326,5 +326,22 @@ describe("getActiveNightStepKeys · 新角色步序", () => {
     expect(keys).toContain("nightmare")
     expect(keys).toContain("hunterWolf")
     expect(keys).toContain("dreamer")
+  })
+})
+
+describe("computeStepKeys · 石像鬼分配/查验顺序", () => {
+  it("首夜：石像鬼分配在预言家之前，查验挪到末尾", () => {
+    const s = build(["狼人", "石像鬼", "预言家", "平民", "平民"])
+    const keys = computeStepKeys(s)
+    expect(keys).toContain("gargoyleAssign")
+    expect(keys.indexOf("gargoyleAssign")).toBeLessThan(keys.indexOf("prophet"))
+    expect(keys.indexOf("gargoyle")).toBeGreaterThan(keys.indexOf("prophet"))
+  })
+
+  it("第二夜：不再有石像鬼分配步骤，查验仍在", () => {
+    const s = build(["狼人", "石像鬼", "预言家", "平民", "平民"], { round: 2 })
+    const keys = computeStepKeys(s)
+    expect(keys).not.toContain("gargoyleAssign")
+    expect(keys).toContain("gargoyle")
   })
 })

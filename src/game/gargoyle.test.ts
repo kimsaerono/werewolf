@@ -203,3 +203,28 @@ describe("石像鬼：计分", () => {
     expect(g.scoreRound).toBeGreaterThanOrEqual(3.5)
   })
 })
+
+describe("石像鬼刀权：黑化野孩子/隐狼锁刀", () => {
+  const alive = (st: GameState, name: string) => st.players.find((p) => p.name === name)!
+
+  it("黑化野孩子存活 → 石像鬼不能刀", () => {
+    const st = makeState(["狼人", "石像鬼", "野孩子", "平民"])
+    alive(st, "P1").alive = false // 普通狼出局
+    alive(st, "P3").mark.isTransform = true
+    expect(gargoyleCanKill(st)).toBe(false)
+  })
+
+  it("未黑化野孩子不算狼 → 石像鬼可以刀", () => {
+    const st = makeState(["狼人", "石像鬼", "野孩子", "平民"])
+    alive(st, "P1").alive = false
+    expect(gargoyleCanKill(st)).toBe(true)
+  })
+
+  it("隐狼存活 → 石像鬼不能刀", () => {
+    const st = makeState(["狼人", "石像鬼", "隐狼", "平民"])
+    alive(st, "P1").alive = false
+    expect(gargoyleCanKill(st)).toBe(false)
+    alive(st, "P3").alive = false
+    expect(gargoyleCanKill(st)).toBe(true)
+  })
+})

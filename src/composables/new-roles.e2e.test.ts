@@ -222,6 +222,9 @@ describe("新角色 E2E 完整对局", () => {
     // 第一天：全票放逐炸弹人（除自己外的全部存活玩家 P2、P3、P5）
     game.actions.finishVote("P1", false, ["P2", "P3", "P5"])
     expect(game.state.bombVictory).toBe(true)
+    // 爆炸后先走遗言，遗言结束才判胜负
+    expect(game.state.finished).toBe(false)
+    game.actions.finishBombLastWords()
     expect(game.state.finished).toBe(true)
     expect(game.state.winCamp).toBe("third")
   })

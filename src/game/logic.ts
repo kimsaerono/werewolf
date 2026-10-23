@@ -377,8 +377,14 @@ export interface GameState {
   nightDreamTarget: string
   /** 摄梦人本夜连梦触发梦杀目标（""=无） */
   nightDreamKill: string
-  /** 炸弹人全票放逐独赢已达成（胜负直接判第三方） */
+  /** 炸弹人爆炸后无人生还（或只剩自己）独赢已达成（胜负直接判第三方） */
   bombVictory: boolean
+  /** 炸弹人爆炸后等待遗言结束再判胜负（期间 recordWin/checkWin 挂起） */
+  bombLastWordsPending: boolean
+  /** 炸弹人放逐目标（遗言队列首位） */
+  lastBombBomber: string
+  /** 本次爆炸直接炸死的玩家（投票名单中爆炸时仍存活者；UI 按号码升序） */
+  lastBombVictims: string[]
   /** 模拟对局模式：不同步飞书 */
   simMode: boolean
   /** 模拟对局变体：normal=普通模拟；gods=诸神之战（默认屠城，角色自定义） */
@@ -509,6 +515,9 @@ export function defaultState(): GameState {
     nightDreamTarget: "",
     nightDreamKill: "",
     bombVictory: false,
+    bombLastWordsPending: false,
+    lastBombBomber: "",
+    lastBombVictims: [],
     simMode: true,
     simVariant: "normal",
     modeChosen: false,
@@ -564,6 +573,9 @@ export function normalizeState(s: GameState): GameState {
   if (typeof st.nightDreamTarget !== "string") st.nightDreamTarget = ""
   if (typeof st.nightDreamKill !== "string") st.nightDreamKill = ""
   if (typeof st.bombVictory !== "boolean") st.bombVictory = false
+  if (typeof st.bombLastWordsPending !== "boolean") st.bombLastWordsPending = false
+  if (typeof st.lastBombBomber !== "string") st.lastBombBomber = ""
+  if (!Array.isArray(st.lastBombVictims)) st.lastBombVictims = []
   if (typeof st.simMode !== "boolean") st.simMode = true
   if (st.simVariant !== "gods" || !st.simMode) st.simVariant = "normal"
   if (typeof st.winReason !== "string") st.winReason = ""
@@ -815,6 +827,9 @@ export function startNewGame(state: GameState): void {
   state.nightHuntTarget = ""
   state.nightDreamTarget = ""
   state.bombVictory = false
+  state.bombLastWordsPending = false
+  state.lastBombBomber = ""
+  state.lastBombVictims = []
   state.underdogs = []
   state.comeback = false
   state.underdogCamp = null
@@ -1173,6 +1188,9 @@ export function manualSaveRoles(state: GameState): string | null {
   state.nightHuntTarget = ""
   state.nightDreamTarget = ""
   state.bombVictory = false
+  state.bombLastWordsPending = false
+  state.lastBombBomber = ""
+  state.lastBombVictims = []
   refreshHiddenWolfKnife(state)
   pushGlobalLog(state, "✅法官手动分配角色完成，本局开始")
   return null
@@ -1464,25 +1482,26 @@ function validateBombVoters(state: GameState, outName: string, voters: string[])
   return null
 }
 
-/** 炸弹人被放逐引爆炸弹：炸死被票选者（不开枪）；全票放逐则独赢 */
-function bombExileDetonate(state: GameState, outP: Player, voters: string[]): void {
+/** 炸弹人被放逐引爆炸弹：炸死被票选者（不开枪）；胜负在遗言结束后按 alive==0 判定 */
+function bombExileDetonate(state: GameState, outP: Player, voters: string[], allVoted: boolean): void {
   const voterSet = [...new Set(voters.filter(Boolean))]
-  const aliveOthers = state.players.filter((p) => p.alive && p.name !== outP.name)
-  const allVoted = aliveOthers.length > 0 && aliveOthers.every((p) => voterSet.includes(p.name))
   pushGlobalLog(state, `💣炸弹人${outP.name}被放逐，引爆炸弹！炸死：${voterSet.join("、")}`)
   pushFlow(state, "炸弹引爆", voterSet.join("、"))
-  // 先置独赢标记：爆炸致死者按“先达成者”锁定第三方胜
   if (allVoted) {
-    state.bombVictory = true
-    pushGlobalLog(state, `💣全票放逐！炸弹人${outP.name}达成独赢条件！`)
-    pushFlow(state, "炸弹人独赢", outP.name, "全票放逐")
-    recordWinEvent(state)
+    pushGlobalLog(state, `💣全票放逐！炸弹人${outP.name}达成引爆条件！`)
+    pushFlow(state, "炸弹人全票", outP.name, "全票放逐")
   }
+  state.lastBombVictims = []
   for (const v of voterSet) {
     const vp = state.players.find((x) => x.name === v)
-    if (!vp) continue
-    if (isEffectiveWolf(vp)) outP.mark.bombWolfCount = (outP.mark.bombWolfCount || 0) + 1
-    else outP.mark.bombGoodCount = (outP.mark.bombGoodCount || 0) + 1
+    // 炸弹人自身/已因殉情等先出局者不算爆炸死亡
+    if (!vp || !vp.alive) continue
+    // 其他第三方阵营与炸弹人得分互斥：不计狼/好
+    if (!isThirdMember(state, vp)) {
+      if (isEffectiveWolf(vp)) outP.mark.bombWolfCount = (outP.mark.bombWolfCount || 0) + 1
+      else outP.mark.bombGoodCount = (outP.mark.bombGoodCount || 0) + 1
+    }
+    state.lastBombVictims.push(v)
     killPlayer(state, v, "bomb", "炸弹人炸弹")
   }
 }
@@ -1561,12 +1580,12 @@ export function gargoyleCheck(state: GameState, sel: string): string | { name: s
   return { name: sel, role }
 }
 
-/** 石像鬼是否已解锁刀人：除石像鬼外狼阵营全灭 */
+/** 石像鬼是否已解锁刀人：除石像鬼外狼阵营全灭（黑化野孩子按生效狼计） */
 export function gargoyleCanKill(state: GameState): boolean {
   const gargoyle = state.players.find((p) => getRoleInstance(p.role)?.def.id === "石像鬼")
   if (!gargoyle || !gargoyle.alive) return false
   const otherWolfAlive = state.players.some(
-    (p) => p.alive && p.name !== gargoyle.name && isWolfRole(p.role),
+    (p) => p.alive && p.name !== gargoyle.name && isEffectiveWolf(p),
   )
   return !otherWolfAlive
 }
@@ -1580,7 +1599,7 @@ export function gargoyleKill(state: GameState, sel: string): string | null {
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
   if (!target.alive) return `${sel}已出局，不能作为刀人对象`
-  if (isWolfRole(target.role)) return `${sel}是狼阵营，石像鬼不能刀狼`
+  if (isEffectiveWolf(target)) return `${sel}是狼阵营，石像鬼不能刀狼`
   state.nightWolfKill = sel
   state.wolfSelfKill = false
   if (gargoyle) gargoyle.mark.gargoyleKilledTonight = true
@@ -1921,7 +1940,7 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
   if (isIdiot && outP.mark.idiotFlipped) {
     return "白痴已翻牌，无法被放逐出局"
   }
-  // 炸弹人：放逐前校验票选名单（可多选，全票放逐独赢）
+  // 炸弹人：放逐前校验票选名单（可多选，爆炸后无人生还独赢）
   const isBomber = outRole && outRole.def.id === "炸弹人"
   if (isBomber) {
     const err = validateBombVoters(state, outName, bombVoters ?? [])
@@ -1935,18 +1954,26 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
     pushGlobalLog(state, `🙊白痴${outName}被放逐，翻牌免死（失去投票权）`)
     pushFlow(state, "放逐", outName, "白痴翻牌")
   } else if (isBomber) {
-    // 炸弹人放逐：先判断全票独赢（在炸弹人死亡前置标记，避免先被其他胜负锁定）
+    // 爆炸与遗言期间挂起胜负；遗言结束后再判（期间 recordWin/checkWin 不生效）
+    state.bombLastWordsPending = true
+    state.lastBombBomber = outName
+    state.lastBombVictims = []
+    // 全票判定按“投票前”的存活名单（炸弹人的情侣可能随后殉情，不能因此误报全票）
     const voterSet = [...new Set((bombVoters ?? []).filter(Boolean))]
-    const aliveOthers = state.players.filter((p) => p.alive && p.name !== outName)
-    if (aliveOthers.length > 0 && aliveOthers.every((p) => voterSet.includes(p.name))) {
-      state.bombVictory = true
-    }
+    const aliveOthersBefore = state.players.filter((p) => p.alive && p.name !== outName)
+    const allVoted = aliveOthersBefore.length > 0 && aliveOthersBefore.every((p) => voterSet.includes(p.name))
     // 先出局再引爆（引爆用校验过的名单）
     killPlayer(state, outName, "vote")
     state.lastVoteOut = outName
     pushGlobalLog(state, `⚖️投票放逐出局：${outName}`)
     pushFlow(state, "放逐", outName)
-    bombExileDetonate(state, outP, bombVoters ?? [])
+    bombExileDetonate(state, outP, bombVoters ?? [], allVoted)
+    // 爆炸结算完成后存活人数为 0 → 炸弹人独赢（全票是其子集；情侣殉情导致的 0 人也算）
+    if (state.players.every((p) => !p.alive)) {
+      state.bombVictory = true
+      pushGlobalLog(state, `💣炸弹人${outName}引爆后场上无人生还，达成独赢！`)
+      pushFlow(state, "炸弹人独赢", outName, "爆炸后无人存活")
+    }
   } else {
     // 血月使徒仅剩狼被放逐 → 延迟出局：当晚可行动/自爆，天亮死亡
     const isBloodMoon = outRole && outRole.def.id === "血月使徒"
@@ -1975,6 +2002,13 @@ export function finishVote(state: GameState, outName: string, idiotFlip: boolean
   // 本日投票已结束：之后不能再自爆（只能在此前的警上/放逐发言阶段自爆）
   state.uiDone.vote = true
   return null
+}
+
+/** 炸弹人遗言队列结束：恢复胜负判定（爆炸/遗言期间 recordWin/checkWin 挂起） */
+export function finishBombLastWords(state: GameState): void {
+  if (!state.bombLastWordsPending) return
+  state.bombLastWordsPending = false
+  recordWinEvent(state)
 }
 
 export function wolfBaoZha(state: GameState, sel: string): string | null {

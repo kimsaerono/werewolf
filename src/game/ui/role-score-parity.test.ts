@@ -119,7 +119,7 @@ describe("新角色计分护栏：文案 ↔ scoreRules 数值一致", () => {
     expect(SCORE_TEXT["摄梦人"]).toContain("-1")
   })
 
-  it("炸弹人：炸死狼 +1、炸死好人 -1、全票放逐独赢 +3", () => {
+  it("炸弹人：炸死狼 +1、炸死好人 -1、爆炸独赢 +4", () => {
     const wk = findEntry("炸弹人", { bombWolfCount: 1 }, "炸狼")
     expect(wk).toBeTruthy()
     expect(wk!.delta).toBe(1)
@@ -130,7 +130,7 @@ describe("新角色计分护栏：文案 ↔ scoreRules 数值一致", () => {
     expect(gd!.delta).toBe(-1)
     expect(SCORE_TEXT["炸弹人"]).toContain("-1")
 
-    // 全票放逐独赢：需 winCamp=third + bombVictory=true
+    // 爆炸独赢：需 winCamp=third + bombVictory=true
     const { st, p } = makeRoleState("炸弹人", {})
     st.winCamp = "third"
     st.bombVictory = true
@@ -139,7 +139,7 @@ describe("新角色计分护栏：文案 ↔ scoreRules 数值一致", () => {
       p as unknown as { name: string; role: string; mark: Record<string, unknown> },
     )
     const win = entries.find((e) => e.reason.includes("独赢"))
-    expect(win, "缺少全票放逐独赢计分项").toBeTruthy()
+    expect(win, "缺少爆炸独赢计分项").toBeTruthy()
     expect(win!.delta).toBe(4)
     expect(SCORE_TEXT["炸弹人"]).toContain("+4")
     expect(SCORE_TEXT["炸弹人"]).toContain("独赢")
@@ -208,7 +208,7 @@ describe("新角色计分护栏：胜利分归属（防类别错配）", () => {
     st.players = [bomb]
     recalcScore(st)
     expect(bomb.scoreDetail).toContain("炸弹炸狼+1")
-    expect(bomb.scoreDetail).toContain("全票放逐独赢+4")
+    expect(bomb.scoreDetail).toContain("爆炸独赢+4")
     // 炸弹人的 +4 即其胜利分，不再叠加通用第三方胜利+3，避免重复计分
     expect(bomb.scoreDetail).not.toContain("第三方胜利+3")
     expect(bomb.scoreRound).toBeCloseTo(5, 5)

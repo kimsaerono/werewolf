@@ -75,12 +75,19 @@ export function resolveNightEffects(state: GameState): string | null {
     }
   }
 
-  // 梦游免疫：梦游者免疫夜间伤害（狼刀/毒药/反伤），优先级最高
+  // 梦游免疫：只挡外来夜间伤害（狼刀/毒药）；恶灵骑士反伤是技能结算惩罚，不挡。
+  // 同一目标可能同时有“毒药 + 反伤”，killed 只会保留优先级更高的一个 source，
+  // 因此按 effects 里的反伤目标集合判断，避免毒药 source 掩盖反伤导致误免。
+  const revengeTargets = new Set(
+    effects
+      .filter((e) => e.type === "kill" && e.source === "恶灵骑士反伤")
+      .map((e) => e.target),
+  )
   for (const p of state.players) {
     if (p.mark.dreamShield && p.alive) {
       saved.delete(p.name)
       blocked.delete(p.name)
-      killed.delete(p.name)
+      if (!revengeTargets.has(p.name)) killed.delete(p.name)
     }
   }
 
@@ -147,7 +154,6 @@ export function resolveNightEffects(state: GameState): string | null {
     const target = state.players.find((x) => x.name === state.nightHuntTarget)
     if (hunter && target && target.alive) {
       const targetDreamImmune = !!target.mark.dreamShield
-      const hunterDreamImmune = !!hunter.mark.dreamShield
       if (getRoleInstance(target.role)?.def.id === "恶灵骑士") {
         // 恶灵骑士免疫夜间所有伤害：狩猎无法击杀（仍是狼，不反噬）
         pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
@@ -164,17 +170,12 @@ export function resolveNightEffects(state: GameState): string | null {
           pushFlow(state, "猎魔人结算", target.name, "戳中狼")
         }
       } else {
-        // 好人目标：猎魔人反噬（目标的梦免只挡击杀，不挡反噬）
+        // 好人目标：猎魔人反噬。反噬是自身技能结算惩罚，梦免不挡
         hunter.mark.huntGoodCount = (hunter.mark.huntGoodCount || 0) + 1
         if (hunter.alive) {
-          if (hunterDreamImmune) {
-            pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}，反噬被梦境免疫`)
-            pushFlow(state, "猎魔人结算", hunter.name, "反噬梦免")
-          } else {
-            deathList.push(...killPlayer(state, hunter.name, "other", "猎魔人反噬"))
-            pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}${targetDreamImmune ? "（目标被梦境免疫）" : ""}，反噬出局`)
-            pushFlow(state, "猎魔人结算", hunter.name, "戳错反噬")
-          }
+          deathList.push(...killPlayer(state, hunter.name, "other", "猎魔人反噬"))
+          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}，反噬出局`)
+          pushFlow(state, "猎魔人结算", hunter.name, "戳错反噬")
         }
       }
     }

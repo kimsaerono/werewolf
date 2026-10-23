@@ -40,7 +40,8 @@ describe("新角色界面护栏：关键提示文案存在", () => {
   })
 
   it("炸弹人放逐引爆播报", () => {
-    expect(PANEL).toMatch(/炸弹人放逐引爆/)
+    expect(PANEL).toMatch(/炸弹人放逐/)
+    expect(PANEL).toMatch(/炸弹爆炸/)
   })
 })
 
@@ -115,7 +116,13 @@ describe("第三方/野孩子链型 · 界面与文档护栏", () => {
   })
 
   it("丘比特帮助：好人恋人/丘比特被技能命中的计分口径", () => {
-    expect(ROLE_HELP).toContain("好人恋人/丘比特被女巫毒/猎人带/炸弹炸按好人-1")
+    expect(ROLE_HELP).toContain("好人恋人/丘比特被女巫毒/猎人带按好人-1，炸弹炸 0")
+  })
+
+  it("隐狼/石像鬼帮助：隐狼首夜获知狼人号码，石像鬼分配前置", () => {
+    expect(ROLE_HELP).toContain("隐狼睁眼（获知狼人号码）")
+    expect(ROLE_HELP).toContain("石像鬼分配")
+    expect(ROLE_HELP).toContain("单方面得知本局所有狼人阵营号码")
   })
 
   it("历史记录优先用结算时固化的 chain，且炸弹人标第三方", () => {
@@ -131,5 +138,32 @@ describe("第三方/野孩子链型 · 界面与文档护栏", () => {
   it("座位牌给第三方阵营（含炸弹人）紫色描边", () => {
     expect(SEAT_BOARD).toContain("third-camp")
     expect(SEAT_BOARD).toContain("炸弹人")
+  })
+})
+
+describe("炸弹人/隐狼 · 新流程护栏", () => {
+  it("炸弹人全屏过场在选投票者之前，且有 bomber 动画配置", () => {
+    expect(PANEL).toContain("bomber: {")
+    expect(PANEL).toMatch(/effect\("bomber"/)
+    expect(PANEL).toContain("startBombLastWordsQueue")
+  })
+
+  it("炸弹人遗言队列：炸弹人先、直接炸死者升序、结束再判胜负", () => {
+    expect(PANEL).toContain("lastWordsQueue")
+    expect(PANEL).toContain("nextLastWords")
+    expect(PANEL).toContain("finishBombLastWords")
+    expect(PANEL).toContain("state.bombLastWordsPending")
+  })
+
+  it("隐狼首夜全屏名单 + 手动关闭", () => {
+    expect(PANEL).toContain("hiddenWolfReveal")
+    expect(PANEL).toContain("showHiddenWolfList")
+    expect(PANEL).toContain("本局狼人阵营")
+    expect(PANEL).toContain("知道了")
+  })
+
+  it("石像鬼分配步骤提前、查验步骤保留", () => {
+    expect(PANEL).toContain("gargoyleAssign")
+    expect(PANEL).toContain("石像鬼分配")
   })
 })

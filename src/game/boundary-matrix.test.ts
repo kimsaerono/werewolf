@@ -32,6 +32,7 @@ import {
   witchPoison,
   knightDuel,
   finishVote,
+  finishBombLastWords,
   wolfBaoZha,
   wolfKingBaoZha,
   hunterShootConfirm,
@@ -176,10 +177,11 @@ describe("边界矩阵 · 夜间顺序", () => {
       "cupid",
       "loversMeet",
       "guard",
+      "gargoyleAssign",
       "gargoyle",
-      "hiddenWolf",
       "nightmare",
       "wolf",
+      "hiddenWolf",
       "charm",
       "prophet",
       "hunterWolf",
@@ -212,8 +214,8 @@ describe("边界矩阵 · 夜间顺序", () => {
       hunterAlive: true,
     })
     expect(keys).toEqual([
-      "wildChild", "cupid", "loversMeet", "guard", "gargoyle", "hiddenWolf", "nightmare",
-      "wolf", "charm", "prophet", "hunterWolf", "dreamer", "witch", "gravekeeper",
+      "wildChild", "cupid", "loversMeet", "guard", "gargoyleAssign", "gargoyle", "nightmare",
+      "wolf", "hiddenWolf", "charm", "prophet", "hunterWolf", "dreamer", "witch", "gravekeeper",
       "idiotOpen", "knight", "hunterOpen", "bomberOpen",
     ])
   })
@@ -232,7 +234,7 @@ describe("边界矩阵 · 夜间顺序", () => {
       hunterExists: true,
       hunterAlive: true,
     })
-    for (const firstOnly of ["wildChild", "cupid", "loversMeet", "hiddenWolf", "idiotOpen", "knight", "bomberOpen"]) {
+    for (const firstOnly of ["wildChild", "cupid", "loversMeet", "gargoyleAssign", "hiddenWolf", "idiotOpen", "knight", "bomberOpen"]) {
       expect(keys, `${firstOnly} 不应出现在第二夜`).not.toContain(firstOnly)
     }
     for (const everyNight of ["gargoyle", "nightmare", "wolf", "charm", "prophet", "hunterWolf", "dreamer", "witch", "gravekeeper", "hunterOpen"]) {
@@ -697,16 +699,29 @@ describe("边界矩阵 · 免疫与克制", () => {
     expect(g(st, "P1").mark.huntWolfCount).toBe(0)
   })
 
-  it("猎魔人自己是梦游者：狩猎好人的反噬被梦免", () => {
+  it("猎魔人自己是梦游者：狩猎好人的反噬仍出局（梦免不挡自身反噬）", () => {
     const st = makeState(["摄梦人", "猎魔人", "狼人", "平民", "平民"], { round: 2 })
     dreamDo(st, "P1")
     expect(hunterHunt(st, "P3")).toBeNull()
     wolfEmptyKill(st)
     resolveNightEffects(st)
-    // 好人目标不被击杀；猎魔人自己的梦免挡下反噬 → 两人都活
+    // 好人目标不被击杀；猎魔人自身反噬是技能结算惩罚，梦免不挡
     expect(g(st, "P3").alive).toBe(true)
-    expect(g(st, "P1").alive).toBe(true)
+    expect(g(st, "P1").alive).toBe(false)
+    expect(g(st, "P1").deathReason).toBe("other")
     expect(g(st, "P1").mark.huntGoodCount).toBe(1)
+  })
+
+  it("梦游者验恶灵骑士：反伤不被梦免，预言家仍出局", () => {
+    const st = makeState(["狼人", "恶灵骑士", "预言家", "平民", "摄梦人"], { round: 1 })
+    dreamDo(st, "P2") // 摄梦人保护预言家 P2
+    expect(prophetCheck(st, "P1")).toBeTruthy() // 预言家验恶灵骑士 P1
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    // 反伤是恶灵骑士的被动结算，不属于梦免的外来夜间伤害
+    expect(g(st, "P2").alive).toBe(false)
+    expect(g(st, "P2").deathReason).toBe("other")
+    expect(g(st, "P1").alive).toBe(true)
   })
 
   it("猎魔人狩猎梦游者（狼）：狼的击杀被梦免，无反噬", () => {
@@ -813,6 +828,9 @@ describe("边界矩阵 · 死亡触发（开枪/翻牌/殉情）", () => {
     full.phase = "day"
     finishVote(full, "P0", false, ["P1", "P2"])
     expect(full.bombVictory).toBe(true)
+    // 爆炸后遗言结束再判胜负
+    expect(checkWin(full).ended).toBe(false)
+    finishBombLastWords(full)
     const r = checkWin(full)
     expect(r.ended).toBe(true)
     expect(full.winCamp).toBe("third")
@@ -1436,5 +1454,19 @@ describe("退化板子 · 无神无民（仅狼 + WG 丘比特）", () => {
     killPlayer(st, "P0", "vote") // 狼恋人出局 → 丘比特殉情，第三方被清
     checkWin(st)
     expect(st.winCamp).toBe("wolf")
+  })
+})
+
+describe("梦游免疫 × 恶灵骑士反伤组合", () => {
+  it("梦游者同时被毒 + 验恶灵骑士：反伤不被梦免，仍出局", () => {
+    const st = makeState(["狼人", "恶灵骑士", "预言家", "女巫", "摄梦人"], { round: 1 })
+    dreamDo(st, "P2") // 摄梦人保护预言家 P2
+    expect(prophetCheck(st, "P1")).toBeTruthy() // 预言家验恶灵骑士 P1
+    expect(witchPoison(st, "P2")).toBeNull() // 女巫同时毒预言家
+    wolfEmptyKill(st)
+    resolveNightEffects(st)
+    // 毒药 source 不能掩盖反伤：反伤不属于梦免，预言家仍出局
+    expect(g(st, "P2").alive).toBe(false)
+    expect(g(st, "P1").alive).toBe(true)
   })
 })

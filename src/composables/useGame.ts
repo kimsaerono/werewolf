@@ -291,6 +291,12 @@ function settle(reason: string, skipFinish = false): void {
 
 /** 每次操作后调用：重算分数 + 自动判胜负（判出则保存本局、锁定对局、弹窗） */
 function refresh(): void {
+  // 炸弹人爆炸后遗言未结束：先不判胜负，等 finishBombLastWords 再判
+  if (state.bombLastWordsPending) {
+    g.recalcScore(state)
+    persist()
+    return
+  }
   const r = g.checkWin(state)
   g.recalcScore(state)
   // 胜局可能已由死亡事件锁定（recordWin）；若有猎人/狼王开枪待处理，先结算完技能再结束
@@ -483,6 +489,8 @@ export function useGame() {
     },
 
     flowToggle() {
+      // 炸弹人遗言未结束：先结束遗言再判胜负/入夜
+      if (state.bombLastWordsPending) return
       if (state.phase === "night") {
         uiMode.value = uiMode.value === "night" ? "day" : "night"
       } else {
@@ -614,6 +622,10 @@ export function useGame() {
       refresh()
       return err
     },
+    finishBombLastWords() {
+      g.finishBombLastWords(state)
+      refresh()
+    },
     wolfBaoZha(sel: string) {
       const err = g.wolfBaoZha(state, sel)
       refresh()
@@ -648,6 +660,8 @@ export function useGame() {
 
     /** 提前结束对局（仅在检测到必然结局时可用）：按求解出的胜方直接结算 */
     finishGameEarly(): string | null {
+      // 炸弹人爆炸后必须先走完遗言，不能从胜率面板提前结束
+      if (state.bombLastWordsPending) return "炸弹人遗言尚未结束，请先完成遗言"
       const forced = checkForcedWin(state)
       if (!forced?.detected) {
         return "当前局势未达成必然结局条件，无法提前结束"

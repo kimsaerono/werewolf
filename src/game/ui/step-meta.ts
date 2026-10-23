@@ -16,6 +16,7 @@ export const STEP_META: Record<string, StepMeta> = {
   wildChild: { label: "野孩子选榜样", emoji: "🌱" },
   loversMeet: { label: "情侣认亲", emoji: "💑" },
   guard: { label: "守卫守人", emoji: "🛡️" },
+  gargoyleAssign: { label: "石像鬼分配", emoji: "🗿" },
   hiddenWolf: { label: "隐狼睁眼", emoji: "🐺" },
   nightmare: { label: "噩梦之影恐惧", emoji: "😱" },
   wolf: { label: "狼人刀人", emoji: "🌑" },

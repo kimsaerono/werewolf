@@ -41,12 +41,12 @@ export const BUILTIN_ROLES: RoleDef[] = [
   },
   { id: "白狼王", camp: "wolf", unique: true, emoji: "❄️🐺", short: "白狼", intentKeys: [] },
   { id: "狼王", camp: "wolf", unique: true, emoji: "🔫🐺", short: "狼王", intentKeys: [] },
-  // 隐狼：不与狼群见面，首夜单独认人；带刀后并入狼人环节
+  // 隐狼：不与狼群见面，首夜在狼人商议刀法之后单独睁眼认人并获知狼人号码
   {
     id: "隐狼", camp: "wolf", unique: true, emoji: "🐺🌫️", short: "隐狼", wolfPack: false, intentKeys: ["nightWolfKill"],
     nightStep: {
-      order: 26, key: "hiddenWolf", label: "隐狼睁眼", emoji: "🐺",
-      // 仅首夜出现：法官单独叫醒确认身份（不与狼群见面）
+      order: 31, key: "hiddenWolf", label: "隐狼睁眼", emoji: "🐺",
+      // 仅首夜出现，且在狼人刀人步骤之后：法官一次性告知其本局狼人号码
       enabled: (c) => c.round <= 1 && c.boardRoles.includes("隐狼") && !c.nightSteps.hiddenWolf,
     },
   },
@@ -66,7 +66,8 @@ export const BUILTIN_ROLES: RoleDef[] = [
     id: "石像鬼", camp: "wolf", unique: true, emoji: "🗿", short: "石", wolfPack: false, intentKeys: ["nightWolfKill"],
     nightStep: {
       order: 25, key: "gargoyle", label: "石像鬼", emoji: "🗿",
-      // 板子含石像鬼即每夜出现（照常念台词）；是否可验/可刀由面板判断
+      // 板子含石像鬼即每夜出现（照常念台词）；是否可验/可刀由面板判断。
+      // 首夜角色分配由 gargoyleAssign（order 22）提前完成，本步骤只负责查验/刀人。
       enabled: (c) => c.boardRoles.includes("石像鬼") && !c.nightSteps.gargoyle,
     },
   },

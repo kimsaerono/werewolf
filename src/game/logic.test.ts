@@ -15,6 +15,7 @@ import {
   witchPoison,
   guardDo,
   finishVote,
+  finishBombLastWords,
   wolfBaoZha,
   wolfKingBaoZha,
   resetWholeGame,
@@ -453,31 +454,62 @@ describe("狼王枪计分（神牌+0.5 / 狼-1 / 其余不加分）", () => {
     expect(wk.scoreRound).toBe(0.5)
   })
 
-  it("人狼恋狼恋人仍是狼：女巫毒/猎人带/炸弹炸按狼 +1", () => {
+  it("人狼恋狼恋人：女巫毒/猎人带按狼 +1；炸弹人炸第三方 0", () => {
     const st = setup(["炸弹人", "狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
     started(st)
     cupidConnect(st, ["P2", "P8"]) // P2 狼恋人 + P8 好人恋人，P7 丘比特
     byRole(st, "女巫")!.mark.witchPoWolf = true
     byRole(st, "猎人")!.mark.hunterKillWolf = true
-    byRole(st, "炸弹人")!.mark.bombWolfCount = 1
     recalcScore(st)
     expect(byRole(st, "女巫")!.scoreRound).toBe(1)
     expect(byRole(st, "猎人")!.scoreRound).toBe(1)
-    expect(byRole(st, "炸弹人")!.scoreRound).toBe(1)
+    // 炸弹人与丘比特是两个不同第三方阵营，炸弹炸丘比特第三方不计分
+    expect(byRole(st, "炸弹人")!.scoreRound).toBe(0)
   })
 
-  it("人狼恋好人恋人/丘比特：女巫毒/猎人带/炸弹炸按好人 -1", () => {
-    // 非狼阵营的第三方成员（好人恋人、丘比特）在技能计分上按好人处理
+  it("人狼恋好人恋人/丘比特：女巫毒/猎人带按好人 -1；炸弹人炸第三方 0", () => {
+    // 非狼阵营的第三方成员（好人恋人、丘比特）在女巫/猎人技能计分上按好人处理
     const st = setup(["炸弹人", "狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
     started(st)
     cupidConnect(st, ["P2", "P8"]) // P2 狼恋人 + P8 好人恋人，P7 丘比特
     byRole(st, "女巫")!.mark.witchPoGood = true
     byRole(st, "猎人")!.mark.hunterKillGood = true
-    byRole(st, "炸弹人")!.mark.bombGoodCount = 1
     recalcScore(st)
     expect(byRole(st, "女巫")!.scoreRound).toBe(-1)
     expect(byRole(st, "猎人")!.scoreRound).toBe(-1)
-    expect(byRole(st, "炸弹人")!.scoreRound).toBe(-1)
+    // 炸弹炸丘比特第三方不计分
+    expect(byRole(st, "炸弹人")!.scoreRound).toBe(0)
+  })
+
+  it("炸弹人爆炸计分：炸狼/炸好人计分，炸丘比特第三方 0，殉情者不计", () => {
+    const st = setup(["炸弹人", "狼王", "狼人", "预言家", "女巫", "猎人", "守卫", "丘比特", "平民", "平民", "平民"])
+    started(st)
+    cupidConnect(st, ["P2", "P8"]) // P2 狼恋人 + P8 好人恋人，P7 丘比特
+    // 投票者：P1 狼王（狼 +1）、P9 平民（好人 -1）、P2 狼恋人（第三方 0）、P7 丘比特（第三方 0）
+    expect(finishVote(st, "P0", false, ["P1", "P9", "P2", "P7"])).toBeNull()
+    const bomb = byRole(st, "炸弹人")!
+    expect(bomb.mark.bombWolfCount).toBe(1) // 仅 P1
+    expect(bomb.mark.bombGoodCount).toBe(1) // 仅 P9
+    expect(st.lastBombVictims).toEqual(["P1", "P9", "P2", "P7"])
+    // P8 是 P2 的殉情连带，不是爆炸炸死，不计分也不进遗言队列
+    expect(st.lastBombVictims).not.toContain("P8")
+  })
+
+  it("炸弹人自己是情侣：伴侣未投票但殉情出局，alive==0 仍判炸弹人独赢", () => {
+    const st = setup(["炸弹人", "狼人", "平民", "平民"])
+    started(st)
+    st.lovers = ["P0", "P1"] // 炸弹人 + 狼人 = 人狼恋
+    expect(finishVote(st, "P0", false, ["P2", "P3"])).toBeNull()
+    // P1 未投票但因殉情出局；P2/P3 被炸死 → alive==0
+    expect(g(st, "P1").alive).toBe(false)
+    expect(st.bombVictory).toBe(true)
+    // P1 未投票：即使随后殉情导致 alive==0，也不能误报“全票放逐”
+    expect(st.globalLog.some((l) => l.includes("全票放逐"))).toBe(false)
+    expect(st.lastBombVictims).toEqual(["P2", "P3"])
+    finishBombLastWords(st)
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("bomber")
   })
 
   it("枪带人狼恋第三方（狼恋人/好人恋人/丘比特）不加分", () => {
@@ -1912,5 +1944,27 @@ describe("白狼王荣誉推荐 highlight", () => {
     st.winCamp = "wolf"
     g(st, "P0").scoreRound = 3
     expect(suggestHonor(st).mvp).toBe("")
+  })
+})
+
+describe("炸弹人爆炸 × 丘比特第三方胜负互斥", () => {
+  it("爆炸后只剩丘比特第三方（不要求三人全活）→ 丘比特第三方胜，炸弹人不拿+4", () => {
+    const st = setup(["炸弹人", "狼人", "平民", "丘比特", "平民"])
+    started(st)
+    cupidConnect(st, ["P1", "P2"]) // P1 狼恋人 + P2 好人恋人，P3 丘比特
+    // 炸弹人 P0 被放逐，P4 平民投票并被炸死；场上剩 P1/P2/P3 三个第三方
+    expect(finishVote(st, "P0", false, ["P4"])).toBeNull()
+    expect(st.bombVictory).toBe(false)
+    finishBombLastWords(st)
+    checkWin(st)
+    expect(st.winCamp).toBe("third")
+    expect(st.winningThird).toBe("WG")
+    recalcScore(st)
+    // 丘比特第三方三人各 +3；炸弹人只拿炸好人 -1，不拿 +4
+    for (const n of ["P1", "P2", "P3"]) {
+      expect(g(st, n).scoreDetail).toContain("第三方胜利+3")
+    }
+    expect(g(st, "P0").scoreDetail).not.toContain("存活到最后独赢+4")
+    expect(g(st, "P0").scoreDetail).not.toContain("爆炸独赢+4")
   })
 })

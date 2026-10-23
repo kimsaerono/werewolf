@@ -135,9 +135,9 @@ type WinResult = { camp: ResultCamp; reason: string; winningThird: "WG" | "bombe
 
 /** 纯计算当前局面胜负；不写 state。先达成者由 recordWin 锁定。 */
 export function computeWin(state: GameState): WinResult | null {
-  // 炸弹人全票放逐：即使炸弹人已死，也优先判第三方胜
+  // 炸弹人爆炸后无人生还：即使炸弹人已死，也优先判第三方胜
   if (state.bombVictory) {
-    return { camp: "third", reason: "炸弹人全票放逐，炸弹引爆达成独赢", winningThird: "bomber" }
+    return { camp: "third", reason: "炸弹人引爆后无人生还，炸弹引爆达成独赢", winningThird: "bomber" }
   }
 
   // 角色自身 winRule（丘比特人狼恋第三方/平局）
@@ -226,6 +226,8 @@ export function computeWin(state: GameState): WinResult | null {
 
 /** 首个达成胜负条件时锁定；后续死亡/开枪不能改判 */
 export function recordWin(state: GameState): void {
+  // 炸弹人爆炸/遗言期间挂起胜负：等遗言结束由 finishBombLastWords 恢复
+  if (state.bombLastWordsPending) return
   if (!isGameStarted(state) || state.finished || state.winCamp || state.winPending) return
   const r = computeWin(state)
   if (!r) return
@@ -238,6 +240,10 @@ export function recordWin(state: GameState): void {
  * 已锁定则直接返回锁定结果；否则计算并写入。
  */
 export function checkWin(state: GameState): { ended: boolean; text: string; reason: string } {
+  // 炸弹人爆炸/遗言期间挂起胜负：等遗言结束再判
+  if (state.bombLastWordsPending) {
+    return { ended: false, text: "", reason: "" }
+  }
   if (!isGameStarted(state)) {
     return { ended: false, text: "", reason: "" }
   }

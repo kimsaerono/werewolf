@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref, watch } from "vue"
+import { computed, h, ref, watch, watchEffect } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
 import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult, isEffectiveWolf } from "@/game/logic"
@@ -125,6 +125,8 @@ const lastWordsShow = ref(false)
 const lastWordsRunning = ref(false)
 const lastWordsLeft = ref(0)
 const lastWordsName = ref("")
+/** 炸弹人遗言队列：炸弹人 → 直接炸死者按号码升序 */
+const lastWordsQueue = ref<string[]>([])
 function startLastWords() {
   lastWordsRunning.value = true
   lastBeep = 99
@@ -160,6 +162,32 @@ function resetLastWords() {
   if (!lastWordsRunning.value) return startLastWords()
   stopCountdown()
   startLastWords()
+}
+/** 炸弹人遗言队列开始：炸弹人先，随后直接炸死者按号码升序 */
+function startBombLastWordsQueue(bomberName: string) {
+  const victims = [...state.lastBombVictims].sort((a, b) => {
+    const na = state.players.find((p) => p.name === a)?.no || 0
+    const nb = state.players.find((p) => p.name === b)?.no || 0
+    return na - nb
+  })
+  lastWordsQueue.value = [bomberName, ...victims]
+  lastWordsName.value = bomberName
+  lastWordsShow.value = true
+  lastWordsRunning.value = false
+  lastWordsLeft.value = 0
+}
+/** 下一位遗言；队列结束后恢复胜负判定 */
+function nextLastWords() {
+  stopLastWords()
+  lastWordsQueue.value.shift()
+  if (lastWordsQueue.value.length === 0) {
+    lastWordsShow.value = false
+    lastWordsName.value = ""
+    actions.finishBombLastWords()
+    return
+  }
+  lastWordsName.value = lastWordsQueue.value[0]
+  lastWordsLeft.value = 0
 }
 
 // ===== 发言倒计时（白天，全局唯一计时器） =====
@@ -323,6 +351,8 @@ const bombVoterPicker = computed(() =>
 )
 /** 石像鬼查验结果（全屏弹窗） */
 const gargoyleReveal = ref<{ label: string; role: string } | null>(null)
+/** 隐狼首夜狼人名单（全屏弹窗） */
+const hiddenWolfReveal = ref<{ self: string; wolves: string } | null>(null)
 /** 守墓人本夜信息（null=无信息） */
 const gravekeeperInfo = computed(() => gravekeeperResult(state))
 /** 魅惑对象：全员显示，已出局/狼美人自己禁选 */
@@ -345,6 +375,18 @@ const noOf = (name: string) => {
   const p = state.players.find((x) => x.name === name)
   return p ? `${p.no || "?"}号` : name
 }
+// 页面刷新/重开后恢复炸弹人遗言队列（状态里保存了炸弹人与直接炸死者）
+watchEffect(() => {
+  if (!state.bombLastWordsPending || lastWordsShow.value || !state.lastBombBomber) return
+  const victims = [...state.lastBombVictims].sort((a, b) => {
+    const na = state.players.find((p) => p.name === a)?.no || 0
+    const nb = state.players.find((p) => p.name === b)?.no || 0
+    return na - nb
+  })
+  lastWordsQueue.value = [state.lastBombBomber, ...victims]
+  lastWordsName.value = state.lastBombBomber
+  lastWordsShow.value = true
+})
 const hunterStatus = computed(() => {
   const h = hunterObj.value
   if (!h) return ""
@@ -922,6 +964,8 @@ function doConfirmRole() {
   message.success(`已确认 ${rc.name} 为${refs.ROLE_EMOJI[rc.role] || ""}${rc.role}`)
   roleConfirmVisible.value = false
   roleConfirm.value = null
+  // 隐狼确认身份后立即展示首夜狼人名单（全屏，手动关闭）
+  if (rc.role === "隐狼") showHiddenWolfList()
 }
 /** 底部抽屉：重新选择 → 关闭并重开选择器 */
 function cancelConfirmRole() {
@@ -1072,8 +1116,19 @@ function doWildChildClose() {
   playVoice("wild_child_close")
 }
 function doHiddenWolfClose() {
+  hiddenWolfReveal.value = null
   markDoneStep("hiddenWolf")
   playVoice("hiddenWolf_close")
+}
+/** 隐狼首夜名单：首夜狼人商议刀法后一次性展示所有狼阵营号码（含自己） */
+function showHiddenWolfList() {
+  const self = hiddenWolfObj.value
+  const wolves = state.players
+    .filter((p) => p.role && isEffectiveWolf(p))
+    .sort((a, b) => (a.no || 0) - (b.no || 0))
+    .map((p) => `${p.no || "?"}号${p.name}${p.name === self?.name ? "（你）" : ""}`)
+    .join("、")
+  hiddenWolfReveal.value = { self: self ? `${self.no || "?"}号${self.name}` : "", wolves }
 }
 function doNightmareFear(v: string) {
   snapshot()
@@ -1346,16 +1401,20 @@ function doFinishVote(v: string) {
   const outP = state.players.find((p) => p.name === v)
   if (!outP) return message.error("请选择放逐出局对象")
   const outRole = getRoleInstance(outP.role)
-  // 炸弹人：先勾选票选名单（多选），再放逐引爆
+  // 炸弹人：先全屏过场动画，再勾选票选名单（多选），最后放逐引爆
   if (outRole && outRole.def.id === "炸弹人") {
-    openMultiPicker("勾选投票给炸弹人的玩家（可多选）", bombVoterPicker.value.options, (voters) => {
-      snapshot()
-      const err = actions.finishVote(outP.name, false, voters)
-      if (err) return message.error(err)
-      effect("bomber", "explode", `炸弹人放逐引爆：${refs.playerLabel(outP)}`)
-      playVoice("bomber_boom")
-      markDone("vote")
-    }, 1, bombVoterPicker.value.options.length, [], bombVoterPicker.value)
+    effect("bomber", undefined, `炸弹人放逐：${refs.playerLabel(outP)}`, 1800)
+    setTimeout(() => {
+      openMultiPicker("勾选投票给炸弹人的玩家（可多选）", bombVoterPicker.value.options, (voters) => {
+        snapshot()
+        const err = actions.finishVote(outP.name, false, voters)
+        if (err) return message.error(err)
+        effect("explode", "explode", "炸弹爆炸")
+        playVoice("bomber_boom")
+        markDone("vote")
+        startBombLastWordsQueue(outP.name)
+      }, 1, bombVoterPicker.value.options.length, [], bombVoterPicker.value)
+    }, 1800)
     return
   }
   snapshot()
@@ -1374,6 +1433,7 @@ function doFinishVote(v: string) {
   markDone("vote")
   // 放逐玩家有遗言；血月延迟出局未真正死亡，不弹遗言
   if (!outP.alive) {
+    lastWordsQueue.value = []
     lastWordsName.value = v
     lastWordsShow.value = true
   }
@@ -1504,6 +1564,7 @@ const EFFECT_META: Record<string, { emoji: string; bg: string; label: string }> 
   idiot: { emoji: "🙊", bg: "rgba(190,150,20,.92)", label: "白痴翻牌" },
   dawn: { emoji: "🌅", bg: "rgba(210,130,40,.88)", label: "天亮了" },
   explode: { emoji: "💥", bg: "rgba(190,50,20,.92)", label: "狼人自爆" },
+  bomber: { emoji: "💣", bg: "rgba(120,20,20,.95)", label: "炸弹人" },
   knight: { emoji: "⚔️", bg: "rgba(120,120,150,.92)", label: "骑士决斗" },
   cupid: { emoji: "💘", bg: "rgba(190,60,110,.92)", label: "丘比特连人" },
   death: { emoji: "💀", bg: "rgba(70,70,90,.88)", label: "玩家出局" },
@@ -1669,13 +1730,26 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
         </div>
 
+        <!-- 石像鬼分配（首夜提前确认角色，保证预言家验人正确） -->
+        <div v-else-if="currentStep === 'gargoyleAssign'" class="step-body">
+          <div class="step-emoji">🗿</div>
+          <h3 class="step-title">石像鬼分配</h3>
+          <template v-if="!hasGargoyle">
+            <p class="small" style="text-align: center">石像鬼单独睁眼，法官确认其身份（不与普通狼见面）</p>
+            <a-button type="primary" size="large" @click="openPicker('确认石像鬼（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('石像鬼', v), unassignedAlivePicker)">🗿 确认石像鬼</a-button>
+          </template>
+          <template v-else>
+            <p class="small" style="text-align: center">石像鬼身份已确认（{{ gargoyleObj?.no }}号{{ gargoyleObj?.name }}），闭眼</p>
+            <a-button type="primary" size="large" @click="markDoneStep('gargoyleAssign')">🗿 石像鬼闭眼</a-button>
+          </template>
+        </div>
+
         <!-- 石像鬼（狼群外，独自验人；普通狼全灭后解锁刀人） -->
         <div v-else-if="currentStep === 'gargoyle'" class="step-body">
           <div class="step-emoji">🗿</div>
           <h3 class="step-title">石像鬼</h3>
           <template v-if="!hasGargoyle">
-            <p class="small" style="text-align: center">石像鬼单独睁眼，法官确认其身份（不与普通狼见面）</p>
-            <a-button type="primary" size="large" @click="openPicker('确认石像鬼（睁眼认人）', unassignedAlivePicker.options, (v) => confirmRoleWithCheck('石像鬼', v), unassignedAlivePicker)">🗿 确认石像鬼</a-button>
+            <p class="small" style="text-align: center; color: #ff7875">石像鬼身份尚未确认，请先完成「石像鬼分配」步骤</p>
           </template>
           <template v-else>
             <template v-if="gargoyleObj && !gargoyleObj.alive">
@@ -1755,7 +1829,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
         </div>
 
-        <!-- 隐狼（首夜认人；带刀后并入狼人环节） -->
+        <!-- 隐狼（首夜在狼人商议刀法后睁眼；带刀后并入狼人环节） -->
         <div v-else-if="currentStep === 'hiddenWolf'" class="step-body">
           <div class="step-emoji">🐺</div>
           <h3 class="step-title">隐狼睁眼</h3>
@@ -1765,6 +1839,8 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </template>
           <template v-else>
             <p class="small" style="text-align: center">隐狼验人为金水，狼群全灭后获得刀人能力</p>
+            <p class="small" style="text-align: center">首夜已单独获知全部狼人阵营号码（后续黑化不补充）</p>
+            <a-button size="large" @click="showHiddenWolfList">🐺 查看狼人号码</a-button>
             <a-button type="primary" size="large" @click="doHiddenWolfClose">隐狼闭眼</a-button>
           </template>
         </div>
@@ -2227,6 +2303,17 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
         <a-button type="primary" size="large" @click="gargoyleReveal = null">知道了</a-button>
       </div>
 
+      <!-- 隐狼首夜名单全屏展示（手动关闭，不自动消失） -->
+      <div v-if="hiddenWolfReveal" class="fullscreen-overlay" style="z-index: 9999;">
+        <div class="fs-result" style="border-color: #8a6dff">
+          <div class="fs-result-emoji">🐺</div>
+          <div class="fs-result-text">你是 {{ hiddenWolfReveal.self }}</div>
+          <div class="fs-result-text">本局狼人阵营：{{ hiddenWolfReveal.wolves || "无" }}</div>
+          <div class="fs-result-text" style="font-size: 13px; opacity: .8">仅首夜告知一次，后续黑化不补充</div>
+        </div>
+        <a-button type="primary" size="large" @click="hiddenWolfReveal = null">知道了</a-button>
+      </div>
+
       <!-- 猎人可开枪全屏遮罩：法官提示处理枪 -->
       <div v-if="state.hunterShotPending && !state.finished" class="fullscreen-overlay">
         <div class="fs-title">🔫 猎人可开枪</div>
@@ -2271,6 +2358,9 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           </span>
           <a-button type="primary" @click="lastWordsRunning ? resetLastWords() : startLastWords()">
             {{ lastWordsRunning ? "🔄 重置时间" : "▶ 开始遗言计时" }}
+          </a-button>
+          <a-button v-if="state.bombLastWordsPending" type="primary" @click="nextLastWords">
+            {{ lastWordsQueue.length > 1 ? "下一位遗言" : "结束遗言并判定胜负" }}
           </a-button>
         </div>
       </a-card>

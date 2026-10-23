@@ -26,6 +26,15 @@ type OrderedNightStep = NightStep & { order: number }
 /** 与角色无关的特殊夜间步骤 */
 const SPECIAL_NIGHT_STEPS: OrderedNightStep[] = [
   { key: "loversMeet", label: "情侣认亲", emoji: "💑", order: 15, enabled: (c) => c.round <= 1 && c.lovers.length === 2 },
+  // 石像鬼首夜角色分配：必须在预言家/隐狼之前完成，否则预言家验石像鬼会验成好人。
+  // 石像鬼的实际查验仍在首夜末尾（gargoyle 步骤），确保所有身份已分配。
+  {
+    key: "gargoyleAssign",
+    label: "石像鬼分配",
+    emoji: "🗿",
+    order: 22,
+    enabled: (c) => c.round <= 1 && c.boardRoles.includes("石像鬼"),
+  },
 ]
 
 /** 特殊步骤占用的顺序号（查重测试用，避免角色 order 与之相撞） */
