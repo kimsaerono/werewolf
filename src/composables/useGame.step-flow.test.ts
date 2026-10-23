@@ -87,6 +87,7 @@ describe("useGame × step-flow 集成（真实 actions → 当前步骤）", () 
     const rec = game.history.value.at(-1)!
     expect(game.history.value.length).toBe(1)
     expect(rec.synced).toBe(false)
+    expect(rec.honorConfirmed).toBe(false)
     expect(rec.mvp).toBe("")
 
     const prophet = game.state.players.find((p) => p.role === "预言家")!
@@ -94,6 +95,7 @@ describe("useGame × step-flow 集成（真实 actions → 当前步骤）", () 
     expect(game.actions.commitHonors(prophet.name, "", "")).toBeNull()
     expect(prophet.scoreRound).toBe(4)
     expect(prophet.scoreTotal).toBe(before + 1)
+    expect(rec.honorConfirmed).toBe(true)
     expect(rec.mvp).toBe(prophet.name)
     expect(rec.players.find((p) => p.name === prophet.name)!.scoreTotal).toBe(before + 1)
     expect(rec.players.find((p) => p.name === prophet.name)!.scoreDetail).toContain("MVP+1")
@@ -131,5 +133,28 @@ describe("useGame × step-flow 集成（真实 actions → 当前步骤）", () 
     expect(game.state.beiguo).toBe("")
     expect(game.history.value.length).toBe(1)
     expect(game.history.value[0].mvp).toBe(prophet.name)
+  })
+
+  it("刷新后恢复未确认的结算弹窗，确认后不再恢复", () => {
+    setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
+    game.actions.setSimMode(true)
+    game.state.winCamp = "god"
+    game.state.winReason = "测试"
+    game.state.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
+    game.actions.flowToggle()
+    expect(game.winNoticeOpen.value).toBe(true)
+
+    // 模拟刷新：内存里的弹窗丢失，但历史记录仍是「未确认」
+    game.winNoticeOpen.value = false
+    expect(game.winNoticeOpen.value).toBe(false)
+    game.actions.restorePendingSettlement()
+    expect(game.winNoticeOpen.value).toBe(true)
+    expect(game.winNotice.value?.text).toBe("好人胜利")
+
+    // 确认后刷新不再弹
+    expect(game.actions.commitHonors("", "", "")).toBeNull()
+    game.winNoticeOpen.value = false
+    game.actions.restorePendingSettlement()
+    expect(game.winNoticeOpen.value).toBe(false)
   })
 })

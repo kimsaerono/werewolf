@@ -48,6 +48,8 @@ export interface GameRecord {
     mvp: string
     svp: string
     beiguo: string
+    /** 本局荣誉是否已确认（刷新后据此恢复结算弹窗，防止绕过） */
+    honorConfirmed?: boolean
   }
 
 function load(): GameState {
@@ -67,7 +69,7 @@ function loadHistory(): GameRecord[] {
   try {
     const s = localStorage.getItem(HISTORY_KEY) ?? localStorage.getItem(LEGACY_HISTORY_KEY)
     if (s) {
-      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false, boardFinal: r.boardFinal ?? "", mvp: r.mvp ?? "", svp: r.svp ?? "", beiguo: r.beiguo ?? "" }))
+      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false, boardFinal: r.boardFinal ?? "", mvp: r.mvp ?? "", svp: r.svp ?? "", beiguo: r.beiguo ?? "", honorConfirmed: r.honorConfirmed ?? true }))
     }
   } catch {
     /* ignore */
@@ -278,11 +280,30 @@ function settle(reason: string, skipFinish = false): void {
     mvp: state.mvp,
     svp: state.svp,
     beiguo: state.beiguo,
+    honorConfirmed: false,
   })
   saveHistory()
   // 飞书同步延后到「完成结算」：先让法官选完本局荣誉，再带着荣誉一起写入飞书
   winNotice.value = { text: winText, reason, camps: g.campBreakdown(state) }
   if (state.voiceEnabled) speak(`${winText}！${reason}`)
+}
+
+/** 刷新后恢复未确认的结算弹窗：上次结算了但没点「完成结算」，就继续要求确认 */
+function restorePendingSettlement(): void {
+  if (!state.finished || winNotice.value) return
+  const rec = history.value[history.value.length - 1]
+  if (!rec || rec.sim !== state.simMode || rec.honorConfirmed !== false) return
+  if (!state.winCamp) return
+  const text =
+    state.winCamp === "wolf" ? "狼人胜利"
+    : state.winCamp === "third" ? "第三方胜利"
+    : state.winCamp === "draw" ? "平局"
+    : "好人胜利"
+  winNotice.value = {
+    text,
+    reason: state.winReason || rec.reason,
+    camps: g.campBreakdown(state),
+  }
 }
 
 /** 每次操作后调用：重算分数 + 自动判胜负（判出则保存本局、锁定对局、弹窗） */
@@ -662,12 +683,17 @@ export function useGame() {
       rec.mvp = mvp
       rec.svp = svp
       rec.beiguo = beiguo
+      rec.honorConfirmed = true
       rec.log = [...state.globalLog]
       state.recordText = g.buildAutoRecord(state, rec.title)
       saveHistory()
       persist()
       if (!state.simMode && state.winCamp !== "draw") autoSyncRecord(rec)
       return null
+    },
+    /** 刷新后恢复未确认的结算弹窗（App 启动时调用） */
+    restorePendingSettlement() {
+      restorePendingSettlement()
     },
     resetRoundScore() {
       g.resetRoundScore(state)

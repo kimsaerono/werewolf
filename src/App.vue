@@ -17,6 +17,9 @@ import loadingPng from "@/assets/roles/loading.png"
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs, actions, syncStatus } = game
 
+// 上次结算了但没点「完成结算」：刷新后继续弹窗，避免绕过确认
+actions.restorePendingSettlement()
+
 /** 全局忙碌中：同步飞书/测试连接等耗时操作时显示 loading 遮罩 */
 const busy = computed(() => syncStatus.value === "syncing" || syncStatus.value === "testing")
 
