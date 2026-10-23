@@ -16,6 +16,7 @@ import {
   guardDo,
   finishVote,
   finishBombLastWords,
+  bombVoterCandidates,
   wolfBaoZha,
   wolfKingBaoZha,
   resetWholeGame,
@@ -510,6 +511,12 @@ describe("狼王枪计分（神牌+0.5 / 狼-1 / 其余不加分）", () => {
     checkWin(st)
     expect(st.winCamp).toBe("third")
     expect(st.winningThird).toBe("bomber")
+  })
+
+  it("炸弹人投票候选：排除炸弹人自己与已出局玩家", () => {
+    const st = setup(["炸弹人", "狼人", "平民", "平民"])
+    g(st, "P1").alive = false
+    expect(bombVoterCandidates(st, "P0").map((p) => p.name)).toEqual(["P2", "P3"])
   })
 
   it("枪带人狼恋第三方（狼恋人/好人恋人/丘比特）不加分", () => {
@@ -1966,5 +1973,16 @@ describe("炸弹人爆炸 × 丘比特第三方胜负互斥", () => {
     }
     expect(g(st, "P0").scoreDetail).not.toContain("存活到最后独赢+4")
     expect(g(st, "P0").scoreDetail).not.toContain("爆炸独赢+4")
+  })
+})
+
+describe("炸弹人 × 恶灵骑士/白天免疫边界", () => {
+  it("炸弹人炸恶灵骑士：白天炸弹正常击杀（夜间免伤不适用）", () => {
+    const st = setup(["炸弹人", "恶灵骑士", "平民"])
+    started(st)
+    expect(finishVote(st, "P0", false, ["P1"])).toBeNull()
+    expect(g(st, "P1").alive).toBe(false)
+    expect(g(st, "P1").deathReason).toBe("bomb")
+    finishBombLastWords(st)
   })
 })

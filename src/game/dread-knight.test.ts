@@ -297,7 +297,7 @@ describe("恶灵骑士", () => {
     expect(st.players[4].mark.huntWolfCount || 0).toBe(0)
   })
 
-  it("反伤未触发时免疫摄梦连梦；反伤用掉后会被梦杀", () => {
+  it("反伤未触发时免疫摄梦连梦；反伤用掉后仍免疫梦杀", () => {
     st.players[4].role = "摄梦人"
     st.boardRoles = ["狼人", "恶灵骑士", "预言家", "女巫", "摄梦人", "平民", "平民", "平民"]
     st.round = 2

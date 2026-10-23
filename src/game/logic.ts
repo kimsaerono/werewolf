@@ -1469,6 +1469,11 @@ export function dreamDo(state: GameState, sel: string): string | null {
   return null
 }
 
+/** 炸弹人投票者候选：存活且不是炸弹人自己（已出局不能投票） */
+export function bombVoterCandidates(state: GameState, bomberName: string): Player[] {
+  return state.players.filter((p) => p.alive && p.name !== bomberName)
+}
+
 /** 炸弹人放逐票选名单校验（放逐前调用，防止放逐已生效却校验失败） */
 function validateBombVoters(state: GameState, outName: string, voters: string[]): string | null {
   const voterSet = [...new Set(voters.filter(Boolean))]

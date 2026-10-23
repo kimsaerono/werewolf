@@ -2,7 +2,7 @@
 import { computed, h, ref, watch, watchEffect } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import { speak, speakVoice, stopSpeak, speakQueue, getVoiceStyle, setVoiceStyle, voiceStyleOptions } from "@/utils/speech"
-import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult, isEffectiveWolf } from "@/game/logic"
+import { roleShort, playerLabelShort, gargoyleCanKill, gravekeeperResult, isEffectiveWolf, bombVoterCandidates } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
 import { computeStepKeys } from "@/game/step-flow"
 import { playSfx, type SfxName } from "@/utils/sfx"
@@ -341,15 +341,13 @@ const dreamerPicker = computed(() =>
     return null
   }),
 )
-/** 炸弹人票选名单：排除炸弹人自己，只列可投票的存活玩家 */
+/** 炸弹人票选名单：只列存活且不是炸弹人自己的玩家 */
 const bombVoterPicker = computed(() => {
-  const built = buildPickerOptions((p) => (!p.alive ? "已出局" : null))
-  const bomber = bomberObj.value?.name
-  if (!bomber) return built
-  const options = built.options.filter((o) => o.value !== bomber)
-  const disabledMap = { ...built.disabledMap }
-  delete disabledMap[bomber]
-  return { options, disabledMap }
+  const bomber = bomberObj.value?.name || ""
+  const options = bombVoterCandidates(state, bomber)
+    .sort((a, b) => (a.no || 0) - (b.no || 0))
+    .map((p) => playerOption(p))
+  return { options, disabledMap: {} }
 })
 /** 石像鬼查验结果（全屏弹窗） */
 const gargoyleReveal = ref<{ label: string; role: string } | null>(null)
