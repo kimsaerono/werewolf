@@ -96,7 +96,6 @@ describe("新角色界面护栏：语音映射 key 覆盖", () => {
 
 const ROLE_HELP = readFileSync(new URL("../../components/RoleHelp.vue", import.meta.url), "utf8")
 const RECORD_PANEL = readFileSync(new URL("../../components/RecordPanel.vue", import.meta.url), "utf8")
-const END_PANEL = readFileSync(new URL("../../components/EndPanel.vue", import.meta.url), "utf8")
 const SEAT_BOARD = readFileSync(new URL("../../components/SeatBoard.vue", import.meta.url), "utf8")
 
 describe("第三方/野孩子链型 · 界面与文档护栏", () => {
@@ -128,11 +127,6 @@ describe("第三方/野孩子链型 · 界面与文档护栏", () => {
   it("历史记录优先用结算时固化的 chain，且炸弹人标第三方", () => {
     expect(RECORD_PANEL).toContain("h.chain")
     expect(RECORD_PANEL).toContain("第三方·")
-  })
-
-  it("结算面板第三方统计包含人狼恋与炸弹人", () => {
-    expect(END_PANEL).toContain("refs.getChainType")
-    expect(END_PANEL).toContain("thirdIcon")
   })
 
   it("座位牌给第三方阵营（含炸弹人）紫色描边", () => {

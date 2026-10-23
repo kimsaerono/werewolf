@@ -75,4 +75,61 @@ describe("useGame × step-flow 集成（真实 actions → 当前步骤）", () 
     expect(game.state.phase).toBe("day")
     expect(computeStepKeys(game.state)).toEqual(["prophetReport", "speech", "vote", "night"])
   })
+
+  it("局末提交荣誉：补算本轮分差并回写历史", () => {
+    setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
+    game.actions.setSimMode(true)
+    game.state.winCamp = "god"
+    game.state.winReason = "测试"
+    game.state.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
+    game.actions.flowToggle() // 触发 settle：落盘历史 + 弹结算窗
+
+    const rec = game.history.value.at(-1)!
+    expect(game.history.value.length).toBe(1)
+    expect(rec.synced).toBe(false)
+    expect(rec.mvp).toBe("")
+
+    const prophet = game.state.players.find((p) => p.role === "预言家")!
+    const before = prophet.scoreTotal
+    expect(game.actions.commitHonors(prophet.name, "", "")).toBeNull()
+    expect(prophet.scoreRound).toBe(4)
+    expect(prophet.scoreTotal).toBe(before + 1)
+    expect(rec.mvp).toBe(prophet.name)
+    expect(rec.players.find((p) => p.name === prophet.name)!.scoreTotal).toBe(before + 1)
+    expect(rec.players.find((p) => p.name === prophet.name)!.scoreDetail).toContain("MVP+1")
+  })
+
+  it("荣誉不能重复选同一名玩家", () => {
+    setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
+    game.actions.setSimMode(true)
+    game.state.winCamp = "god"
+    game.state.winReason = "测试"
+    game.state.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
+    game.actions.flowToggle()
+
+    expect(game.actions.commitHonors("P4", "P4", "")).toContain("不能选同一名玩家")
+    expect(game.history.value.at(-1)!.mvp).toBe("")
+  })
+
+  it("重复提交不重复加分，下一局荣誉已重置", () => {
+    setupGame(game, ["狼人", "狼人", "狼人", "预言家", "女巫", "猎人", "平民", "平民", "平民"])
+    game.actions.setSimMode(true)
+    game.state.winCamp = "god"
+    game.state.winReason = "测试"
+    game.state.players.filter((p) => p.role === "狼人").forEach((p) => (p.alive = false))
+    game.actions.flowToggle()
+    const prophet = game.state.players.find((p) => p.role === "预言家")!
+
+    expect(game.actions.commitHonors(prophet.name, "", "")).toBeNull()
+    const total = prophet.scoreTotal
+    expect(game.actions.commitHonors(prophet.name, "", "")).toBeNull()
+    expect(prophet.scoreTotal).toBe(total)
+
+    game.actions.startNextGame()
+    expect(game.state.mvp).toBe("")
+    expect(game.state.svp).toBe("")
+    expect(game.state.beiguo).toBe("")
+    expect(game.history.value.length).toBe(1)
+    expect(game.history.value[0].mvp).toBe(prophet.name)
+  })
 })

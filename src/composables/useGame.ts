@@ -244,7 +244,6 @@ function undo(): boolean {
 /** 结算收尾：保存本局、锁定对局、弹结算面板（自动判胜与「提前结束对局」共用） */
 function settle(reason: string, skipFinish = false): void {
   if (!skipFinish) g.finishGameAuto(state)
-  const isDraw = state.winCamp === "draw"
   const winText =
     state.winCamp === "wolf" ? "狼人胜利"
     : state.winCamp === "third" ? "第三方胜利"
@@ -281,10 +280,7 @@ function settle(reason: string, skipFinish = false): void {
     beiguo: state.beiguo,
   })
   saveHistory()
-  // 平局或模拟模式：不计积分、不同步飞书
-  if (!isDraw && !state.simMode) {
-    autoSyncRecord(history.value[history.value.length - 1])
-  }
+  // 飞书同步延后到「完成结算」：先让法官选完本局荣誉，再带着荣誉一起写入飞书
   winNotice.value = { text: winText, reason, camps: g.campBreakdown(state) }
   if (state.voiceEnabled) speak(`${winText}！${reason}`)
 }
@@ -637,9 +633,41 @@ export function useGame() {
       return err
     },
 
-    applyHonor(mvp: string, svp: string, beiguo: string) {
-      g.applyHonor(state, mvp, svp, beiguo)
-      refresh()
+    /** 局末提交手动荣誉：补算本轮分差、回写历史，真实模式再带着荣誉同步飞书 */
+    commitHonors(mvp: string, svp: string, beiguo: string): string | null {
+      const picks = [mvp, svp, beiguo].filter(Boolean)
+      if (new Set(picks).size !== picks.length) return "MVP / SVP / 背锅侠不能选同一名玩家"
+      const rec = history.value[history.value.length - 1]
+      if (!rec || rec.sim !== state.simMode) return "没有可提交荣誉的对局"
+      if (rec.synced) return "该局已同步飞书，无法再修改荣誉"
+      const before = new Map(state.players.map((p) => [p.name, p.scoreRound]))
+      if (picks.length) g.applyHonor(state, mvp, svp, beiguo)
+      else {
+        state.mvp = ""
+        state.svp = ""
+        state.beiguo = ""
+      }
+      g.recalcScore(state)
+      state.players.forEach((p) => {
+        const delta = Math.round((p.scoreRound - (before.get(p.name) ?? 0)) * 10) / 10
+        p.scoreTotal = Math.round((p.scoreTotal + delta) * 10) / 10
+        const rp = rec.players.find((r) => r.name === p.name)
+        if (rp) {
+          rp.scoreRound = p.scoreRound
+          rp.scoreTotal = p.scoreTotal
+          rp.star = p.star
+          rp.scoreDetail = [...p.scoreDetail]
+        }
+      })
+      rec.mvp = mvp
+      rec.svp = svp
+      rec.beiguo = beiguo
+      rec.log = [...state.globalLog]
+      state.recordText = g.buildAutoRecord(state, rec.title)
+      saveHistory()
+      persist()
+      if (!state.simMode && state.winCamp !== "draw") autoSyncRecord(rec)
+      return null
     },
     resetRoundScore() {
       g.resetRoundScore(state)

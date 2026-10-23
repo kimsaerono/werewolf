@@ -36,8 +36,32 @@ const honorSuggestion = computed(() => {
   return parts.length ? parts.join("，") : "本局无突出者"
 })
 
-/** 结算弹窗：确认关闭（飞书同步改在「分数明细 → 累积」页手动触发） */
+/** 结算弹窗里的手动荣誉选择（提交后计入本轮分并随本局同步飞书） */
+const mvpSel = ref("")
+const svpSel = ref("")
+const beiguoSel = ref("")
+const honorSubmitted = ref(false)
+const honorOptions = computed(() =>
+  state.players.map((p) => ({ value: p.name, label: refs.playerLabel(p) })),
+)
+watch(winNotice, (v) => {
+  if (!v) return
+  mvpSel.value = ""
+  svpSel.value = ""
+  beiguoSel.value = ""
+  honorSubmitted.value = false
+})
+
+/** 结算弹窗：提交本局荣誉后关闭（真实模式由 commitHonors 触发飞书同步） */
 function onWinConfirm() {
+  if (honorSubmitted.value) return
+  honorSubmitted.value = true
+  const err = actions.commitHonors(mvpSel.value, svpSel.value, beiguoSel.value)
+  if (err) {
+    honorSubmitted.value = false
+    message.error(err)
+    return
+  }
   winNoticeOpen.value = false
 }
 /** 整局重置：保留参与玩家名单，清空角色/积分/日志/复盘（保留板子/法官/胜负模式/对局模式） */
@@ -154,17 +178,23 @@ function onTabChange(key: string) {
       <a-button class="fab fab-toggle left-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">⚙️</a-button>
 
       <!-- 胜负弹窗 -->
-      <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" centered>
+      <a-modal v-model:open="winNoticeOpen" :footer="null" width="460px" :closable="false" :mask-closable="false" :keyboard="false" centered>
         <div v-if="winNotice" class="win-notice">
           <div class="win-emoji">🏆</div>
           <h2 class="win-title">{{ winNotice.text }}</h2>
           <p class="win-reason">原因：{{ winNotice.reason }}</p>
           <pre class="win-camps">{{ winNotice.camps }}</pre>
           <p v-if="state.simMode" class="small" style="color:#66bb6a;margin-top:6px">🧪 模拟模式</p>
-          <p class="small">已自动结算并保存本局积分与日志{{ state.simMode ? '' : '。等今天 2-3 局打完，到「📊 分数明细 → 累积玩家个人分数明细」点「同步今日到飞书」统一写入' }}</p>
-          <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">🏆 MVP/SVP 自动建议：{{ honorSuggestion }}</p>
-          <a-button type="primary" size="large" block style="margin-top: 10px" @click="onWinConfirm">
-            知道了
+          <div v-if="state.winCamp" class="honor-pick">
+            <div class="honor-pick-title">🏆 本局荣誉（可选，计入积分）</div>
+            <a-select v-model:value="mvpSel" allow-clear placeholder="MVP +1" :options="honorOptions" />
+            <a-select v-model:value="svpSel" allow-clear placeholder="SVP +0.5" :options="honorOptions" />
+            <a-select v-model:value="beiguoSel" allow-clear placeholder="背锅侠 -0.5" :options="honorOptions" />
+          </div>
+          <p v-if="state.winCamp" class="small" style="color:#ffd666;margin-top:6px">💡 自动建议：{{ honorSuggestion }}</p>
+          <p class="small">已自动结算并保存本局积分与日志{{ state.simMode ? '' : '，点「完成结算」后本局（含荣誉）自动同步飞书' }}</p>
+          <a-button type="primary" size="large" block style="margin-top: 10px" :disabled="honorSubmitted" @click="onWinConfirm">
+            完成结算
           </a-button>
         </div>
       </a-modal>
@@ -353,6 +383,22 @@ body .ant-card:has(.ant-card-head) > .ant-card-body {
 .win-reason {
   color: #ddd;
   margin: 0 0 6px;
+}
+.honor-pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.honor-pick-title {
+  width: 100%;
+  color: #ddd;
+  font-size: 13px;
+}
+.honor-pick .ant-select {
+  min-width: 120px;
+  flex: 1 1 120px;
 }
 .win-camps {
   background: #171b28;
