@@ -363,6 +363,7 @@ describe("胜率预测 · 黑化野孩子 / 炸弹人第三方", () => {
     expect(r.hasThird).toBe(true)
     expect(r.rates.third).toBeGreaterThan(0)
     expect(r.factors).toContain("💣 炸弹人存活·独立第三方")
+    expect(r.factors).not.toContain("💘 人狼恋·第三方")
   })
 })
 

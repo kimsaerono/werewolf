@@ -341,14 +341,16 @@ const dreamerPicker = computed(() =>
     return null
   }),
 )
-/** 炸弹人票选名单：被投票者多选（可多选，除炸弹人自己外存活玩家） */
-const bombVoterPicker = computed(() =>
-  buildPickerOptions((p) => {
-    if (!p.alive) return "已出局"
-    if (p.name === bomberObj.value?.name) return "炸弹人不能票自己"
-    return null
-  }),
-)
+/** 炸弹人票选名单：排除炸弹人自己，只列可投票的存活玩家 */
+const bombVoterPicker = computed(() => {
+  const built = buildPickerOptions((p) => (!p.alive ? "已出局" : null))
+  const bomber = bomberObj.value?.name
+  if (!bomber) return built
+  const options = built.options.filter((o) => o.value !== bomber)
+  const disabledMap = { ...built.disabledMap }
+  delete disabledMap[bomber]
+  return { options, disabledMap }
+})
 /** 石像鬼查验结果（全屏弹窗） */
 const gargoyleReveal = ref<{ label: string; role: string } | null>(null)
 /** 隐狼首夜狼人名单（全屏弹窗） */

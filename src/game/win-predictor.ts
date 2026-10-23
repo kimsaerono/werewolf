@@ -313,7 +313,8 @@ export function predictWinRate(state: GameState): WinPrediction {
     wolfRate = clamp(Math.round(wolfRate * rest / 100), 1, rest - 1)
     goodRate = rest - wolfRate
     thirdRate = thirdShare
-    factors.push("💘 人狼恋·第三方")
+    // 人狼恋才显示“人狼恋·第三方”；纯炸弹人第三方已有自己的存活提示
+    if (chain === "WG") factors.push("💘 人狼恋·第三方")
   }
 
   // A 档（真必然）根据 minNights 分层：
