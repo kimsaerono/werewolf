@@ -1,35 +1,64 @@
-import { computed, reactive, ref } from "vue"
+import { computed, reactive, ref, watch } from "vue"
 import * as g from "@/game/logic"
-import type { GameState, Player } from "@/game/logic"
+import { predictWinRate, checkForcedWin } from "@/game/win-predictor"
+import type { GameState, Player, WinCamp } from "@/game/logic"
+import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
+import { syncGameToFeishu } from "@/api/feishuSync"
 
-const STORAGE_KEY = "werewolf_judge_v8"
-const HISTORY_KEY = "werewolf_history"
+/** 重构版存储键：与线上稳定版(stable-v1.0 读写的 v8/无后缀键)完全隔离，
+ *  保证任意时刻回退线上版本时法官数据零损失。旧键只读迁移、绝不回写。 */
+const LEGACY_STORAGE_KEY = "werewolf_judge_v8"
+const STORAGE_KEY = "werewolf_judge_v9"
+const LEGACY_HISTORY_KEY = "werewolf_history"
+const HISTORY_KEY = "werewolf_history_v2"
 
 export interface GameRecord {
   title: string
   time: string
   board: string
+  /** 最终板子角色组成（含手动加的角色），如"狼人×3 预言家×1…" */
+  boardFinal: string
   winner: string
   reason: string
   judge: string
   judgeScore: number
-  players: {
-    no: number
-    name: string
-    role: string
-    alive: boolean
-    scoreRound: number
-    scoreTotal: number
-    star: string
-  }[]
-  log: string[]
-}
+    players: {
+      no: number
+      name: string
+      role: string
+      alive: boolean
+      scoreRound: number
+      scoreTotal: number
+      star: string
+      scoreDetail: string[]
+    }[]
+    log: string[]
+    /** 情侣名单（用于第三方胜负判定） */
+    lovers: string[]
+    /** 结算时的最终链型；野孩子作为情侣黑化会改变链型，历史面板据此显示第三方 */
+    chain?: "GG" | "WW" | "WG" | ""
+    /** 第三方胜方（WG 人狼恋 / bomber 炸弹人 / 空） */
+    winningThird?: "WG" | "bomber" | ""
+    /** 是否已同步到飞书（防止重复累加） */
+    synced: boolean
+    /** 是否模拟对局（真实/模拟各自独立历史与编号） */
+    sim: boolean
+    /** MVP / SVP / 背锅侠（有则显示，无则空） */
+    mvp: string
+    svp: string
+    beiguo: string
+    /** 本局荣誉是否已确认（刷新后据此恢复结算弹窗，防止绕过） */
+    honorConfirmed?: boolean
+  }
 
 function load(): GameState {
   try {
     const s = localStorage.getItem(STORAGE_KEY)
     if (s) return g.normalizeState(JSON.parse(s))
+    // 一次性从旧版本键只读迁移（旧键保留给线上稳定版，绝不回写）
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (legacy) return g.normalizeState(JSON.parse(legacy))
   } catch {
     /* ignore */
   }
@@ -38,8 +67,10 @@ function load(): GameState {
 
 function loadHistory(): GameRecord[] {
   try {
-    const s = localStorage.getItem(HISTORY_KEY)
-    if (s) return JSON.parse(s) as GameRecord[]
+    const s = localStorage.getItem(HISTORY_KEY) ?? localStorage.getItem(LEGACY_HISTORY_KEY)
+    if (s) {
+      return (JSON.parse(s) as GameRecord[]).map((r) => ({ ...r, synced: r.synced ?? false, sim: r.sim ?? false, boardFinal: r.boardFinal ?? "", mvp: r.mvp ?? "", svp: r.svp ?? "", beiguo: r.beiguo ?? "", honorConfirmed: r.honorConfirmed ?? true }))
+    }
   } catch {
     /* ignore */
   }
@@ -65,12 +96,112 @@ const winNoticeOpen = computed({
     if (!v) winNotice.value = null
   },
 })
+/** 飞书同步状态："" 空闲 / "syncing" 同步中 / 成功文案 / 失败文案 */
+const syncStatus = ref("")
+/** 正在同步中的对局（自动/手动互斥，防止同一局被并发发两次导致重复累计） */
+const syncingRefs = ref<Set<GameRecord>>(new Set())
 
-const sessionNo = computed(() => history.value.length + 1)
+const sessionNo = computed(() => modeHistory.value.length + 1)
 const sessionTitle = computed(() => {
   const d = new Date()
   return `第${sessionNo.value}局 · ${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 })
+
+/** 当前模式的对局历史（真实/模拟各自独立） */
+const modeHistory = computed(() => history.value.filter((h) => h.sim === state.simMode))
+
+/** 记录日期键：YYYY/M/D（按天维度） */
+function dayKey(time: string): string {
+  const d = new Date(time)
+  if (isNaN(d.getTime())) return ""
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+/** 最终板子角色组成（含手动加的角色），如"狼×3 预×1…"，角色用简称 */
+function boardFinalText(): string {
+  const roles = g.getBoardRoles(state)
+  const counts: Record<string, number> = {}
+  roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
+  return Object.entries(counts)
+    .map(([role, n]) => `${g.roleShort(role)}×${n}`)
+    .join(" ")
+}
+/** 日期文案：YYYY年M月D日 */
+function dayLabelOf(key: string): string {
+  const [y, m, d] = key.split("/")
+  return `${y}年${Number(m) || ""}月${Number(d) || ""}日`
+}
+const todayKey = computed(() => dayKey(new Date().toLocaleString()))
+/** 今天的对局（分数明细只展示当天，过期不展示；仅当前模式） */
+const todayGames = computed(() => modeHistory.value.filter((h) => dayKey(h.time) === todayKey.value))
+/** 当天对局编号文案：第1局/第2局/第3局 */
+function dayGameLabel(idx: number): string {
+  return `第${idx + 1}局`
+}
+/** 按天分组（天倒序，天内按局序）：历史对局展示用（仅当前模式） */
+const historyByDay = computed(() => {
+  const map = new Map<string, GameRecord[]>()
+  for (const h of modeHistory.value) {
+    const k = dayKey(h.time) || "未知日期"
+    const arr = map.get(k) || []
+    arr.push(h)
+    map.set(k, arr)
+  }
+  return [...map.entries()]
+    .sort((a, b) => (a[0] === "未知日期" ? 1 : b[0] === "未知日期" ? -1 : b[0].localeCompare(a[0])))
+    .map(([key, games]) => ({ key, label: key === "未知日期" ? "未知日期" : dayLabelOf(key), games }))
+})
+/** 单局在当天内的 gameId（第X局 · 该局日期）：自动/手动/历史同步统一使用，保证幂等一致 */
+function gameIdFor(rec: GameRecord): string {
+  const k = dayKey(rec.time) || ""
+  const group = k ? history.value.filter((h) => dayKey(h.time) === k && h.sim === rec.sim) : []
+  const idx = group.indexOf(rec)
+  const dayLabel = k ? dayLabelOf(k) : dayLabelOf(todayKey.value)
+  const modeTag = rec.sim ? "模拟" : "真实"
+  return `${modeTag}·${dayGameLabel(idx >= 0 ? idx : group.length)} · ${dayLabel}`
+}
+/** 是否正在同步中（UI 显示 loading 用） */
+function isSyncing(rec: GameRecord): boolean {
+  return syncingRefs.value.has(rec)
+}
+/** 单局完整复盘文本（复制本局详情 / 导出当天 用） */
+function recordTxtOf(h: GameRecord): string {
+  const logTxt = h.log
+    .map((l, i) => `${i + 1}. ${g.decorateLog({ players: h.players } as never, g.cleanLogLine(l))}`)
+    .join("\n")
+  const honors = [h.mvp ? `MVP：${h.mvp}` : "", h.svp ? `SVP：${h.svp}` : "", h.beiguo ? `背锅侠：${h.beiguo}` : ""].filter(Boolean).join(" ｜ ")
+  return (
+    `====${gameIdFor(h)}====\n时间：${h.time}\n板子：${h.board}（${g.boardShortName(h.board)}）\n胜负：${h.winner}（${h.reason}）\n法官：${h.judge || "-"}（累计 ${h.judgeScore}）` +
+    (honors ? `\n荣誉：${honors}` : "") +
+    `\n` +
+    h.players
+      .map((p) => `玩家 ${p.no}.${p.name} 身份：${p.role}，${p.alive ? "存活" : "出局"}，本轮分：${p.scoreRound.toFixed(1)}，总分：${p.scoreTotal.toFixed(1)}`)
+      .join("\n") +
+    `\n\n----对局日志----\n${logTxt}\n\n`
+  )
+}
+
+/** 自动同步一局到飞书：按天编号写入对应场次 + 累计排名，成功标记已同步（不阻塞本地） */
+async function autoSyncRecord(rec: GameRecord): Promise<void> {
+  if (rec.synced || syncingRefs.value.has(rec)) return
+  syncingRefs.value.add(rec)
+  const gameId = gameIdFor(rec)
+  syncStatus.value = "syncing"
+  try {
+    const err = await syncGameToFeishu(rec, gameId)
+    if (err) {
+      syncStatus.value = `⚠️ ${gameId} 同步失败：${err}`
+    } else {
+      rec.synced = true
+      saveHistory()
+      syncStatus.value = `✅ ${gameId} 已同步到飞书`
+    }
+  } finally {
+    syncingRefs.value.delete(rec)
+  }
+  setTimeout(() => {
+    syncStatus.value = ""
+  }, 6000)
+}
 
 function persist(): void {
   try {
@@ -112,37 +243,82 @@ function undo(): boolean {
   }
 }
 
+/** 结算收尾：保存本局、锁定对局、弹结算面板（自动判胜与「提前结束对局」共用） */
+function settle(reason: string, skipFinish = false): void {
+  if (!skipFinish) g.finishGameAuto(state)
+  const winText =
+    state.winCamp === "wolf" ? "狼人胜利"
+    : state.winCamp === "third" ? "第三方胜利"
+    : state.winCamp === "draw" ? "平局"
+    : "好人胜利"
+  state.recordText = g.buildAutoRecord(state, sessionTitle.value)
+  history.value.push({
+    title: sessionTitle.value,
+    time: new Date().toLocaleString(),
+    board: state.board,
+    boardFinal: boardFinalText(),
+    winner: winText,
+    reason,
+    judge: state.judge,
+    judgeScore: g.judgeTotal(state),
+    players: state.players.map((p: Player) => ({
+      no: p.no,
+      name: p.name,
+      role: p.role,
+      alive: p.alive,
+      scoreRound: p.scoreRound,
+      scoreTotal: p.scoreTotal,
+      star: p.star,
+      scoreDetail: [...p.scoreDetail],
+    })),
+    log: [...state.globalLog],
+    lovers: [...state.lovers],
+    chain: g.getChainType(state),
+    winningThird: state.winningThird,
+    synced: false,
+    sim: state.simMode,
+    mvp: state.mvp,
+    svp: state.svp,
+    beiguo: state.beiguo,
+    honorConfirmed: false,
+  })
+  saveHistory()
+  // 飞书同步延后到「完成结算」：先让法官选完本局荣誉，再带着荣誉一起写入飞书
+  winNotice.value = { text: winText, reason, camps: g.campBreakdown(state) }
+  if (state.voiceEnabled) speak(`${winText}！${reason}`)
+}
+
+/** 刷新后恢复未确认的结算弹窗：上次结算了但没点「完成结算」，就继续要求确认 */
+function restorePendingSettlement(): void {
+  if (!state.finished || winNotice.value) return
+  const rec = history.value[history.value.length - 1]
+  if (!rec || rec.sim !== state.simMode || rec.honorConfirmed !== false) return
+  if (!state.winCamp) return
+  const text =
+    state.winCamp === "wolf" ? "狼人胜利"
+    : state.winCamp === "third" ? "第三方胜利"
+    : state.winCamp === "draw" ? "平局"
+    : "好人胜利"
+  winNotice.value = {
+    text,
+    reason: state.winReason || rec.reason,
+    camps: g.campBreakdown(state),
+  }
+}
+
 /** 每次操作后调用：重算分数 + 自动判胜负（判出则保存本局、锁定对局、弹窗） */
 function refresh(): void {
-  g.recalcScore(state)
+  // 炸弹人爆炸后遗言未结束：先不判胜负，等 finishBombLastWords 再判
+  if (state.bombLastWordsPending) {
+    g.recalcScore(state)
+    persist()
+    return
+  }
   const r = g.checkWin(state)
-  if (r.ended && r.text) {
-    g.finishGameAuto(state)
-    state.recordText = g.buildAutoRecord(state, sessionTitle.value)
-    history.value.push({
-      title: sessionTitle.value,
-      time: new Date().toLocaleString(),
-      board: state.board,
-      winner: r.text,
-      reason: r.reason,
-      judge: state.judge,
-      judgeScore: g.judgeTotal(state),
-      players: state.players.map((p: Player) => ({
-        no: p.no,
-        name: p.name,
-        role: p.role,
-        alive: p.alive,
-        scoreRound: p.scoreRound,
-        scoreTotal: p.scoreTotal,
-        star: p.star,
-      })),
-      log: [...state.globalLog],
-    })
-    saveHistory()
-    winNotice.value = { text: r.text, reason: r.reason, camps: g.campBreakdown(state) }
-    activeTab.value = "score"
-    // 胜利播报最高优先级：必须是最后的语音，后续非胜利播报应被抑制
-    speak(`${r.text}！${r.reason}`)
+  g.recalcScore(state)
+  // 胜局可能已由死亡事件锁定（recordWin）；若有猎人/狼王开枪待处理，先结算完技能再结束
+  if (state.winCamp && !state.finished && !state.hunterShotPending && !state.wolfKingShotPending) {
+    settle(state.winReason || r.reason)
   }
   persist()
 }
@@ -153,9 +329,55 @@ export function useGame() {
   const aliveList = computed(() => state.players.filter((p) => p.alive))
   const judgeScore = computed(() => g.judgeTotal(state))
 
+  // ===== 胜率预测与必然结局检测 =====
+  const winPrediction = computed(() => predictWinRate(state))
+  const forcedWin = computed(() => checkForcedWin(state))
+  /** 三档确定度：A 真必然 / B 单方必胜 / C 均势 */
+  const certainty = computed(() => winPrediction.value.certainty)
+
+  /** 当前处于劣势的阵营：A 档取败方（完全没赢法），B 档取弱势方，C 档没有劣势方 */
+  const disadvantagedCamp = computed<g.Camp | null>(() => {
+    const c = certainty.value
+    if (c.tier === "even" || !c.winner) return null
+    if (c.tier === "oneSided") return c.underdog
+    return c.winner === "wolf" ? "good" : "wolf"
+  })
+
+  // 观察劣势方并记进本局；结算时胜方命中它就是绝地翻盘。
+  // 用 watch 而不是写死在每个 action 里：任何改动 state 的路径（含撤销、模拟对局）都会自动记上。
+  // logic 侧按「连续 N 次才算真被压制」过滤，所以这里可以如实上报每一次观察。
+  watch(
+    disadvantagedCamp,
+    (camp) => {
+      if (camp && g.noteUnderdog(state, camp)) persist()
+    },
+    { immediate: true },
+  )
+  const isJudge = computed(() => state.judge && state.players.some(p => p.name === state.judge)) // 简化判断，实际可能需要更精确的判断
+
   const actions = {
     setBoard(b: string) {
       g.applyBoard(state, b)
+      persist()
+    },
+    setWinMode(m: "edge" | "city") {
+      // 诸神之战固定屠城，不可切换
+      state.winMode = state.simVariant === "gods" ? "city" : m
+      persist()
+    },
+    setSimMode(v: boolean) {
+      state.simMode = v
+      if (!v) state.simVariant = "normal"
+      persist()
+    },
+    setSimVariant(v: "normal" | "gods") {
+      state.simVariant = v
+      if (v === "gods") state.winMode = "city"
+      persist()
+    },
+    setModeChosen(v: boolean) {
+      state.modeChosen = v
+      if (v) activeTab.value = "board"
       persist()
     },
     setBoardRoles(roles: string[]): string | null {
@@ -199,10 +421,9 @@ export function useGame() {
       g.renumberPlayers(state)
       persist()
     },
-    assignRoleSlot(role: string, slotIndex: number, playerName: string): string | null {
-      const err = g.assignRoleSlot(state, role, slotIndex, playerName)
+    reorderPlayers(names: string[]) {
+      g.reorderPlayers(state, names)
       persist()
-      return err
     },
     clearPlayers() {
       g.clearAllPlayers(state)
@@ -215,18 +436,36 @@ export function useGame() {
       refresh()
       return true
     },
-    /** 开启下一局：重置本局但保留法官/法官累计分 */
+    /** 开启下一局：保留法官/法官累计分/参与玩家，清角色与分数，直跳分配角色 */
     startNextGame() {
       clearPendingUndo()
       const board = state.board
+      const boardRoles = state.boardRoles ? [...state.boardRoles] : null
       const judge = state.judge
       const judgeScores = { ...state.judgeScores }
+      const winMode = state.winMode
+      const simMode = state.simMode
+      const modeChosen = state.modeChosen
+      // 保留上一局参与玩家（号码、姓名、累计分、头像），清空角色/状态/本轮分数
+      const players = state.players.map((p) => {
+        const np = g.newPlayer(p.name)
+        np.no = p.no
+        np.scoreTotal = p.scoreTotal
+        np.avatar = p.avatar
+        return np
+      })
       const s = g.defaultState()
       s.board = board
+      s.boardRoles = boardRoles
       s.judge = judge
       s.judgeScores = judgeScores
+      s.winMode = winMode
+      s.simMode = simMode
+      s.modeChosen = modeChosen
+      s.players = players
+      s.playersConfirmed = true
       Object.assign(state, s)
-      activeTab.value = "board"
+      activeTab.value = "game"
       persist()
     },
     importPlayers(names: string[]): number {
@@ -238,19 +477,37 @@ export function useGame() {
       persist()
       return added
     },
-    setRole(idx: number, role: string): string | null {
-      const err = g.setRole(state, idx, role)
-      persist()
+    /** 开局（idle 步骤）：清角色并重置对局状态，随后进入第 1 晚 */
+    startGame() {
+      clearPendingUndo()
+      g.startNewGame(state)
+      refresh()
+    },
+    confirmRole(name: string, role: string): string | null {
+      const err = g.confirmRole(state, name, role)
+      refresh()
       return err
     },
-    manualSaveRoles(): string | null {
-      const err = g.manualSaveRoles(state)
-      if (err === null) clearPendingUndo()
+    confirmWolves(names: string[], roleId?: string): string | null {
+      const err = g.confirmWolves(state, names, roleId)
+      refresh()
+      return err
+    },
+    autoFillCivilians(): number {
+      const n = g.autoFillCivilians(state)
+      refresh()
+      return n
+    },
+
+    cupidConnect(names: string[]): string | null {
+      const err = g.cupidConnect(state, names)
       refresh()
       return err
     },
 
     flowToggle() {
+      // 炸弹人遗言未结束：先结束遗言再判胜负/入夜
+      if (state.bombLastWordsPending) return
       if (state.phase === "night") {
         uiMode.value = uiMode.value === "night" ? "day" : "night"
       } else {
@@ -269,10 +526,50 @@ export function useGame() {
       refresh()
       return err
     },
+    charmDo(sel: string) {
+      const err = g.charmDo(state, sel)
+      refresh()
+      return err
+    },
     prophetCheck(sel: string) {
       const r = g.prophetCheck(state, sel)
       refresh()
       return r
+    },
+    gargoyleCheck(sel: string) {
+      const r = g.gargoyleCheck(state, sel)
+      refresh()
+      return r
+    },
+    gargoyleKill(sel: string) {
+      const err = g.gargoyleKill(state, sel)
+      refresh()
+      return err
+    },
+    gargoyleEmpty() {
+      const err = g.gargoyleEmptyKill(state)
+      refresh()
+      return err
+    },
+    nightmareFear(sel: string) {
+      const err = g.nightmareFear(state, sel)
+      refresh()
+      return err
+    },
+    wildChildPick(sel: string) {
+      const err = g.wildChildPick(state, sel)
+      refresh()
+      return err
+    },
+    hunterHunt(sel: string) {
+      const err = g.hunterHunt(state, sel)
+      refresh()
+      return err
+    },
+    dreamDo(sel: string) {
+      const err = g.dreamDo(state, sel)
+      refresh()
+      return err
     },
     guardDo(sel: string, same: boolean) {
       const err = g.guardDo(state, sel, same)
@@ -299,6 +596,16 @@ export function useGame() {
       refresh()
       return err
     },
+    wolfKingShoot(tar: string) {
+      const err = g.wolfKingShootConfirm(state, tar)
+      refresh()
+      return err
+    },
+    wolfKingGiveUp() {
+      const err = g.wolfKingGiveUpShot(state)
+      refresh()
+      return err
+    },
     knightDuel(tar: string) {
       const err = g.knightDuel(state, tar)
       refresh()
@@ -318,10 +625,6 @@ export function useGame() {
       g.setJingHui(state, owner, hanTiao)
       refresh()
     },
-    setJingHuiFlow(names: string[]) {
-      g.setJingHuiFlow(state, names)
-      refresh()
-    },
     autoTransferJingHui(): string | null {
       const r = g.autoTransferJingHui(state)
       refresh()
@@ -331,10 +634,14 @@ export function useGame() {
       g.loseJingHui(state)
       refresh()
     },
-    finishVote(out: string, idiotFlip: boolean) {
-      const err = g.finishVote(state, out, idiotFlip)
+    finishVote(out: string, idiotFlip: boolean, bombVoters?: string[]) {
+      const err = g.finishVote(state, out, idiotFlip, bombVoters)
       refresh()
       return err
+    },
+    finishBombLastWords() {
+      g.finishBombLastWords(state)
+      refresh()
     },
     wolfBaoZha(sel: string) {
       const err = g.wolfBaoZha(state, sel)
@@ -347,9 +654,46 @@ export function useGame() {
       return err
     },
 
-    applyHonor(mvp: string, svp: string, beiguo: string) {
-      g.applyHonor(state, mvp, svp, beiguo)
-      refresh()
+    /** 局末提交手动荣誉：补算本轮分差、回写历史，真实模式再带着荣誉同步飞书 */
+    commitHonors(mvp: string, svp: string, beiguo: string): string | null {
+      const picks = [mvp, svp, beiguo].filter(Boolean)
+      if (new Set(picks).size !== picks.length) return "MVP / SVP / 背锅侠不能选同一名玩家"
+      const rec = history.value[history.value.length - 1]
+      if (!rec || rec.sim !== state.simMode) return "没有可提交荣誉的对局"
+      if (rec.synced) return "该局已同步飞书，无法再修改荣誉"
+      const before = new Map(state.players.map((p) => [p.name, p.scoreRound]))
+      if (picks.length) g.applyHonor(state, mvp, svp, beiguo)
+      else {
+        state.mvp = ""
+        state.svp = ""
+        state.beiguo = ""
+      }
+      g.recalcScore(state)
+      state.players.forEach((p) => {
+        const delta = Math.round((p.scoreRound - (before.get(p.name) ?? 0)) * 10) / 10
+        p.scoreTotal = Math.round((p.scoreTotal + delta) * 10) / 10
+        const rp = rec.players.find((r) => r.name === p.name)
+        if (rp) {
+          rp.scoreRound = p.scoreRound
+          rp.scoreTotal = p.scoreTotal
+          rp.star = p.star
+          rp.scoreDetail = [...p.scoreDetail]
+        }
+      })
+      rec.mvp = mvp
+      rec.svp = svp
+      rec.beiguo = beiguo
+      rec.honorConfirmed = true
+      rec.log = [...state.globalLog]
+      state.recordText = g.buildAutoRecord(state, rec.title)
+      saveHistory()
+      persist()
+      if (!state.simMode && state.winCamp !== "draw") autoSyncRecord(rec)
+      return null
+    },
+    /** 刷新后恢复未确认的结算弹窗（App 启动时调用） */
+    restorePendingSettlement() {
+      restorePendingSettlement()
     },
     resetRoundScore() {
       g.resetRoundScore(state)
@@ -361,6 +705,32 @@ export function useGame() {
       return err
     },
 
+    /** 空刀：狼人本夜不刀人 */
+    wolfEmptyKill(): string | null {
+      const err = g.wolfEmptyKill(state)
+      refresh()
+      return err
+    },
+
+    /** 提前结束对局（仅在检测到必然结局时可用）：按求解出的胜方直接结算 */
+    finishGameEarly(): string | null {
+      // 炸弹人爆炸后必须先走完遗言，不能从胜率面板提前结束
+      if (state.bombLastWordsPending) return "炸弹人遗言尚未结束，请先完成遗言"
+      const forced = checkForcedWin(state)
+      if (!forced?.detected) {
+        return "当前局势未达成必然结局条件，无法提前结束"
+      }
+      const camp: WinCamp = forced.winner === "good" ? "god" : (forced.winner as WinCamp)
+      const err = g.finishGameAuto(state, { camp, reason: forced.reason })
+      if (err) {
+        refresh()
+        return err
+      }
+      settle(forced.reason, true)
+      persist()
+      return null
+    },
+
     buildRecord(): string {
       state.recordText = g.buildAutoRecord(state, sessionTitle.value)
       persist()
@@ -368,6 +738,78 @@ export function useGame() {
     },
     clearRecord() {
       state.recordText = ""
+      persist()
+    },
+    /** 手动同步最近一局到飞书（返回错误信息或 null） */
+    async syncLastGame(): Promise<string | null> {
+      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
+      const rec = modeHistory.value[modeHistory.value.length - 1]
+      if (!rec) return "暂无已结算的对局"
+      syncStatus.value = "syncing"
+      const err = await syncGameToFeishu(rec)
+      syncStatus.value = err ? `⚠️ 同步失败：${err}` : "✅ 已同步最近一局到飞书"
+      setTimeout(() => {
+        syncStatus.value = ""
+      }, 6000)
+      return err
+    },
+    /** 批量同步今日对局到飞书：逐局写复盘+累加排名，成功标记已同步，失败停止可重试（与自动同步互斥） */
+    async syncDayGames(): Promise<{ ok: number; failed: number; err: string | null }> {
+      if (state.simMode) return { ok: 0, failed: 0, err: "当前为模拟模式，不会同步到飞书" }
+      const list = todayGames.value.filter((h) => !h.synced && !syncingRefs.value.has(h))
+      if (!list.length) return { ok: 0, failed: 0, err: "今天没有待同步的对局" }
+      syncStatus.value = "syncing"
+      let ok = 0
+      let err: string | null = null
+      for (const rec of list) {
+        // 循环内逐个再判断：防止与并发中的自动同步撞车
+        if (rec.synced || syncingRefs.value.has(rec)) continue
+        syncingRefs.value.add(rec)
+        const e = await syncGameToFeishu(rec, gameIdFor(rec))
+        syncingRefs.value.delete(rec)
+        if (e) {
+          err = e
+          break
+        }
+        ok++
+        rec.synced = true
+        saveHistory()
+      }
+      syncStatus.value = err ? `⚠️ 同步失败：${err}（已同步 ${ok} 局，剩余可重试）` : `✅ 已同步今日 ${ok} 局到飞书`
+      setTimeout(() => {
+        syncStatus.value = ""
+      }, 6000)
+      return { ok, failed: list.length - ok, err }
+    },
+    /** 单场同步（历史对局用）：校验未同步+互斥，成功标记已同步，可重试 */
+    async syncRecord(rec: GameRecord): Promise<string | null> {
+      if (state.simMode) return "当前为模拟模式，不会同步到飞书"
+      if (rec.synced || syncingRefs.value.has(rec)) return "该局已同步或正在同步"
+      syncingRefs.value.add(rec)
+      syncStatus.value = "syncing"
+      const gameId = gameIdFor(rec)
+      try {
+        const err = await syncGameToFeishu(rec, gameId)
+        if (err) {
+          syncStatus.value = `⚠️ ${gameId} 同步失败：${err}`
+          return err
+        }
+        rec.synced = true
+        saveHistory()
+        syncStatus.value = `✅ ${gameId} 已同步到飞书`
+        return null
+      } finally {
+        syncingRefs.value.delete(rec)
+      }
+    },
+    /** 清空所有历史数据：保留板子/法官/胜负模式，清玩家/角色/积分/日志/历史/法官累计分（全新周期） */
+    clearAllData() {
+      const s = g.resetWholeGame(state)
+      s.boardRoles = state.boardRoles
+      s.judgeScores = {}
+      Object.assign(state, s)
+      history.value = []
+      saveHistory()
       persist()
     },
   }
@@ -381,10 +823,19 @@ export function useGame() {
     history,
     sessionNo,
     sessionTitle,
+    todayGames,
+    historyByDay,
+    syncStatus,
+    isSyncing,
+    recordTxtOf,
     playerCount,
     maxNeed,
     aliveList,
     judgeScore,
+    winPrediction,
+    forcedWin,
+    certainty,
+    isJudge,
     snapshot,
     softStep,
     undo,
@@ -393,6 +844,7 @@ export function useGame() {
     refs: {
       boardConfig: g.boardConfig,
       boardLabels: g.boardLabels,
+      boardShortName: g.boardShortName,
       ALL_ROLE_OPT: g.ALL_ROLE_OPT,
       ROLE_EMOJI: g.ROLE_EMOJI,
       NO_CHECK: g.NO_CHECK,
@@ -403,7 +855,14 @@ export function useGame() {
       resolveVoice: g.resolveVoice,
       playerLabel: g.playerLabel,
       campBreakdown: g.campBreakdown,
+      suggestHonor: g.suggestHonor,
       isWolfRole: g.isWolfRole,
+      isWolfPackRole: g.isWolfPackRole,
+      getChainType: g.getChainType,
+      thirdCampLabel: g.thirdCampLabel,
+      roleAvatar,
+      decorateLog: g.decorateLog,
+      cleanLogLine: g.cleanLogLine,
     },
   }
 }
