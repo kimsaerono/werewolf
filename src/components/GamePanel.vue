@@ -721,6 +721,7 @@ const VOICE_LABEL: Record<string, string> = {
   gravekeeper: "守墓人睁眼",
   gravekeeper_close: "守墓人闭眼",
   knight: "骑士睁眼",
+  knight_duel_start: "骑士决斗开场",
   knight_close: "骑士闭眼",
   wild_child: "野孩子睁眼",
   wild_child_close: "野孩子闭眼",
@@ -1090,9 +1091,10 @@ function doLoversMeetClose() {
 /** 情侣解散判定（双方均已出局） */
 const loversGone = computed(() => state.lovers.length === 2 && state.lovers.every((n) => !state.players.find((p) => p.name === n)?.alive))
 const thirdActive = computed(() => chainRevealed.value && refs.getChainType(state) === "WG")
-/** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标） */
+/** 第三方成员名单（丘比特 + 人狼恋人，用于座位牌紫色角标）
+ *  与 Picker 对齐：只要链型是 WG 就显示，不等狼人全部确认。 */
 const thirdMembersList = computed(() =>
-  thirdActive.value
+  refs.getChainType(state) === "WG"
     ? state.players.filter((p) => {
         const role = getRoleInstance(p.role)
         return (role && role.def.id === "丘比特") || state.lovers.includes(p.name)
@@ -1508,6 +1510,10 @@ function doWolfBaoZha(v: string) {
   message.success("狼人自爆，直接进入黑夜")
   effect("explode", "explode")
   playVoice("explode")
+}
+function openKnightDuel() {
+  playVoice("knight_duel_start")
+  openPicker("选择决斗对象", alivePicker.value.options, (v) => doKnightDuel(v), alivePicker.value)
 }
 function doKnightDuel(v: string) {
   snapshot()
@@ -2511,7 +2517,7 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
           <a-button class="fab" type="default" shape="circle" size="large" @click="openJinghuiModal">👑</a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && hasKnight && !state.knightDuelUsed && state.phase === 'day' && !state.finished" title="骑士决斗（每局一次）" key="knight">
-          <a-button class="fab" type="default" shape="circle" size="large" @click="openPicker('选择决斗对象', alivePicker.options, (v) => doKnightDuel(v), alivePicker)">⚔️</a-button>
+          <a-button class="fab" type="default" shape="circle" size="large" @click="openKnightDuel">⚔️</a-button>
         </a-tooltip>
         <a-tooltip v-if="rightActionsOpen && canUndo" title="回退上一步" key="undo">
           <a-button class="fab" type="primary" danger shape="circle" size="large" @click="doUndo">↩️</a-button>

@@ -247,6 +247,18 @@ describe("猎魔人", () => {
     expect(hunterHunt(st, "P1")).toBe("猎魔人不能狩猎自己")
     expect(st.nightHuntTarget).toBe("")
   })
+
+  it("狼刀和狩猎同时命中好人：目标与猎魔人双死", () => {
+    const st = makeState(["狼人", "猎魔人", "平民", "平民"])
+    st.round = 2
+    wolfKill(st, "P2")
+    expect(hunterHunt(st, "P2")).toBeNull()
+    st.nightSteps.wolf = true
+    resolveNightEffects(st)
+    expect(g(st, "P2").alive).toBe(false) // 狼刀目标
+    expect(g(st, "P1").alive).toBe(false) // 猎魔人反噬
+    expect(g(st, "P1").mark.huntGoodCount).toBe(1)
+  })
 })
 
 describe("摄梦人", () => {

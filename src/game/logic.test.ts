@@ -802,8 +802,20 @@ describe("玩家管理", () => {
       },
     } as unknown as GameState)
     expect(st.voices.explode).toContain("Boom")
-    expect(st.voices.knight_duel_wolf).toContain("来决斗吧")
+    expect(st.voices.knight_duel_start).toBe("来决斗吧！")
+    expect(st.voices.knight_duel_wolf).not.toContain("来决斗吧")
     expect(st.voices.knight_duel_good).toBe("自定义决斗文案")
+  })
+
+  it("normalizeState 去掉旧版骑士结果语音里的「来决斗吧！」前缀", () => {
+    const st = normalizeState({
+      voices: {
+        knight_duel_wolf: "来决斗吧！骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
+        knight_duel_good: "来决斗吧！骑士看走眼翻车，自己白给，继续盘！",
+      },
+    } as unknown as GameState)
+    expect(st.voices.knight_duel_wolf).toBe("骑士一剑戳中大灰狼！狼人直接寄，火速入夜！")
+    expect(st.voices.knight_duel_good).toBe("骑士看走眼翻车，自己白给，继续盘！")
   })
 })
 

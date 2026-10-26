@@ -148,18 +148,24 @@ export function resolveNightEffects(state: GameState): string | null {
     }
   }
 
-  // 猎魔人：天亮结算狩猎（与女巫毒同口径，夜间已锁定目标则结算不受猎魔人当夜死亡影响）
+  // 猎魔人：天亮结算狩猎。判定只看目标身份，不看目标当晚是否已被狼刀/毒死；
+  // 目标已被其他方式出局时，不再追加击杀，但反噬/命中身份仍按原规则结算。
   if (state.nightHuntTarget) {
     const hunter = state.players.find((p) => getRoleInstance(p.role)?.def.id === "猎魔人")
     const target = state.players.find((x) => x.name === state.nightHuntTarget)
-    if (hunter && target && target.alive) {
+    if (hunter && target) {
       const targetDreamImmune = !!target.mark.dreamShield
       if (getRoleInstance(target.role)?.def.id === "恶灵骑士") {
         // 恶灵骑士免疫夜间所有伤害：狩猎无法击杀（仍是狼，不反噬）
-        pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
-        pushFlow(state, "猎魔人结算", target.name, "护体挡下")
+        if (target.alive) {
+          pushGlobalLog(state, `🗡️猎魔人${hunter.name}的狩猎被恶灵骑士护体挡下：${target.name}毫发无伤`)
+          pushFlow(state, "猎魔人结算", target.name, "护体挡下")
+        }
       } else if (isEffectiveWolf(target)) {
-        if (targetDreamImmune) {
+        if (!target.alive) {
+          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎命中${target.name}是狼，但目标已因其他方式出局，不再追加击杀`)
+          pushFlow(state, "猎魔人结算", target.name, "目标已出局")
+        } else if (targetDreamImmune) {
           // 目标的梦免只挡击杀，不牵涉反噬（狼目标本来就没有反噬）
           pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎命中${target.name}是狼，但击杀被梦境免疫`)
           pushFlow(state, "猎魔人结算", target.name, "梦免击杀")
@@ -170,11 +176,16 @@ export function resolveNightEffects(state: GameState): string | null {
           pushFlow(state, "猎魔人结算", target.name, "戳中狼")
         }
       } else {
-        // 好人目标：猎魔人反噬。反噬是自身技能结算惩罚，梦免不挡
+        // 好人目标：猎魔人反噬。反噬是自身技能结算惩罚，梦免不挡；
+        // 即使目标已被狼刀带走，身份仍是好人，反噬照常触发（双死）。
+        const targetAlreadyDead = !target.alive
         hunter.mark.huntGoodCount = (hunter.mark.huntGoodCount || 0) + 1
         if (hunter.alive) {
           deathList.push(...killPlayer(state, hunter.name, "other", "猎魔人反噬"))
-          pushGlobalLog(state, `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}，反噬出局`)
+          pushGlobalLog(
+            state,
+            `🗡️猎魔人${hunter.name}狩猎戳错好人：${target.name}${targetAlreadyDead ? "（目标已被其他方式出局）" : ""}，反噬出局`,
+          )
           pushFlow(state, "猎魔人结算", hunter.name, "戳错反噬")
         }
       }

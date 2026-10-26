@@ -56,7 +56,6 @@ const emit = defineEmits<{
 
 const single = ref("")
 const multiSel = ref<string[]>([])
-const blockedToast = ref("")
 
 watch(
   () => props.open,
@@ -87,17 +86,13 @@ function disabledReason(v: string): string {
   return props.disabledMap[v] || props.blockedMsg
 }
 function toggle(v: string) {
-  if (isBlocked(v) || isDisabledByMap(v)) {
-    blockedToast.value = disabledReason(v)
-    setTimeout(() => (blockedToast.value = ""), 1500)
-    return
-  }
+  // 禁选卡片在 CSS 里已经 pointer-events:none，这里再兜底一次
+  if (isBlocked(v) || isDisabledByMap(v) || disabled(v)) return
   if (!props.multi) {
     // 单选：点选高亮，底部确认后执行
     single.value = v
     return
   }
-  if (disabled(v)) return
   const i = multiSel.value.indexOf(v)
   if (i >= 0) multiSel.value.splice(i, 1)
   else multiSel.value.push(v)
@@ -216,7 +211,12 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   padding: 12px 8px;
   text-align: center;
   cursor: pointer;
+  touch-action: manipulation;
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+/* 卡片内所有内容都不拦截点击，保证整张卡都是点击区域 */
+.fp-card > * {
+  pointer-events: none;
 }
 .fp-card:hover {
   border-color: #2ed573;
@@ -247,6 +247,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 }
 .fp-card.disabled {
   cursor: not-allowed;
+  pointer-events: none;
 }
 .fp-card.disabled::after {
   content: "";
@@ -291,7 +292,7 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 }
 .fp-lover {
   position: absolute;
-  top: 6px;
+  bottom: 6px;
   right: 6px;
   z-index: 5;
   font-size: 12px;
@@ -331,8 +332,8 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
 }
 .fp-wild {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  bottom: 6px;
+  left: 6px;
   z-index: 5;
   font-size: 14px;
   pointer-events: none;

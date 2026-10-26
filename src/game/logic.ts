@@ -264,6 +264,7 @@ export const DEFAULT_VOICES: Record<string, string> = {
   gravekeeper: "守墓人请睁眼，得知昨日被投票放逐者属于好人还是狼人阵营。",
   gravekeeper_close: "守墓人请闭眼。",
   knight: "骑士请睁眼，确认你的决斗之剑还没出鞘。",
+  knight_duel_start: "来决斗吧！",
   knight_close: "骑士请闭眼。",
   hunter_open: "猎人请睁眼，确认你的枪状态，没问题就闭眼。",
   hunter_close: "猎人请闭眼。",
@@ -277,8 +278,8 @@ export const DEFAULT_VOICES: Record<string, string> = {
   hunter: "枪哥，猎枪已上膛，逮个倒霉蛋过来陪葬！",
   hunter_poisoned: "毒药直接把枪腐蚀锈死啦，彻底哑火开不了！",
   idiot_flip: "显眼包亮身份赖场不走！以后没投票权，白天投不死，只能夜里搞他。",
-  knight_duel_wolf: "来决斗吧！骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
-  knight_duel_good: "来决斗吧！骑士看走眼翻车，自己白给，继续盘！",
+  knight_duel_wolf: "骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
+  knight_duel_good: "骑士看走眼翻车，自己白给，继续盘！",
   wwk_boom: "Boom！白狼王掀桌自爆！顺手薅走一个，直接入夜。",
   jinghui: "现在竞选警长。",
   nightmare: "噩梦之影请睁眼！今晚恐吓一个人，让他从梦中惊醒！",
@@ -547,6 +548,14 @@ export function normalizeState(s: GameState): GameState {
     wwk_boom: "白狼王掀桌自爆！顺手薅走一个，直接入夜。",
   }
   for (const [id, oldText] of Object.entries(LEGACY_VOICE_DEFAULTS)) {
+    if (st.voices[id] === oldText) st.voices[id] = DEFAULT_VOICES[id]
+  }
+  // v2.6.1 曾把「来决斗吧！」并入结果语音；现在改为开场独立语音，去掉旧前缀
+  const PREFIXED_KNIGHT_DEFAULTS: Record<string, string> = {
+    knight_duel_wolf: "来决斗吧！骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
+    knight_duel_good: "来决斗吧！骑士看走眼翻车，自己白给，继续盘！",
+  }
+  for (const [id, oldText] of Object.entries(PREFIXED_KNIGHT_DEFAULTS)) {
     if (st.voices[id] === oldText) st.voices[id] = DEFAULT_VOICES[id]
   }
   if (typeof st.knightDuelUsed !== "boolean") st.knightDuelUsed = false
