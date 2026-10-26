@@ -21,6 +21,14 @@ describe("万圣节主题角色别称", () => {
     expect(themeRoleEmoji("守卫")).toBe("🛡️")
   })
 
+  it("语音里的趣味代称也替换为万圣节称呼", () => {
+    setTheme("halloween")
+    expect(themeText("算命大仙请睁眼")).toBe("灵媒巫师请睁眼")
+    expect(themeText("药罐子女巫请睁眼")).toBe("暗夜巫婆请睁眼")
+    expect(themeText("夜班保镖上线")).toBe("古堡守灵人上线")
+    expect(themeText("枪哥，猎枪已上膛")).toBe("亡灵猎手，猎枪已上膛")
+  })
+
   it("themeText 只替换显示/播报文案，不改动其他角色", () => {
     setTheme("halloween")
     expect(themeText("预言家验人，守卫守人；狼人睁眼")).toBe(

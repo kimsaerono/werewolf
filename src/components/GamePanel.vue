@@ -880,6 +880,12 @@ watch(currentStep, (key) => {
 function playVoice(id: string) {
   if (state.voiceEnabled) speakVoice(id, themeText(refs.resolveVoice(state, id)))
 }
+/** 万圣节主题下实际播报文案（与编辑框原文不同才显示预览） */
+function themedVoicePreview(id: string): string {
+  const raw = state.voices[id] || ""
+  const themed = themeText(raw)
+  return themed !== raw ? themed : ""
+}
 function playStepVoice() {
   const vid = STEP_VOICE[currentStep.value]
   if (vid && state.voiceEnabled) speak(themeText(refs.resolveVoice(state, vid)))
@@ -2488,6 +2494,9 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
                 />
                 <a-button size="small" @click="playVoice(st[0])">🔊</a-button>
               </a-space>
+              <div v-if="themedVoicePreview(st[0])" class="voice-row-preview">
+                实际播报：{{ themedVoicePreview(st[0]) }}
+              </div>
             </div>
           </a-col>
         </a-row>
@@ -2926,6 +2935,12 @@ defineExpose({ openVoiceDrawer: () => (voiceDrawer.value = true) })
   font-size: 12px;
   color: #999;
   margin-bottom: 4px;
+}
+.voice-row-preview {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #ffb86b;
 }
 .prophet-result {
   display: flex;

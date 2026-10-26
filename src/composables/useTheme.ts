@@ -86,6 +86,11 @@ export function themeText(text: string): string {
     // 避免「古堡守灵人守人」这类重复词，换成更自然的动作描述
     .split("守卫守人").join("古堡守灵人守夜")
     .split("守卫本晚不守护").join("古堡守灵人本晚不守护")
+    // 语音里的趣味代称也换成万圣节称呼
+    .split("算命大仙").join("灵媒巫师")
+    .split("药罐子女巫").join("暗夜巫婆")
+    .split("夜班保镖").join("古堡守灵人")
+    .split("枪哥").join("亡灵猎手")
   for (const [role, alias] of Object.entries(HALLOWEEN_ROLE_ALIASES)) {
     out = out.split(role).join(alias.name)
   }
