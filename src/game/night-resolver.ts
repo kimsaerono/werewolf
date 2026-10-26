@@ -240,6 +240,7 @@ export function resolveNightEffects(state: GameState): string | null {
     p.mark.skillDisabled = false
     // 梦游免疫仅持续当夜
     p.mark.dreamShield = false
+    p.mark.fearResolved = false
   }
   // 清理夜晚状态（血月封印作用于当夜，天亮清除；警上自爆则顺延到下一夜）
   state.guardLastTarget = state.nightGuardTarget

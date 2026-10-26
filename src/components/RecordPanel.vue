@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { App as AntApp } from "ant-design-vue"
-import { decorateLog, cleanLogLine, roleShort } from "@/game/logic"
+import { decorateLog, cleanLogLine } from "@/game/logic"
+import { themeRoleShort, themeText } from "@/composables/useTheme"
 import type { Game } from "@/types"
 import type { GameRecord } from "@/composables/useGame"
 import { getRoleInstance } from "@/game/roles/builtin"
@@ -12,7 +13,7 @@ const { historyByDay, actions, refs, recordTxtOf, syncStatus, isSyncing, state }
 
 /** 历史记录日志展示：去时间 + 玩家名转 号码(身份) */
 function fmtLog(h: GameRecord, l: string, i: number): string {
-  return `${i + 1}. ${decorateLog({ players: h.players } as never, cleanLogLine(l))}`
+  return `${i + 1}. ${themeText(decorateLog({ players: h.players } as never, cleanLogLine(l)))}`
 }
 function timeHM(t: string): string {
   const s = String(t || "").split(" ")[1] || ""
@@ -113,8 +114,8 @@ function onClearAll() {
             </div>
             <a-divider style="margin: 8px 0">积分</a-divider>
             <a-space :wrap="true">
-              <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'" :title="thirdLabel(h, p) || p.role">
-                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) || roleShort(p.role) }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
+              <a-tag v-for="p in h.players" :key="p.name" :color="p.scoreRound >= 0 ? 'green' : 'red'" :title="thirdLabel(h, p) ? themeText(thirdLabel(h, p)) : themeRoleShort(p.role)">
+                {{ p.no }}.{{ p.name }}({{ thirdLabel(h, p) ? themeText(thirdLabel(h, p)) : themeRoleShort(p.role) }}) {{ p.scoreRound >= 0 ? "+" : "" }}{{ p.scoreRound.toFixed(1) }}
               </a-tag>
             </a-space>
             <a-divider style="margin: 8px 0">对局日志</a-divider>

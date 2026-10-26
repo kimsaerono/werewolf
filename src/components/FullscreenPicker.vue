@@ -1,12 +1,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue"
 import { roleAvatar } from "@/assets/roles"
+import cupidThirdIcon from "@/assets/roles/第三阵营邱比特.png"
+import sheriffIcon from "@/assets/roles/警长.png"
 
 const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
-    options: { value: string; label: string; no?: number; name?: string; role?: string }[]
+    options: {
+      value: string
+      label: string
+      no?: number
+      name?: string
+      role?: string
+      alive?: boolean
+      third?: boolean
+      thirdIcon?: "heart" | "bomb" | "cupid"
+      lover?: boolean
+      cupidThird?: boolean
+      sheriff?: boolean
+      judge?: boolean
+      idiot?: boolean
+      dreamFog?: boolean
+      model?: boolean
+      wildTransformed?: boolean
+    }[]
     /** 单选用值（点选即确认）；多选用的值数组 */
     multi?: boolean
     min?: number
@@ -63,10 +82,6 @@ function isBlocked(v: string): boolean {
 function isDisabledByMap(v: string): boolean {
   return v in props.disabledMap
 }
-/** 该禁选是否为"已出局" */
-function isDead(v: string): boolean {
-  return props.disabledMap[v] === "已出局"
-}
 /** 卡片不可点击的完整原因（disabledMap 优先，其次 blockedMsg） */
 function disabledReason(v: string): string {
   return props.disabledMap[v] || props.blockedMsg
@@ -114,16 +129,33 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
         v-for="opt in options"
         :key="opt.value"
         class="fp-card"
-        :class="{ active: isActive(opt), disabled: disabled(opt.value) || isBlocked(opt.value) || isDisabledByMap(opt.value) }"
+        :class="{
+          active: isActive(opt),
+          disabled: disabled(opt.value) || isBlocked(opt.value) || isDisabledByMap(opt.value),
+          'third-camp': opt.third,
+          dead: opt.alive === false,
+        }"
         :title="opt.role || ''"
         @click="toggle(opt.value)"
       >
         <img v-if="roleBg(opt.role)" class="fp-card-bg" :src="roleBg(opt.role)" :alt="opt.role" aria-hidden="true" />
-        <div v-if="isDead(opt.value)" class="fp-out-stamp">OUT</div>
+        <div v-if="opt.alive === false" class="fp-out-stamp">OUT</div>
+        <span v-if="opt.third" class="fp-third-circle" :title="opt.thirdIcon === 'bomb' ? '第三方·炸弹人' : '第三方·人狼恋'">
+          <img v-if="opt.thirdIcon === 'cupid'" :src="cupidThirdIcon" alt="第三阵营丘比特" />
+          <template v-else>{{ opt.thirdIcon === "bomb" ? "💣" : "💘" }}</template>
+        </span>
+        <span v-if="opt.lover && !opt.third" class="fp-lover" title="情侣">💔</span>
+        <span v-if="opt.sheriff" class="fp-sheriff" title="警长"><img :src="sheriffIcon" alt="警长" /></span>
+        <span v-if="opt.idiot" class="fp-idiot" title="白痴已翻牌">🙊</span>
+        <span v-if="opt.wildTransformed" class="fp-wild" title="野孩子已黑化">🐺</span>
+        <div v-if="opt.model || opt.dreamFog" class="fp-side-tags">
+          <span v-if="opt.model" class="fp-side-tag model" title="野孩子的榜样">榜</span>
+          <span v-if="opt.dreamFog" class="fp-side-tag dream" title="本夜梦游者">梦</span>
+        </div>
         <template v-if="opt.no !== undefined">
           <div class="fp-no">{{ opt.no }}</div>
-          <div class="fp-name">{{ opt.name || opt.label }}</div>
-          <div v-if="isBlocked(opt.value) || (isDisabledByMap(opt.value) && !isDead(opt.value))" class="fp-blocked-badge">{{ disabledReason(opt.value) }}</div>
+          <div class="fp-name">{{ opt.judge ? "⚖️ " : "" }}{{ opt.name || opt.label }}</div>
+          <div v-if="isBlocked(opt.value) || (isDisabledByMap(opt.value) && opt.alive !== false)" class="fp-blocked-badge">{{ disabledReason(opt.value) }}</div>
         </template>
         <template v-else>
           {{ opt.label }}
@@ -224,6 +256,112 @@ const isActive = (opt: { value: string }): boolean => (props.multi ? multiSel.va
   border-radius: 12px;
   pointer-events: none;
   z-index: 2;
+}
+
+/* ===== 与座位牌一致的状态标识 ===== */
+.fp-card.third-camp {
+  outline: 2px solid #9a6fe8;
+  outline-offset: -2px;
+}
+.fp-card.dead {
+  opacity: 0.78;
+}
+.fp-third-circle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #a97cf0 0%, #6f3fb5 100%);
+  border: 1.5px solid #e3d2ff;
+  box-shadow: 0 2px 8px rgba(80, 30, 140, 0.6), 0 0 10px rgba(154, 111, 232, 0.5);
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+.fp-third-circle img {
+  width: 14px;
+  height: 14px;
+}
+.fp-lover {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  font-size: 12px;
+  background: #ff5a8a;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 3px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.fp-sheriff {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffd666 0%, #d49a00 100%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+.fp-sheriff img {
+  width: 14px;
+  height: 14px;
+}
+.fp-idiot {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  z-index: 5;
+  font-size: 12px;
+  pointer-events: none;
+}
+.fp-wild {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  font-size: 14px;
+  pointer-events: none;
+}
+.fp-side-tags {
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+.fp-side-tag {
+  font-size: 9px;
+  line-height: 1.3;
+  padding: 1px 3px;
+  border-radius: 3px;
+  color: #fff;
+  background: rgba(20, 40, 30, 0.8);
+}
+.fp-side-tag.model {
+  background: #2ed573;
+  color: #08210f;
+}
+.fp-side-tag.dream {
+  background: #8a6dff;
 }
 .fp-blocked-badge {
   position: relative;

@@ -10,8 +10,8 @@ export type { NightStepCtx } from "./roles/types"
  *
  * 夜晚步骤顺序与启用条件由**角色注册表派生**（新增角色只要声明 nightStep 即自动纳入），
  * 与角色无关的特殊步骤（情侣认亲）单独列出。
- * 顺序按注册表 nightStep.order 升序；首夜石像鬼会被 computeStepKeys 额外挪到所有夜间步骤末尾
- * （需要目标的完整身份，必须等首夜角色分配完毕），第 2 夜起回归正常顺序。
+ * 顺序按注册表 nightStep.order 升序；石像鬼查验每夜都挪到所有夜间步骤末尾
+ * （需要目标的完整身份，必须等夜间身份确认完毕），首夜的「石像鬼分配」仍按 order 前置。
  */
 
 interface NightStep {
@@ -113,9 +113,9 @@ export function computeStepKeys(state: GameState): string[] {
       hunterExists: !!hunterP,
       hunterAlive: !!hunterP?.alive,
     })
-    // 首夜角色是在夜间各步骤里逐个确认的；石像鬼需要目标的具体身份，
-    // 故首夜把它挪到所有夜间步骤末尾（身份全部分配后再查验）。第 2 夜起保持前置顺序。
-    if (state.round <= 1 && ks.includes("gargoyle")) {
+    // 石像鬼查验需要目标的完整身份，每夜都放到所有夜间步骤最后。
+    // 首夜的「石像鬼分配」仍前置（在预言家之前），保证预言家验人时身份已确认。
+    if (ks.includes("gargoyle")) {
       ks.splice(ks.indexOf("gargoyle"), 1)
       ks.push("gargoyle")
     }
@@ -124,6 +124,9 @@ export function computeStepKeys(state: GameState): string[] {
     if (ks.length === 0) ks.push("dawn")
     return ks
   }
+
+  // 炸弹人爆炸后先走完遗言，期间不能进入夜晚/继续投票
+  if (state.bombLastWordsPending) return ["bombLastWords"]
 
   // 白天：自爆跳过投票时优先处理待开枪
   if (state.skipVote) {

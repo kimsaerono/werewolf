@@ -4,7 +4,8 @@ import { App as AntApp } from "ant-design-vue"
 import { getWerewolfGroupMembers } from "@/api/feishu"
 import { fetchGroupMembers } from "@/api/feishuSync"
 import SeatBoard from "@/components/SeatBoard.vue"
-import { DEFAULT_BOARD, roleShort } from "@/game/logic"
+import { DEFAULT_BOARD } from "@/game/logic"
+import { themeRoleEmoji, themeRoleName, themeRoleShort, themeRoleShortName } from "@/composables/useTheme"
 import type { Game } from "@/types"
 
 const { message } = AntApp.useApp()
@@ -75,7 +76,7 @@ function setRoles(roles: string[]) {
 }
 function addRole(role: string) {
   if (!refs.canAddRole(boardRoles(), role)) {
-    message.warning(`角色【${role}】最多 1 个，不能重复添加`)
+    message.warning(`角色【${themeRoleName(role)}】最多 1 个，不能重复添加`)
     return
   }
   setRoles([...boardRoles(), role])
@@ -137,7 +138,7 @@ const boardSummaryText = computed(() => {
   const counts: Record<string, number> = {}
   roles.forEach((r) => (counts[r] = (counts[r] || 0) + 1))
   return Object.entries(counts)
-    .map(([role, n]) => `${refs.ROLE_EMOJI[role] || ""}${roleShort(role)}×${n}`)
+    .map(([role, n]) => `${themeRoleEmoji(role) || ""}${themeRoleShort(role)}×${n}`)
     .join(" ")
 })
 onMounted(loadMembers)
@@ -295,8 +296,8 @@ function onPoolPointerEnd(e: PointerEvent) {
       <div class="role-editor">
         <div v-for="g in roleGroups" :key="g.role" class="role-chip">
           <img v-if="refs.roleAvatar(g.role)" class="role-avatar-img" :src="refs.roleAvatar(g.role)" :alt="g.role" />
-          <span v-else class="role-avatar">{{ refs.ROLE_EMOJI[g.role] || "🎭" }}</span>
-          <span class="role-chip-name">{{ g.role }}</span>
+          <span v-else class="role-avatar">{{ themeRoleEmoji(g.role) || "🎭" }}</span>
+          <span class="role-chip-name" :title="g.role">{{ themeRoleShortName(g.role) }}</span>
           <span class="role-chip-count">×{{ g.count }}</span>
           <a-button size="small" type="primary" shape="circle" :disabled="!g.canAdd" class="role-btn" @click="addRole(g.role)">+</a-button>
           <a-button size="small" danger shape="circle" :disabled="boardRoles().length <= 2" class="role-btn" @click="removeRole(g.role)">−</a-button>
@@ -408,8 +409,8 @@ function onPoolPointerEnd(e: PointerEvent) {
       <div v-if="remainingRoles.length" class="role-remaining">
         <div v-for="r in remainingRoles" :key="r" class="role-remaining-item" @click="addRole(r)">
           <img v-if="refs.roleAvatar(r)" class="role-avatar-img" :src="refs.roleAvatar(r)" :alt="r" />
-          <span v-else>{{ refs.ROLE_EMOJI[r] || "🎭" }}</span>
-          <span>{{ r }}</span>
+          <span v-else>{{ themeRoleEmoji(r) || "🎭" }}</span>
+          <span :title="r">{{ themeRoleShortName(r) }}</span>
           <a-tag color="success">添加</a-tag>
         </div>
       </div>

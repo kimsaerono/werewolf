@@ -4,9 +4,11 @@ import type { Game } from "@/types"
 import VersionSwitcher from "@/components/VersionSwitcher.vue"
 import StaticVersionSelector from "@/components/StaticVersionSelector.vue"
 import { DEFAULT_BOARD } from "@/game/logic"
+import { useTheme } from "@/composables/useTheme"
 
 const props = defineProps<{ game: Game }>()
 const { state, actions } = props.game
+const { isHalloween, setTheme } = useTheme()
 
 const sel = ref<"real" | "sim">(state.simMode ? "sim" : "real")
 const entering = ref(false)
@@ -196,15 +198,26 @@ interface Particle {
 </script>
 
 <template>
-  <div class="mode-page">
+  <div class="mode-page" :class="{ 'mode-halloween': isHalloween }">
+    <div v-if="isHalloween" class="mode-decor" aria-hidden="true">
+      <span class="d1">🎃</span>
+      <span class="d2">💀</span>
+      <span class="d3">🦇</span>
+      <span class="d4">🕸️</span>
+    </div>
     <div class="mode-version">
       <StaticVersionSelector v-if="!isLocalHost" />
       <VersionSwitcher v-else />
     </div>
+    <div class="mode-theme">
+      <span>🎃 万圣节专场</span>
+      <a-switch :checked="isHalloween" @change="setTheme($event ? 'halloween' : 'classic')" />
+    </div>
+
     <div class="mode-hero">
-      <div class="mode-logo">🐺</div>
-      <h1 class="mode-title">狼人杀法官助手</h1>
-      <p class="mode-sub">请先选择对局模式，再进入助手</p>
+      <div class="mode-logo">{{ isHalloween ? "🎃" : "🐺" }}</div>
+      <h1 class="mode-title">{{ isHalloween ? "万圣节狼人夜" : "狼人杀法官助手" }}</h1>
+      <p class="mode-sub">{{ isHalloween ? "灵媒巫师、暗夜巫婆、亡灵猎手与古堡守灵人已就位" : "请先选择对局模式，再进入助手" }}</p>
     </div>
 
     <div class="mode-cards">
@@ -547,4 +560,71 @@ interface Particle {
     max-width: 280px;
   }
 }
+
+/* ===== 万圣节主题 ===== */
+.mode-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid #ff9a3d66;
+  background: rgba(40, 16, 28, 0.72);
+  color: #ffd7a3;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 1;
+}
+.mode-halloween {
+  background:
+    radial-gradient(70% 50% at 50% 0%, rgba(255, 122, 24, 0.22), transparent 70%),
+    linear-gradient(180deg, #120a1e 0%, #2a1020 55%, #0d0812 100%);
+}
+.mode-halloween .mode-title {
+  background: linear-gradient(135deg, #ffe9c7 0%, #ff7a18 55%, #b45cff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.mode-halloween .mode-sub {
+  color: #d8b9c9;
+}
+.mode-halloween .mode-card {
+  background: #1e0f1c;
+  border-color: #4a2440;
+}
+.mode-halloween .mode-card::before {
+  background: linear-gradient(135deg, rgba(255, 122, 24, 0.16) 0%, transparent 55%);
+}
+.mode-halloween .mode-card:hover {
+  border-color: #ff9a3d;
+  box-shadow: 0 12px 32px rgba(255, 90, 20, 0.18);
+}
+.mode-halloween .mode-card-real.active {
+  border-color: #ff7a18;
+  background: #ff7a1814;
+  box-shadow: 0 0 24px 4px rgba(255, 122, 24, 0.22);
+}
+.mode-halloween .mode-card-sim.active {
+  border-color: #b45cff;
+  background: #b45cff14;
+  box-shadow: 0 0 24px 4px rgba(180, 92, 255, 0.2);
+}
+.mode-decor {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.mode-decor span {
+  position: absolute;
+  font-size: clamp(48px, 8vw, 110px);
+  opacity: 0.14;
+  filter: drop-shadow(0 0 20px rgba(255, 122, 24, 0.5));
+}
+.mode-decor .d1 { top: 6%; left: 3%; }
+.mode-decor .d2 { top: 16%; right: 4%; }
+.mode-decor .d3 { bottom: 10%; left: 6%; }
+.mode-decor .d4 { bottom: 8%; right: 6%; }
 </style>

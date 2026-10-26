@@ -71,6 +71,15 @@ describe("computeStepKeys · 阶段总览", () => {
     const s = build(["狼人", "猎人", "平民"], { phase: "day", hunterShotPending: true })
     expect(computeStepKeys(s)[0]).toBe("hunter")
   })
+
+  it("炸弹人遗言期间 → ['bombLastWords']，不再显示进入夜晚", () => {
+    const s = build(["炸弹人", "狼人", "平民"], {
+      phase: "day",
+      bombLastWordsPending: true,
+      uiDone: { speech: true, vote: true },
+    })
+    expect(computeStepKeys(s)).toEqual(["bombLastWords"])
+  })
 })
 
 describe("computeStepKeys · 夜间顺序与条件", () => {
@@ -338,10 +347,11 @@ describe("computeStepKeys · 石像鬼分配/查验顺序", () => {
     expect(keys.indexOf("gargoyle")).toBeGreaterThan(keys.indexOf("prophet"))
   })
 
-  it("第二夜：不再有石像鬼分配步骤，查验仍在", () => {
+  it("第二夜：不再有石像鬼分配步骤，查验移到最后", () => {
     const s = build(["狼人", "石像鬼", "预言家", "平民", "平民"], { round: 2 })
     const keys = computeStepKeys(s)
     expect(keys).not.toContain("gargoyleAssign")
     expect(keys).toContain("gargoyle")
+    expect(keys.at(-1)).toBe("gargoyle")
   })
 })

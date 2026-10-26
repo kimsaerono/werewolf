@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue"
 import { roleAvatar } from "@/assets/roles"
-import { ROLE_EMOJI } from "@/game/logic"
+import { themeRoleEmoji, themeRoleShortName, themeText } from "@/composables/useTheme"
 
 const props = defineProps<{ roles: string[] }>()
 
@@ -30,7 +30,7 @@ const ROLE_INFO: Record<string, { play: string; score: string }> = {
     score: "胜利+3｜反伤触发每次+1｜吸引查验未反伤+0.5｜吸引毒药未反伤+0.5",
   },
   石像鬼: {
-    play: "狼人阵营但不与普通狼见面：首夜先提前确认身份（保证预言家验人正确），查验在首夜末尾；每晚独立查验一名存活玩家的完整身份；不参与狼人刀人、不能自爆；可被狼刀/毒/放逐。除石像鬼外狼阵营全灭后，获得夜间刀人能力（保留验人）；预言家验其为狼",
+    play: "狼人阵营但不与普通狼见面：首夜先提前确认身份（保证预言家验人正确），查验每夜都在末尾；每晚独立查验一名存活玩家的完整身份；不参与狼人刀人、不能自爆；可被狼刀/毒/放逐。除石像鬼外狼阵营全灭后，获得夜间刀人能力（保留验人）；预言家验其为狼",
     score: "狼胜且存活到终局+0.5｜胜利+3",
   },
   隐狼: {
@@ -110,7 +110,7 @@ const GAME_RULES: { title: string; items: string[] }[] = [
     title: "夜间流程",
     items: [
       "首夜：野孩子选榜样→丘比特睁眼→情侣互认→守卫→石像鬼分配→噩梦之影恐惧→狼人→隐狼睁眼（获知狼人号码）→狼美人→预言家→猎魔人→摄梦人→女巫→守墓人→白痴/骑士睁眼→猎人状态→炸弹人睁眼→石像鬼查验→竞选警长→天亮（首夜石像鬼查验挪到所有夜间步骤末尾）",
-      "后续每夜：守卫→石像鬼→噩梦之影→狼人→狼美人→预言家→猎魔人→摄梦人→女巫→守墓人→猎人→天亮",
+      "后续每夜：守卫→噩梦之影→狼人→狼美人→预言家→猎魔人→摄梦人→女巫→守墓人→猎人→石像鬼查验→天亮",
       "守卫：每晚守一人免刀，不能连续两晚守同一人；同守同救则该玩家死亡（奶穿）",
       "狼人：共同选一人刀杀，仅狼狼恋（WW）双狼情侣不可互刀，人狼恋（WG）的狼恋人可被狼队刀；石像鬼/隐狼不参与狼人刀人，其余狼全灭后接管刀人；黑化野孩子下一晚起加入狼群、同睁眼、共享一刀，其他狼全灭后仍保留刀",
       "噩梦之影：恐惧狼→狼队当晚空刀；恐惧神职→其技能当晚失效；恐惧自己/平民无效果",
@@ -185,27 +185,27 @@ const shownRoles = computed(() => {
         角色玩法 · 计分
         <a-button size="small" type="text" style="color: #888" @click="open = false">✕</a-button>
       </div>
-      <div class="rh-general">{{ GENERAL_NOTE }}</div>
+      <div class="rh-general">{{ themeText(GENERAL_NOTE) }}</div>
       <div class="rh-rules">
         <div v-for="g in GAME_RULES" :key="g.title" class="rh-rules-group">
-          <div class="rh-rules-title">{{ g.title }}</div>
-          <div v-for="(item, i) in g.items" :key="i" class="rh-rules-item">{{ item }}</div>
+          <div class="rh-rules-title">{{ themeText(g.title) }}</div>
+          <div v-for="(item, i) in g.items" :key="i" class="rh-rules-item">{{ themeText(item) }}</div>
         </div>
         <div class="rh-rules-group">
-          <div class="rh-rules-title">{{ CUPID_RULES.title }}</div>
-          <div v-for="(item, i) in CUPID_RULES.items" :key="i" class="rh-rules-item">{{ item }}</div>
+          <div class="rh-rules-title">{{ themeText(CUPID_RULES.title) }}</div>
+          <div v-for="(item, i) in CUPID_RULES.items" :key="i" class="rh-rules-item">{{ themeText(item) }}</div>
         </div>
       </div>
       <div class="rh-list">
         <div v-for="r in shownRoles" :key="r" class="rh-item">
           <span class="rh-emoji">
             <img v-if="roleAvatar(r)" :src="roleAvatar(r)" class="rh-role-img" :alt="r" />
-            <span v-else>{{ ROLE_EMOJI[r] || "🎭" }}</span>
+            <span v-else>{{ themeRoleEmoji(r) || "🎭" }}</span>
           </span>
           <div class="rh-body">
-            <div class="rh-name">{{ r }}</div>
-            <div class="rh-play">{{ ROLE_INFO[r]?.play || "" }}</div>
-            <div class="rh-score">💯 {{ ROLE_INFO[r]?.score || "" }}</div>
+            <div class="rh-name" :title="r">{{ themeRoleShortName(r) }}</div>
+            <div class="rh-play">{{ themeText(ROLE_INFO[r]?.play || "") }}</div>
+            <div class="rh-score">💯 {{ themeText(ROLE_INFO[r]?.score || "") }}</div>
           </div>
         </div>
       </div>

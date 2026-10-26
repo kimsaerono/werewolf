@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import Sortable from "sortablejs"
-import { ROLE_EMOJI, roleShort } from "@/game/logic"
+import { ROLE_EMOJI } from "@/game/logic"
 import type { Player } from "@/game/logic"
 import { getRoleInstance } from "@/game/roles/builtin"
+import { useSeatDisplay } from "@/composables/useSeatDisplay"
+import { themeRoleEmoji, themeRoleName, themeRoleShort } from "@/composables/useTheme"
 import { roleAvatar } from "@/assets/roles"
 import cupidThirdIcon from "@/assets/roles/第三阵营邱比特.png"
 import sheriffIcon from "@/assets/roles/警长.png"
@@ -111,11 +113,20 @@ function isThirdCamp(p: Player): boolean {
   if (props.thirdMembers.includes(p.name)) return true
   return getRoleInstance(p.role)?.def.id === "炸弹人"
 }
+/** 第三方圆形徽章：丘比特用图标，人狼恋用 💘，炸弹人用 💣 */
+function thirdCircleIcon(p: Player): "cupid" | "heart" | "bomb" {
+  if (props.thirdMembers.includes(p.name)) return isCupidRole(p) ? "cupid" : "heart"
+  return getRoleInstance(p.role)?.def.id === "炸弹人" ? "bomb" : "heart"
+}
+function thirdCampTitle(p: Player): string {
+  return thirdCircleIcon(p) === "bomb" ? "第三方阵营：炸弹人" : "第三方阵营：人狼恋"
+}
 
 // ===== 半遮面：整列默认收进一半贴屏边，点一下 / 触摸滑出完整，静止 1.5s 自动收回 =====
 // 注意：不做「再点一下收回」。展开后卡片要留给 Sortable 拖动，二次点击会先把卡片
 // 收回半屏，pointer 被裁掉，拖动根本触发不了；收回统一交给「无操作静止 1.5s」。
-const seatOpen = ref(false)
+const { alwaysOpen } = useSeatDisplay()
+const seatOpen = ref(alwaysOpen.value)
 const SEAT_AUTO_HIDE_MS = 1500
 let seatTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -126,6 +137,11 @@ function openSeat() {
 }
 /** 任何指针活动（按下/抬起/移动/移入/移出）都重新计时；静止满 1.5s 自动收回 */
 function armSeatHide() {
+  if (alwaysOpen.value) {
+    clearSeatTimer()
+    seatOpen.value = true
+    return
+  }
   if (seatTimer) clearTimeout(seatTimer)
   seatTimer = setTimeout(() => {
     seatOpen.value = false
@@ -141,6 +157,16 @@ function clearSeatTimer() {
   if (seatTimer) clearTimeout(seatTimer)
   seatTimer = undefined
 }
+
+// 常显开关：开启后立即展开并停止自动收起；关闭后恢复静止 1.5s 收起
+watch(alwaysOpen, (v) => {
+  if (v) {
+    clearSeatTimer()
+    seatOpen.value = true
+  } else {
+    armSeatHide()
+  }
+})
 
 // ===== 拖动排序：左右两列各自一个 Sortable + 共享 group（跨列互换、元素随手） =====
 const listEl = ref<HTMLElement | null>(null)
@@ -245,9 +271,6 @@ function badgeText(p: Player): string {
   if (props.thirdMembers.includes(p.name)) return "❤️"
   return "💔"
 }
-function badgeClass(p: Player): string {
-  return props.thirdMembers.includes(p.name) ? "third" : ""
-}
 
 /** 判断是否为丘比特角色 */
 function isCupidRole(p: Player): boolean {
@@ -349,7 +372,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="seatClasses(p)"
+            :title="p.role ? themeRoleName(p.role) : ''"
+            :class="[seatClasses(p), 'side-left']"
             :style="cardBg(p)"
             @pointerdown="openSeat"
             @pointermove="armSeatHide"
@@ -365,11 +389,13 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <div v-if="!p.alive" class="seat-out-stamp">OUT</div>
             <span class="seat-no float">{{ p.no || (seatRows - idx) }}</span>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
+              v-if="showLover && lovers.includes(p.name) && !thirdMembers.includes(p.name)"
               class="seat-lover"
-              :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-            <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="isThirdCamp(p)" class="seat-third-circle" :title="thirdCampTitle(p)">
+              <img v-if="thirdCircleIcon(p) === 'cupid'" :src="cupidThirdIcon" alt="第三阵营丘比特" />
+              <template v-else>{{ thirdCircleIcon(p) === 'bomb' ? "💣" : "💘" }}</template>
+            </span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
             <div v-if="modelNames.has(p.name) || showDreamFog(p)" class="seat-side-tags">
@@ -390,7 +416,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
             :key="p.name"
             class="seat-card"
             :data-name="p.name"
-            :class="seatClasses(p)"
+            :title="p.role ? themeRoleName(p.role) : ''"
+            :class="[seatClasses(p), 'side-right']"
             :style="cardBg(p)"
             @pointerdown="openSeat"
             @pointermove="armSeatHide"
@@ -406,11 +433,13 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <div v-if="!p.alive" class="seat-out-stamp">OUT</div>
             <span class="seat-no float">{{ p.no || seatRows + idx + 1 }}</span>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
+              v-if="showLover && lovers.includes(p.name) && !thirdMembers.includes(p.name)"
               class="seat-lover"
-              :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-            <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="isThirdCamp(p)" class="seat-third-circle" :title="thirdCampTitle(p)">
+              <img v-if="thirdCircleIcon(p) === 'cupid'" :src="cupidThirdIcon" alt="第三阵营丘比特" />
+              <template v-else>{{ thirdCircleIcon(p) === 'bomb' ? "💣" : "💘" }}</template>
+            </span>
             <span v-if="p.name === jingHui" class="seat-sheriff"><img :src="sheriffIcon" alt="警长" /></span>
             <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
             <div v-if="modelNames.has(p.name) || showDreamFog(p)" class="seat-side-tags">
@@ -426,7 +455,8 @@ function cardBg(p: Player): Record<string, string> | undefined {
           :key="p.name"
           class="seat-card"
           :data-name="p.name"
-          :class="seatClasses(p)"
+          :title="p.role ? themeRoleName(p.role) : ''"
+          :class="[seatClasses(p), 'side-right']"
           :style="cardBg(p)"
         >
           <span v-if="draggable" class="seat-grip">⠿</span>
@@ -439,7 +469,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
               {{ p.name }}
             </div>
             <div class="seat-role" :title="p.role">
-              <template v-if="showRole && p.role">{{ ROLE_EMOJI[p.role] || "" }}{{ roleShort(p.role) }}</template>
+              <template v-if="showRole && p.role">{{ themeRoleEmoji(p.role) || "" }}{{ themeRoleShort(p.role) }}</template>
               <template v-else>—</template>
             </div>
           </div>
@@ -448,11 +478,13 @@ function cardBg(p: Player): Record<string, string> | undefined {
             <span class="seat-no">{{ p.no || idx + 1 }}</span>
           </div>
             <span
-              v-if="showLover && (lovers.includes(p.name) || thirdMembers.includes(p.name)) && !(thirdMembers.includes(p.name) && isCupidRole(p))"
+              v-if="showLover && lovers.includes(p.name) && !thirdMembers.includes(p.name)"
               class="seat-lover"
-              :class="badgeClass(p)"
             >{{ badgeText(p) }}</span>
-          <span v-if="thirdMembers.includes(p.name) && isCupidRole(p)" class="seat-cupid-third"><img :src="cupidThirdIcon" alt="第三阵营邱比特" /></span>
+            <span v-if="isThirdCamp(p)" class="seat-third-circle" :title="thirdCampTitle(p)">
+              <img v-if="thirdCircleIcon(p) === 'cupid'" :src="cupidThirdIcon" alt="第三阵营丘比特" />
+              <template v-else>{{ thirdCircleIcon(p) === 'bomb' ? "💣" : "💘" }}</template>
+            </span>
           <span v-if="p.mark?.idiotFlipped" class="seat-idiot">🙊</span>
         </div>
       </template>
@@ -961,13 +993,39 @@ function cardBg(p: Player): Record<string, string> | undefined {
   padding: 1px 3px;
   line-height: 1.2;
 }
-.seat-lover.third {
-  background: #9a6fe8;
-}
 /* 第三方阵营：紫色描边（人狼恋三成员 + 炸弹人） */
 .seat-card.third-camp {
   outline: 2px solid #9a6fe8;
   outline-offset: -2px;
+}
+/* 第三方圆形徽章：贴在卡片内侧边缘 */
+.seat-third-circle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 6;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #a97cf0 0%, #6f3fb5 100%);
+  border: 1.5px solid #e3d2ff;
+  box-shadow: 0 2px 8px rgba(80, 30, 140, 0.6), 0 0 10px rgba(154, 111, 232, 0.5);
+  font-size: 11px;
+  line-height: 1;
+  pointer-events: none;
+}
+.seat-card.side-left .seat-third-circle {
+  right: -9px;
+}
+.seat-card.side-right .seat-third-circle {
+  left: -9px;
+}
+.seat-third-circle img {
+  width: 13px;
+  height: 13px;
 }
 .seat-sheriff {
   position: absolute;
@@ -989,16 +1047,6 @@ function cardBg(p: Player): Record<string, string> | undefined {
   height: 14px;
   vertical-align: middle;
 }
-.seat-cupid-third {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  font-size: 11px;
-}
-.seat-cupid-third img {
-  width: 16px;
-  height: 16px;
-}
 .seat-idiot {
   position: absolute;
   bottom: 2px;
@@ -1010,8 +1058,7 @@ function cardBg(p: Player): Record<string, string> | undefined {
 .seat-no.float,
 .seat-lover,
 .seat-sheriff,
-.seat-idiot,
-.seat-cupid-third {
+.seat-idiot {
   z-index: 3;
 }
 

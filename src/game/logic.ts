@@ -210,6 +210,8 @@ export interface Mark {
   fearWolfCount: number
   /** 噩梦之影：恐惧神职目标次数（+0.5） */
   fearGodCount: number
+  /** 噩梦之影：本夜恐惧是否已解析（首夜目标身份未确认时延迟到确认后） */
+  fearResolved: boolean
   /** 炸弹人：炸弹炸死狼次数 */
   bombWolfCount: number
   /** 炸弹人：炸弹炸死好人次数 */
@@ -250,6 +252,7 @@ export const DEFAULT_VOICES: Record<string, string> = {
   charm: "狼美人请睁眼！今晚魅惑一个人，让他与你生死相随，选好赶紧闭眼。",
   charm_close: "狼美人请闭眼。",
   gargoyle: "石像鬼请睁眼，查看一名玩家的真实身份，看完闭眼。",
+  gargoyle_assign: "石像鬼请睁眼，确认你的身份，看完闭眼。",
   gargoyle_close: "石像鬼请闭眼。",
   wolf_close: "狼人请闭眼。",
   prophet: "算命大仙请睁眼！扒开一位玩家的底牌，看完把嘴捂严实，闭眼！",
@@ -270,13 +273,13 @@ export const DEFAULT_VOICES: Record<string, string> = {
   dawn_peace: "天亮了，昨晚是平安夜！",
   death: "{nos}号玩家出局，bye-bye，下局见！",
   vote: "现在是投票环节，请投出你怀疑的人。",
-  explode: "狼人自爆：直接摆烂摊牌，不演了！白天结束全体闭眼入夜。",
+  explode: "Boom！狼人自爆：直接摆烂摊牌，不演了！白天结束全体闭眼入夜。",
   hunter: "枪哥，猎枪已上膛，逮个倒霉蛋过来陪葬！",
   hunter_poisoned: "毒药直接把枪腐蚀锈死啦，彻底哑火开不了！",
   idiot_flip: "显眼包亮身份赖场不走！以后没投票权，白天投不死，只能夜里搞他。",
-  knight_duel_wolf: "骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
-  knight_duel_good: "骑士看走眼翻车，自己白给，继续盘！",
-  wwk_boom: "白狼王掀桌自爆！顺手薅走一个，直接入夜。",
+  knight_duel_wolf: "来决斗吧！骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
+  knight_duel_good: "来决斗吧！骑士看走眼翻车，自己白给，继续盘！",
+  wwk_boom: "Boom！白狼王掀桌自爆！顺手薅走一个，直接入夜。",
   jinghui: "现在竞选警长。",
   nightmare: "噩梦之影请睁眼！今晚恐吓一个人，让他从梦中惊醒！",
   nightmare_close: "噩梦之影请闭眼。",
@@ -450,6 +453,7 @@ export function defaultMark(): Mark {
     dreamKillGood: 0,
     fearWolfCount: 0,
     fearGodCount: 0,
+    fearResolved: false,
     bombWolfCount: 0,
     bombGoodCount: 0,
     bloodSealCount: 0,
@@ -534,6 +538,16 @@ export function normalizeState(s: GameState): GameState {
   st.voices = Object.assign({ ...DEFAULT_VOICES }, s.voices || {})
   if (st.voices.witch && st.voices.witch.includes("{killed}")) {
     st.voices.witch = DEFAULT_VOICES.witch
+  }
+  // 旧默认语音迁移：只替换仍是旧默认文案的项，保留用户自定义
+  const LEGACY_VOICE_DEFAULTS: Record<string, string> = {
+    explode: "狼人自爆：直接摆烂摊牌，不演了！白天结束全体闭眼入夜。",
+    knight_duel_wolf: "骑士一剑戳中大灰狼！狼人直接寄，火速入夜！",
+    knight_duel_good: "骑士看走眼翻车，自己白给，继续盘！",
+    wwk_boom: "白狼王掀桌自爆！顺手薅走一个，直接入夜。",
+  }
+  for (const [id, oldText] of Object.entries(LEGACY_VOICE_DEFAULTS)) {
+    if (st.voices[id] === oldText) st.voices[id] = DEFAULT_VOICES[id]
   }
   if (typeof st.knightDuelUsed !== "boolean") st.knightDuelUsed = false
   if (typeof st.wolfKingShotPending !== "boolean") st.wolfKingShotPending = false
@@ -740,6 +754,7 @@ export function autoFillCivilians(state: GameState): number {
     p.role = civilRoleId
     added++
   }
+  if (added > 0) resolvePendingNightmareFear(state)
   return added
 }
 
@@ -755,6 +770,7 @@ export function confirmRole(state: GameState, name: string, role: string): strin
   if (used >= quotaN) return `角色【${role}】已满（本板子 ${quotaN} 个）`
   p.role = role
   autoFillCivilians(state)
+  resolvePendingNightmareFear(state)
   return null
 }
 
@@ -1222,6 +1238,7 @@ export function nextNight(state: GameState): void {
     p.mark.gargoyleKilledTonight = false
     p.mark.skillDisabled = false
     p.mark.dreamShield = false
+    p.mark.fearResolved = false
   }
   // 野孩子黑化：榜样已死且自己存活 → 本夜变身；并刷新隐狼刀人权
   checkWildChildTransform(state)
@@ -1323,21 +1340,15 @@ export function charmDo(state: GameState, sel: string): string | null {
 }
 
 /** 噩梦之影恐惧：恐狼→当晚狼队空刀；恐神职→目标当晚技能失效；恐自己/民→无效果 */
-export function nightmareFear(state: GameState, sel: string): string | null {
-  const nm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "噩梦之影")
-  if (!nm) return "本局没有噩梦之影"
-  if (!nm.alive) return "噩梦之影已出局，本晚不能恐惧"
-  if (!sel) return "请选择恐惧对象"
-  const target = state.players.find((x) => x.name === sel)
-  if (!target) return "未找到该玩家"
-  if (!target.alive) return `${sel}已出局，不能作为恐惧对象`
-  state.nightmareFearTarget = sel
-  state.nightSteps.nightmare = true
+function applyNightmareFearEffect(state: GameState, nm: Player, target: Player): void {
+  if (nm.mark.fearResolved) return
+  nm.mark.fearResolved = true
+  const sel = target.name
   if (target.name === nm.name) {
     pushNightLog(state, `😱噩梦之影恐惧自己：无效果`)
     pushGlobalLog(state, `😱噩梦之影恐吓了自己（无效果）`)
     pushFlow(state, "噩梦之影恐惧", sel, "无效果")
-    return null
+    return
   }
   if (isEffectiveWolf(target) && getRoleInstance(target.role)?.def.wolfPack === false) {
     // 狼群外特殊狼（石像鬼、隐狼）：验人/刀人是个人的主动技能，恐惧只封其本人技能，不波及狼队
@@ -1366,7 +1377,36 @@ export function nightmareFear(state: GameState, sel: string): string | null {
     pushGlobalLog(state, `😱噩梦之影恐吓了 ${sel}（无效果）`)
     pushFlow(state, "噩梦之影恐惧", sel, "无效果")
   }
+}
+
+export function nightmareFear(state: GameState, sel: string): string | null {
+  const nm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "噩梦之影")
+  if (!nm) return "本局没有噩梦之影"
+  if (!nm.alive) return "噩梦之影已出局，本晚不能恐惧"
+  if (!sel) return "请选择恐惧对象"
+  const target = state.players.find((x) => x.name === sel)
+  if (!target) return "未找到该玩家"
+  if (!target.alive) return `${sel}已出局，不能作为恐惧对象`
+  state.nightmareFearTarget = sel
+  state.nightSteps.nightmare = true
+  // 首夜目标身份可能尚未确认：先挂起，等 confirmRole/autoFill 确认后再结算效果
+  if (!target.role) {
+    pushNightLog(state, `😱噩梦之影恐惧${sel}：目标身份未确认，确认后生效`)
+    pushGlobalLog(state, `😱噩梦之影恐吓了 ${sel}（身份未确认，待确认后生效）`)
+    pushFlow(state, "噩梦之影恐惧", sel, "待身份确认")
+    return null
+  }
+  applyNightmareFearEffect(state, nm, target)
   return null
+}
+
+/** 首夜恐惧目标身份确认后补算效果；已解析过则跳过 */
+export function resolvePendingNightmareFear(state: GameState): void {
+  const nm = state.players.find((p) => getRoleInstance(p.role)?.def.id === "噩梦之影")
+  if (!nm || nm.mark.fearResolved) return
+  const target = state.players.find((p) => p.name === state.nightmareFearTarget)
+  if (!target || !target.role) return
+  applyNightmareFearEffect(state, nm, target)
 }
 
 /** 野孩子首夜选定榜样 */
@@ -1426,6 +1466,7 @@ export function hunterHunt(state: GameState, sel: string): string | null {
   if (!sel) return "请选择狩猎对象"
   const target = state.players.find((x) => x.name === sel)
   if (!target) return "未找到该玩家"
+  if (target.name === hm.name) return "猎魔人不能狩猎自己"
   if (!target.alive) return `${sel}已出局，不能作为狩猎对象`
   state.nightHuntTarget = sel
   state.nightSteps.hunterWolf = true

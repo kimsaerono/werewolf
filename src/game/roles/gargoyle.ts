@@ -13,7 +13,7 @@ import { getRoleInstance } from "./builtin"
  * - 胜负与狼人一致（camp === "wolf"，计入屠边/屠城）。
  * - 计分：存活到终局且狼队胜利 +0.5。
  *
- * 单一夜间步骤 "gargoyle"（order 25，狼人之前；首夜由 step-flow 后置到所有确认步骤之后）：
+ * 单一夜间步骤 "gargoyle"（order 25，注册表顺序靠前；computeStepKeys 每夜都把它挪到末尾）：
  * 验人 + （解锁后）刀人，均在面板内完成，由「闭眼」标记 uiDone 结束
  * （不使用 nightSteps，保证解锁刀人后仍可继续操作）。
  * 步骤元数据（order/enabled）声明在 builtin.ts 的注册表字面量里 —— 步骤编排只读注册表。

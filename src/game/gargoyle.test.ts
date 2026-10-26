@@ -50,12 +50,14 @@ describe("石像鬼：狼群外身份", () => {
     expect(typeof r === "object" && r !== null && r.isWolf).toBe(true)
   })
 
-  it("第二夜起：石像鬼在 wolf 之前、guard 之后", () => {
+  it("第二夜起：石像鬼查验也移到最后", () => {
     const st = makeState(["狼人", "石像鬼", "守卫", "预言家", "平民"], { round: 2 })
     const keys = computeStepKeys(st)
     expect(keys).toContain("gargoyle")
     expect(keys.indexOf("gargoyle")).toBeGreaterThan(keys.indexOf("guard"))
-    expect(keys.indexOf("gargoyle")).toBeLessThan(keys.indexOf("wolf"))
+    expect(keys.indexOf("gargoyle")).toBeGreaterThan(keys.indexOf("wolf"))
+    expect(keys.indexOf("gargoyle")).toBeGreaterThan(keys.indexOf("prophet"))
+    expect(keys.at(-1)).toBe("gargoyle")
   })
 
   it("首夜石像鬼挪到所有夜间步骤之后（等身份确认完再查验）", () => {

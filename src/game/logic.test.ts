@@ -793,6 +793,18 @@ describe("玩家管理", () => {
     expect(st.players[0].scoreRound).toBe(0)
     expect(st.players[0].mark.prophetNoCheckCount).toBe(0)
   })
+
+  it("normalizeState 迁移旧默认语音，保留自定义文案", () => {
+    const st = normalizeState({
+      voices: {
+        explode: "狼人自爆：直接摆烂摊牌，不演了！白天结束全体闭眼入夜。",
+        knight_duel_good: "自定义决斗文案",
+      },
+    } as unknown as GameState)
+    expect(st.voices.explode).toContain("Boom")
+    expect(st.voices.knight_duel_wolf).toContain("来决斗吧")
+    expect(st.voices.knight_duel_good).toBe("自定义决斗文案")
+  })
 })
 
 describe("角色配额", () => {

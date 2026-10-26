@@ -2,7 +2,7 @@
 import { computed, ref, h } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
-import { roleShort } from "@/game/logic"
+import { themeRoleShort, themeText } from "@/composables/useTheme"
 
 const { message } = AntApp.useApp()
 
@@ -17,7 +17,8 @@ const columns = [
     dataIndex: "role",
     key: "role",
     customRender: ({ record }: { record: { role: string } }) => {
-      const label = refs.thirdCampLabel(state, record as never) || roleShort(record.role)
+      const third = refs.thirdCampLabel(state, record as never)
+      const label = third ? themeText(third) : themeRoleShort(record.role)
       return h("span", { title: record.role }, label)
     },
   },
@@ -156,16 +157,16 @@ function rowKey(r: { name: string }) {
 
     <a-card title="计分规则摘要" :bordered="false">
       <div class="small" style="line-height: 2">
-        <div>胜利：狼人胜·狼人+3（存活3狼+0.5、4狼+1）；好人胜·神职+3、平民+2；第三方胜·丘比特/情侣+3、炸弹人独赢+4；丘比特属好人时好人胜+3</div>
-        <div>第三方技能分：狼恋人被女巫毒/猎人带按狼+1、炸弹炸 0、狼王枪0；好人恋人/丘比特被女巫毒/猎人带按好人-1、炸弹炸 0、狼王枪0</div>
-        <div>预言家：拿警徽+0.5｜验狼+0.5/只（不封顶）｜每晚未验人-0.5</div>
-        <div>女巫：毒狼+1、毒好人-1｜救对好人+0.5</div>
-        <div>猎人：带狼+1、带好人-1</div>
-        <div>骑士：决斗戳狼+1、戳错-1</div>
-        <div>狼王：枪带神牌+0.5、枪带狼-1（带平民不加分）</div>
-        <div>守卫：守中+0.5｜同守同救-0.5</div>
-        <div>狼系：悍跳拿警徽+0.5｜自刀骗解药+0.5｜白狼王自爆带走带药女巫/守卫/未开技能骑士+0.5</div>
-        <div>MVP+1，SVP+0.5，背锅侠-0.5（局末结算弹窗手动选择）；法官主持+0.5/局</div>
+        <div>{{ themeText("胜利：狼人胜·狼人+3（存活3狼+0.5、4狼+1）；好人胜·神职+3、平民+2；第三方胜·丘比特/情侣+3、炸弹人独赢+4；丘比特属好人时好人胜+3") }}</div>
+        <div>{{ themeText("第三方技能分：狼恋人被女巫毒/猎人带按狼+1、炸弹炸 0、狼王枪0；好人恋人/丘比特被女巫毒/猎人带按好人-1、炸弹炸 0、狼王枪0") }}</div>
+        <div>{{ themeText("预言家：拿警徽+0.5｜验狼+0.5/只（不封顶）｜每晚未验人-0.5") }}</div>
+        <div>{{ themeText("女巫：毒狼+1、毒好人-1｜救对好人+0.5") }}</div>
+        <div>{{ themeText("猎人：带狼+1、带好人-1") }}</div>
+        <div>{{ themeText("骑士：决斗戳狼+1、戳错-1") }}</div>
+        <div>{{ themeText("狼王：枪带神牌+0.5、枪带狼-1（带平民不加分）") }}</div>
+        <div>{{ themeText("守卫：守中+0.5｜同守同救-0.5") }}</div>
+        <div>{{ themeText("狼系：悍跳拿警徽+0.5｜自刀骗解药+0.5｜白狼王自爆带走带药女巫/守卫/未开技能骑士+0.5") }}</div>
+        <div>{{ themeText("MVP+1，SVP+0.5，背锅侠-0.5（局末结算弹窗手动选择）；法官主持+0.5/局") }}</div>
       </div>
     </a-card>
   </div>

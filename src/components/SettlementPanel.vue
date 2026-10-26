@@ -3,7 +3,8 @@ import { computed, reactive, ref } from "vue"
 import { App as AntApp } from "ant-design-vue"
 import type { Game } from "@/types"
 import type { Player } from "@/game/logic"
-import { ROLE_EMOJI, roleShort } from "@/game/logic"
+import { ROLE_EMOJI } from "@/game/logic"
+import { themeRoleShort, themeText } from "@/composables/useTheme"
 import { roleAvatar } from "@/assets/roles"
 import { createHonors, toggleHonor, type HonorType } from "@/utils/honor"
 
@@ -76,7 +77,7 @@ function submit() {
       <div class="settle-emoji">🏆</div>
       <h2 class="settle-title">{{ title }}</h2>
       <p class="settle-reason">原因：{{ winNotice?.reason }}</p>
-      <pre class="settle-camps">{{ winNotice?.camps }}</pre>
+      <pre class="settle-camps">{{ themeText(winNotice?.camps || "") }}</pre>
       <p v-if="state.simMode" class="settle-mode">🧪 模拟模式</p>
     </div>
 
@@ -102,7 +103,7 @@ function submit() {
                 <div class="settle-seat-name">
                   <span class="settle-seat-no">{{ p.no || "?" }}</span>{{ p.name }}
                 </div>
-                <div class="settle-seat-role">{{ refs.thirdCampLabel(state, p) || roleShort(p.role) }}</div>
+                <div class="settle-seat-role">{{ refs.thirdCampLabel(state, p) ? themeText(refs.thirdCampLabel(state, p)) : themeRoleShort(p.role) }}</div>
               </div>
               <span v-if="!p.alive" class="settle-out">OUT</span>
             </div>

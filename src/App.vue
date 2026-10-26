@@ -9,13 +9,17 @@ import RecordPanel from "@/components/RecordPanel.vue"
 import RoleHelp from "@/components/RoleHelp.vue"
 import ModeSelectPage from "@/components/ModeSelectPage.vue"
 import SyncSettings from "@/components/SyncSettings.vue"
+import SeatDisplaySettings from "@/components/SeatDisplaySettings.vue"
 import MusicPlayerDrawer from "@/components/MusicPlayerDrawer.vue"
 import SettlementPanel from "@/components/SettlementPanel.vue"
+import ThemeSettings from "@/components/ThemeSettings.vue"
 import { useMusicPlayer } from "@/composables/useMusicPlayer"
+import { useTheme } from "@/composables/useTheme"
 import loadingPng from "@/assets/roles/loading.png"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs, actions, syncStatus } = game
+const { isHalloween } = useTheme()
 
 // 上次结算了但没点「完成结算」：刷新后继续弹窗，避免绕过确认
 actions.restorePendingSettlement()
@@ -92,7 +96,7 @@ function onTabChange(key: string) {
 </script>
 
 <template>
-  <a-config-provider :theme="{ algorithm: theme.darkAlgorithm }">
+  <a-config-provider :theme="{ algorithm: theme.darkAlgorithm, token: isHalloween ? { colorPrimary: '#ff7a18', colorInfo: '#ff7a18', colorLink: '#ffb347', colorBgBase: '#140f1f', colorTextBase: '#f5e9d0' } : {} }">
     <a-app>
       <ModeSelectPage v-if="!state.modeChosen" :game="game" />
       <template v-else>
@@ -100,6 +104,14 @@ function onTabChange(key: string) {
         class="app-shell"
         :class="[`phase-${state.phase}`, state.simMode ? 'wm-sim' : 'wm-real']"
       >
+      <div v-if="isHalloween" class="halloween-decor" aria-hidden="true">
+        <span class="h1">🎃</span>
+        <span class="h2">💀</span>
+        <span class="h3">🦇</span>
+        <span class="h4">🕸️</span>
+        <span class="h5">🎃</span>
+        <span class="h6">💀</span>
+      </div>
       <div class="sticky-tabs">
         <a-tabs
           v-model:activeKey="activeTab"
@@ -139,6 +151,8 @@ function onTabChange(key: string) {
           <a-button class="fab fab-reset" danger shape="circle" size="large" @click="onResetGame">🗑️</a-button>
         </a-tooltip>
         <SyncSettings v-if="leftActionsOpen && !state.simMode" key="sync" />
+        <SeatDisplaySettings v-if="leftActionsOpen" key="seatDisplay" />
+        <ThemeSettings v-if="leftActionsOpen" key="theme" />
       </TransitionGroup>
       <!-- 左下悬浮：固定在底部的 toggle -->
       <a-button class="fab fab-toggle left-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">⚙️</a-button>
@@ -277,6 +291,80 @@ body .ant-card:has(.ant-card-head) > .ant-card-body {
 .app-shell.wm-real.phase-idle {
   background: #15120d;
 }
+
+/* ===== 万圣节主题：橙紫黑配色 + 南瓜/骷髅/蝙蝠装饰 ===== */
+html.theme-halloween .app-shell.phase-night {
+  background:
+    radial-gradient(80% 50% at 50% 0%, rgba(255, 122, 24, 0.22), transparent 70%),
+    linear-gradient(180deg, #120a1e 0%, #2a1020 55%, #0d0812 100%);
+}
+html.theme-halloween .app-shell.phase-day {
+  background:
+    radial-gradient(80% 50% at 50% 0%, rgba(255, 170, 60, 0.2), transparent 70%),
+    linear-gradient(180deg, #2b1020 0%, #4a1d0c 55%, #160b12 100%);
+}
+html.theme-halloween .app-shell.phase-idle {
+  background: #120a1e;
+}
+html.theme-halloween .app-shell.wm-sim.phase-night,
+html.theme-halloween .app-shell.wm-real.phase-night {
+  background:
+    radial-gradient(75% 45% at 50% 0%, rgba(255, 122, 24, 0.26), transparent 70%),
+    linear-gradient(180deg, #1a0b18 0%, #3a1414 55%, #0d0812 100%);
+}
+html.theme-halloween .app-shell.wm-sim.phase-day,
+html.theme-halloween .app-shell.wm-real.phase-day {
+  background:
+    radial-gradient(75% 45% at 50% 0%, rgba(255, 170, 60, 0.24), transparent 70%),
+    linear-gradient(180deg, #32101c 0%, #5a240c 55%, #160b12 100%);
+}
+html.theme-halloween .app-shell.wm-sim::before,
+html.theme-halloween .app-shell.wm-real::before {
+  background-image: none;
+}
+html.theme-halloween .ant-card {
+  background: rgba(35, 20, 32, 0.62);
+  border-color: #5a2b3aaa;
+}
+html.theme-halloween .ant-card-bordered {
+  border-color: #5a2b3a;
+}
+html.theme-halloween .sticky-tabs {
+  background: rgba(18, 10, 24, 0.88);
+}
+html.theme-halloween .seat-board.floating .seat-col::before {
+  border-color: rgba(255, 170, 60, 0.35);
+  background:
+    radial-gradient(120% 60% at 50% 0%, rgba(255, 150, 60, 0.28), rgba(255, 150, 60, 0) 70%),
+    linear-gradient(180deg, rgba(154, 76, 160, 0.4) 0%, rgba(255, 122, 24, 0.16) 45%, rgba(18, 10, 24, 0.6) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 180, 0.24),
+    0 12px 34px rgba(0, 0, 0, 0.5),
+    0 0 22px rgba(255, 122, 24, 0.18);
+}
+html.theme-halloween .seat-board.floating .seat-col::after {
+  background: linear-gradient(180deg, rgba(255, 190, 120, 0), rgba(255, 170, 60, 0.7) 30%, rgba(255, 122, 24, 0.5) 70%, rgba(255, 190, 120, 0));
+  box-shadow: 0 0 14px rgba(255, 150, 60, 0.7);
+}
+.halloween-decor {
+  position: fixed;
+  inset: 0;
+  z-index: 0 !important;
+  pointer-events: none;
+  overflow: hidden;
+}
+.halloween-decor span {
+  position: absolute;
+  font-size: clamp(42px, 7vw, 96px);
+  opacity: 0.12;
+  filter: drop-shadow(0 0 18px rgba(255, 122, 24, 0.45));
+}
+.halloween-decor .h1 { top: 5%; left: 2%; }
+.halloween-decor .h2 { top: 18%; right: 3%; }
+.halloween-decor .h3 { bottom: 10%; left: 4%; }
+.halloween-decor .h4 { top: 48%; left: 1%; }
+.halloween-decor .h5 { bottom: 6%; right: 5%; }
+.halloween-decor .h6 { top: 68%; right: 2%; }
 /* 模式标签：模拟=深绿实底浅字，真实=浅卡其底深棕字（深色界面上更醒目） */
 .mode-tag {
   border-radius: 999px;

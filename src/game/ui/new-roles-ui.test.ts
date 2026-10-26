@@ -73,6 +73,7 @@ describe("新角色界面护栏：语音映射 key 覆盖", () => {
   const VOICE_KEYS = [
     "nightmare",
     "nightmare_close",
+    "gargoyle_assign",
     "hiddenWolf",
     "hiddenWolf_close",
     "hunterWolf",
@@ -97,6 +98,7 @@ describe("新角色界面护栏：语音映射 key 覆盖", () => {
 const ROLE_HELP = readFileSync(new URL("../../components/RoleHelp.vue", import.meta.url), "utf8")
 const RECORD_PANEL = readFileSync(new URL("../../components/RecordPanel.vue", import.meta.url), "utf8")
 const SEAT_BOARD = readFileSync(new URL("../../components/SeatBoard.vue", import.meta.url), "utf8")
+const PICKER = readFileSync(new URL("../../components/FullscreenPicker.vue", import.meta.url), "utf8")
 
 describe("第三方/野孩子链型 · 界面与文档护栏", () => {
   it("首夜石像鬼在炸弹人之后（实际被挪到所有夜间步骤末尾）", () => {
@@ -132,6 +134,17 @@ describe("第三方/野孩子链型 · 界面与文档护栏", () => {
   it("座位牌给第三方阵营（含炸弹人）紫色描边", () => {
     expect(SEAT_BOARD).toContain("third-camp")
     expect(SEAT_BOARD).toContain("炸弹人")
+  })
+  it("座位牌第三方改为内侧圆形徽章", () => {
+    expect(SEAT_BOARD).toContain("seat-third-circle")
+    expect(SEAT_BOARD).toContain("thirdCircleIcon")
+  })
+
+  it("选人卡片同步座位状态标识（第三方/警长/白痴/梦/榜）", () => {
+    expect(PICKER).toContain("fp-third-circle")
+    expect(PICKER).toContain("fp-sheriff")
+    expect(PICKER).toContain("fp-idiot")
+    expect(PICKER).toContain("fp-side-tag")
   })
 })
 

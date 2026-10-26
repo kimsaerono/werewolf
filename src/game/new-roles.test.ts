@@ -12,6 +12,8 @@ import {
   finishBombLastWords,
   wolfBaoZha,
   nightmareFear,
+  confirmRole,
+  autoFillCivilians,
   wildChildPick,
   checkWildChildTransform,
   hunterHunt,
@@ -121,6 +123,41 @@ describe("噩梦之影", () => {
     expect(st.wolfFearedTonight).toBe(false)
     expect(g(st, "P1").mark.fearWolfCount).toBe(0)
   })
+
+  it("首夜目标身份未确认：先挂起，确认狼人后生效", () => {
+    const st = makeState(["狼人", "噩梦之影", "平民", "平民"])
+    g(st, "P0").role = ""
+    expect(nightmareFear(st, "P0")).toBeNull()
+    expect(st.wolfFearedTonight).toBe(false)
+    expect(g(st, "P1").mark.fearResolved).toBe(false)
+
+    expect(confirmRole(st, "P0", "狼人")).toBeNull()
+    expect(st.wolfFearedTonight).toBe(true)
+    expect(g(st, "P1").mark.fearWolfCount).toBe(1)
+    expect(wolfKill(st, "P2")).toContain("恐惧")
+  })
+
+  it("首夜目标身份未确认：确认预言家后封技能", () => {
+    const st = makeState(["狼人", "噩梦之影", "预言家", "平民", "平民"])
+    g(st, "P2").role = ""
+    expect(nightmareFear(st, "P2")).toBeNull()
+    expect(g(st, "P2").mark.skillDisabled).toBe(false)
+
+    expect(confirmRole(st, "P2", "预言家")).toBeNull()
+    expect(g(st, "P2").mark.skillDisabled).toBe(true)
+    expect(g(st, "P1").mark.fearGodCount).toBe(1)
+    expect(prophetCheck(st, "P0")).toContain("恐惧")
+  })
+
+  it("首夜目标最后被自动补为平民：恐惧按无效果结算", () => {
+    const st = makeState(["狼人", "噩梦之影", "平民", "平民"])
+    g(st, "P2").role = ""
+    expect(nightmareFear(st, "P2")).toBeNull()
+    autoFillCivilians(st)
+    expect(g(st, "P2").role).toBe("平民")
+    expect(g(st, "P2").mark.skillDisabled).toBe(false)
+    expect(g(st, "P1").mark.fearResolved).toBe(true)
+  })
 })
 
 describe("血月使徒", () => {
@@ -202,6 +239,13 @@ describe("猎魔人", () => {
     st.nightSteps.wolf = true
     resolveNightEffects(st)
     expect(g(st, "P1").alive).toBe(true)
+  })
+
+  it("不能狩猎自己", () => {
+    const st = makeState(["狼人", "猎魔人", "平民", "平民", "平民"])
+    st.round = 2
+    expect(hunterHunt(st, "P1")).toBe("猎魔人不能狩猎自己")
+    expect(st.nightHuntTarget).toBe("")
   })
 })
 
