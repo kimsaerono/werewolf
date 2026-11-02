@@ -1,4 +1,5 @@
-// Web Audio 代码生成的提示音，无需任何音频素材
+import { beginAudioActivity } from "@/utils/audioActivity"
+
 let ctx: AudioContext | null = null
 
 function ac(): AudioContext | null {
@@ -61,19 +62,54 @@ export type SfxName =
   | "explode" // 自爆
   | "sword" // 骑士决斗
   | "beep" // 倒计时滴
+  | "urgent" // 倒计时预警（5~3s）
+  | "urgentDouble" // 倒计时终极（2~1s，双击）
   | "ding" // 时间到
   | "death" // 出局
+
+const SFX_DURATIONS: Record<SfxName, number> = {
+  howl: 3.2,
+  magic: 0.7,
+  guard: 0.5,
+  witch: 0.6,
+  gunshot: 0.4,
+  boing: 1.1,
+  rooster: 0.6,
+  explode: 0.6,
+  sword: 0.3,
+  beep: 0.2,
+  urgent: 0.18,
+  urgentDouble: 0.35,
+  ding: 0.6,
+  death: 0.7,
+}
 
 export function playSfx(name: SfxName): void {
   const c = ac()
   if (!c) return
+  const release = beginAudioActivity()
   const t = 0
   switch (name) {
-    case "howl": // 啊呜～（下滑狼嚎）
-      tone(c, 220, t, 0.5, "sawtooth", 0.18)
-      tone(c, 180, t + 0.25, 0.6, "sawtooth", 0.16)
-      tone(c, 130, t + 0.5, 0.7, "sawtooth", 0.14)
+    case "howl": { // 啊呜～～ 狼嚎（柔和正弦波）
+      const o = c.createOscillator()
+      const g = c.createGain()
+      o.type = "sine"
+      // 频率：低缓升 → 高位微颤 → 缓慢下滑
+      o.frequency.setValueAtTime(200, c.currentTime + t)
+      o.frequency.linearRampToValueAtTime(440, c.currentTime + t + 0.8)
+      o.frequency.linearRampToValueAtTime(420, c.currentTime + t + 1.4)
+      o.frequency.linearRampToValueAtTime(220, c.currentTime + t + 2.8)
+      // 音量：淡入 → 保持 → 慢慢消失
+      g.gain.setValueAtTime(0, c.currentTime + t)
+      g.gain.linearRampToValueAtTime(0.8, c.currentTime + t + 0.25)
+      g.gain.setValueAtTime(0.8, c.currentTime + t + 1.4)
+      g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + t + 3.0)
+      o.connect(g)
+      g.connect(c.destination)
+      o.start(c.currentTime + t)
+      o.stop(c.currentTime + t + 3.1)
       break
+    }
     case "magic": // 神秘琶音
       tone(c, 880, t, 0.2, "sine", 0.14)
       tone(c, 1108, t + 0.12, 0.2, "sine", 0.13)
@@ -113,6 +149,18 @@ export function playSfx(name: SfxName): void {
     case "beep":
       tone(c, 880, t, 0.12, "sine", 0.15)
       break
+    case "urgent":
+      // 预警：方波、双音上行、音量略大、更短促
+      tone(c, 1000, t, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.04, 0.07, "square", 0.22)
+      break
+    case "urgentDouble":
+      // 终极：同音色、双击（0.15s 间隔）
+      tone(c, 1000, t, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.04, 0.07, "square", 0.22)
+      tone(c, 1000, t + 0.15, 0.07, "square", 0.22)
+      tone(c, 1300, t + 0.19, 0.07, "square", 0.22)
+      break
     case "ding":
       tone(c, 880, t, 0.15, "sine", 0.18)
       tone(c, 1108, t + 0.16, 0.3, "sine", 0.18)
@@ -122,4 +170,5 @@ export function playSfx(name: SfxName): void {
       tone(c, 262, t + 0.18, 0.4, "sine", 0.16)
       break
   }
+  setTimeout(release, SFX_DURATIONS[name] * 1000)
 }

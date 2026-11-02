@@ -1,0 +1,43 @@
+import { BaseRole } from "./base"
+import type { GameState } from "../logic"
+import type { RoleDef, ScoreEntry, RoleSolverState } from "./types"
+
+/**
+ * 骑士角色：白天可决斗一人（每局一次），戳狼则狼死，戳好人则自己出局。
+ */
+export class KnightRole extends BaseRole {
+  readonly def: RoleDef = {
+    id: "骑士",
+    camp: "god",
+    unique: true,
+    emoji: "⚔️",
+    short: "骑",
+    intentKeys: [],
+  }
+
+  scoreRules(state: GameState, player: { name: string; role: string; mark: Record<string, unknown> }): ScoreEntry[] {
+    const entries: ScoreEntry[] = []
+    const m = player.mark
+    // 骑士复用 hunterKillWolf / hunterKillGood 标记
+    if (m.hunterKillWolf) entries.push({ reason: "决斗戳狼", delta: 1 })
+    if (m.hunterKillGood) entries.push({ reason: "决斗戳错", delta: -1 })
+    return entries
+  }
+
+  highlight(player: { name: string; role: string; mark: Record<string, unknown> }): boolean {
+    return !!player.mark.hunterKillWolf
+  }
+
+  /** 被白狼王自爆带走时：尚未开技能才算带走关键神（已决斗过则不计） */
+  selfBombScore(state: GameState): ScoreEntry | null {
+    if (state.knightDuelUsed) return null
+    return { reason: "自爆带骑士", delta: 0.5 }
+  }
+
+  extractState(player: { name: string; role: string; alive: boolean; mark: Record<string, unknown> }, state: GameState): RoleSolverState {
+    if (!player.alive) return {}
+    return {
+      duelUsed: state.knightDuelUsed,
+    }
+  }
+}
