@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue"
 import { App as AntApp } from "ant-design-vue"
-import { getWerewolfGroupMembers } from "@/api/feishu"
 import { fetchGroupMembers } from "@/api/feishuSync"
 import SeatBoard from "@/components/SeatBoard.vue"
 import { DEFAULT_BOARD } from "@/game/logic"
@@ -16,6 +15,27 @@ const { state, playerCount, maxNeed, actions, refs, activeTab } = props.game
 const loading = ref(false)
 const loadStatus = ref("")
 const memberCache = ref<string[]>([])
+
+const MEMBERS_CACHE_KEY = "werewolf_members_cache"
+
+function readMembersCache(): string[] {
+  try {
+    const raw = localStorage.getItem(MEMBERS_CACHE_KEY)
+    if (!raw) return []
+    const data = JSON.parse(raw) as unknown
+    return Array.isArray(data) ? data.filter((n): n is string => typeof n === "string") : []
+  } catch {
+    return []
+  }
+}
+
+function writeMembersCache(names: string[]) {
+  try {
+    localStorage.setItem(MEMBERS_CACHE_KEY, JSON.stringify(names))
+  } catch {
+    /* 忽略写缓存失败 */
+  }
+}
 
 const isAdded = (name: string) => state.players.some((p) => p.name === name)
 /** 已选成员在成员池里显示的号码 = 该玩家的座位号（Player.no，与座位牌一致） */
@@ -98,17 +118,16 @@ async function loadMembers() {
   loading.value = true
   loadStatus.value = ""
   try {
-    memberCache.value = await getWerewolfGroupMembers()
-    loadStatus.value = `已获取 ${memberCache.value.length} 名成员`
-  } catch (e: unknown) {
-    loadStatus.value = `获取成员失败：${(e as Error).message}（请确认后端已启动）`
-    message.error(loadStatus.value)
+    memberCache.value = readMembersCache()
+    loadStatus.value = memberCache.value.length
+      ? `已从本地缓存载入 ${memberCache.value.length} 名成员`
+      : "尚未同步成员（点「🔄 同步成员」从飞书群拉取）"
   } finally {
     loading.value = false
   }
 }
 
-/** 从飞书群实时同步成员（新人入群后点一下即可刷新）；失败保留当前名单不中断选人 */
+/** 从飞书群实时同步成员（新人入群后点一下即可刷新），成功后存入本地缓存；失败保留当前名单不中断选人 */
 async function syncMembers() {
   loading.value = true
   loadStatus.value = ""
@@ -117,6 +136,7 @@ async function syncMembers() {
     const names = [...new Set(users.map((u) => u.name).filter(Boolean))]
     if (!names.length) throw new Error("群成员为空")
     memberCache.value = names
+    writeMembersCache(names)
     loadStatus.value = `已从飞书群同步 ${names.length} 名成员`
     message.success(`🔄 已同步 ${names.length} 名成员`)
   } catch (e: unknown) {
