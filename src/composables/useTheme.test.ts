@@ -1,9 +1,34 @@
 import { afterEach, describe, expect, it } from "bun:test"
-import { themeRoleEmoji, themeRoleName, themeRoleShort, themeText, useTheme } from "./useTheme"
+import { SPECIALS, activeSpecial, themeRoleEmoji, themeRoleName, themeRoleShort, themeText, useTheme } from "./useTheme"
 
 const { setTheme } = useTheme()
 
 afterEach(() => setTheme("classic"))
+
+describe("专场集合注册表", () => {
+  it("SPECIALS 含万圣节且字段完整", () => {
+    expect(SPECIALS.some((s) => s.id === "halloween")).toBe(true)
+    for (const s of SPECIALS) {
+      expect(s.id).toBeTruthy()
+      expect(s.name).toBeTruthy()
+      expect(s.emoji).toBeTruthy()
+      expect(s.desc).toBeTruthy()
+      expect(s.themeClass).toBeTruthy()
+      expect(s.modeClass).toBeTruthy()
+      expect(Array.isArray(s.modeDecor)).toBe(true)
+      expect(Array.isArray(s.appDecor)).toBe(true)
+      expect(s.hero.title).toBeTruthy()
+    }
+  })
+
+  it("activeSpecial 随主题切换，经典为 null", () => {
+    setTheme("classic")
+    expect(activeSpecial.value).toBeNull()
+    setTheme("halloween")
+    expect(activeSpecial.value?.id).toBe("halloween")
+    expect(activeSpecial.value?.hero.title).toBe("万圣节狼人夜")
+  })
+})
 
 describe("万圣节主题角色别称", () => {
   it("万圣节主题返回别称，经典主题返回原名", () => {

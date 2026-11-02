@@ -3,12 +3,15 @@ import { ref, onMounted, onBeforeUnmount, computed } from "vue"
 import type { Game } from "@/types"
 import VersionSwitcher from "@/components/VersionSwitcher.vue"
 import StaticVersionSelector from "@/components/StaticVersionSelector.vue"
+import ThemeSettings from "@/components/ThemeSettings.vue"
 import { DEFAULT_BOARD } from "@/game/logic"
 import { useTheme } from "@/composables/useTheme"
 
 const props = defineProps<{ game: Game }>()
 const { state, actions } = props.game
-const { isHalloween, setTheme } = useTheme()
+const { activeSpecial } = useTheme()
+
+const themeDrawerOpen = ref(false)
 
 const sel = ref<"real" | "sim">(state.simMode ? "sim" : "real")
 const entering = ref(false)
@@ -198,26 +201,23 @@ interface Particle {
 </script>
 
 <template>
-  <div class="mode-page" :class="{ 'mode-halloween': isHalloween }">
-    <div v-if="isHalloween" class="mode-decor" aria-hidden="true">
-      <span class="d1">🎃</span>
-      <span class="d2">💀</span>
-      <span class="d3">🦇</span>
-      <span class="d4">🕸️</span>
+  <div class="mode-page" :class="activeSpecial?.modeClass">
+    <div v-if="activeSpecial?.modeDecor?.length" class="mode-decor" aria-hidden="true">
+      <span v-for="(e, i) in activeSpecial.modeDecor" :key="i" :class="'d' + (i + 1)">{{ e }}</span>
     </div>
     <div class="mode-version">
       <StaticVersionSelector v-if="!isLocalHost" />
       <VersionSwitcher v-else />
     </div>
-    <div class="mode-theme">
-      <span>🎃 万圣节专场</span>
-      <a-switch :checked="isHalloween" @change="setTheme($event ? 'halloween' : 'classic')" />
+    <div class="mode-theme" @click="themeDrawerOpen = true">
+      <span>{{ activeSpecial ? `${activeSpecial.emoji} ${activeSpecial.name}` : "🐺 经典" }}</span>
+      <span class="mode-theme-gear">⚙️</span>
     </div>
 
     <div class="mode-hero">
-      <div class="mode-logo">{{ isHalloween ? "🎃" : "🐺" }}</div>
-      <h1 class="mode-title">{{ isHalloween ? "万圣节狼人夜" : "狼人杀法官助手" }}</h1>
-      <p class="mode-sub">{{ isHalloween ? "灵媒巫师、暗夜巫婆、亡灵猎手与古堡守灵人已就位" : "请先选择对局模式，再进入助手" }}</p>
+      <div class="mode-logo">{{ activeSpecial ? activeSpecial.hero.logo : "🐺" }}</div>
+      <h1 class="mode-title">{{ activeSpecial ? activeSpecial.hero.title : "狼人杀法官助手" }}</h1>
+      <p class="mode-sub">{{ activeSpecial ? activeSpecial.hero.sub : "请先选择对局模式，再进入助手" }}</p>
     </div>
 
     <div class="mode-cards">
@@ -273,6 +273,8 @@ interface Particle {
       <span v-if="!entering">进入助手</span>
       <span v-else>正在进入...</span>
     </a-button>
+
+    <ThemeSettings hide-fab :open="themeDrawerOpen" @update:open="themeDrawerOpen = $event" />
   </div>
 </template>
 
@@ -574,6 +576,16 @@ interface Particle {
   font-size: 14px;
   font-weight: 600;
   z-index: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s;
+}
+.mode-theme:hover {
+  border-color: #ff9a3d;
+}
+.mode-theme-gear {
+  font-size: 12px;
+  opacity: 0.8;
 }
 .mode-halloween {
   background:

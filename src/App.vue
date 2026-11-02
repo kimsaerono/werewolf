@@ -19,7 +19,7 @@ import loadingPng from "@/assets/roles/loading.png"
 
 const game = useGame()
 const { state, activeTab, winNotice, winNoticeOpen, refs, actions, syncStatus } = game
-const { isHalloween } = useTheme()
+const { activeSpecial } = useTheme()
 
 // 上次结算了但没点「完成结算」：刷新后继续弹窗，避免绕过确认
 actions.restorePendingSettlement()
@@ -96,7 +96,7 @@ function onTabChange(key: string) {
 </script>
 
 <template>
-  <a-config-provider :theme="{ algorithm: theme.darkAlgorithm, token: isHalloween ? { colorPrimary: '#ff7a18', colorInfo: '#ff7a18', colorLink: '#ffb347', colorBgBase: '#140f1f', colorTextBase: '#f5e9d0' } : {} }">
+  <a-config-provider :theme="{ algorithm: theme.darkAlgorithm, token: activeSpecial?.antdToken ? { ...activeSpecial.antdToken } : {} }">
     <a-app>
       <ModeSelectPage v-if="!state.modeChosen" :game="game" />
       <template v-else>
@@ -104,13 +104,8 @@ function onTabChange(key: string) {
         class="app-shell"
         :class="[`phase-${state.phase}`, state.simMode ? 'wm-sim' : 'wm-real']"
       >
-      <div v-if="isHalloween" class="halloween-decor" aria-hidden="true">
-        <span class="h1">🎃</span>
-        <span class="h2">💀</span>
-        <span class="h3">🦇</span>
-        <span class="h4">🕸️</span>
-        <span class="h5">🎃</span>
-        <span class="h6">💀</span>
+      <div v-if="activeSpecial?.appDecor?.length" class="halloween-decor" aria-hidden="true">
+        <span v-for="(e, i) in activeSpecial.appDecor" :key="i" :class="'h' + (i + 1)">{{ e }}</span>
       </div>
       <div class="sticky-tabs">
         <a-tabs

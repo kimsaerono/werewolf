@@ -1,25 +1,51 @@
 <script setup lang="ts">
-import { ref } from "vue"
-import { useTheme } from "@/composables/useTheme"
+import { computed, ref } from "vue"
+import { SPECIALS, useTheme } from "@/composables/useTheme"
+import type { ThemeId } from "@/composables/useTheme"
 
-const open = ref(false)
-const { isHalloween, setTheme } = useTheme()
+const props = defineProps<{ open?: boolean; hideFab?: boolean }>()
+const emit = defineEmits<{ (e: "update:open", v: boolean): void }>()
+
+const internalOpen = ref(false)
+const open = computed({
+  get: () => props.open ?? internalOpen.value,
+  set: (v) => {
+    if (props.open !== undefined) emit("update:open", v)
+    else internalOpen.value = v
+  },
+})
+
+const { activeSpecial, setTheme } = useTheme()
+
+const options = computed(() => [
+  { id: "classic", name: "经典", emoji: "🐺", desc: "默认主题，无专场皮肤" },
+  ...SPECIALS.map((s) => ({ id: s.id, name: s.name, emoji: s.emoji, desc: s.desc })),
+])
+
+function currentId(): string {
+  return activeSpecial.value?.id ?? "classic"
+}
 </script>
 
 <template>
-  <a-tooltip title="主题设置" placement="right">
-    <a-button class="fab" type="default" shape="circle" size="large" @click="open = true">🎃</a-button>
+  <a-tooltip v-if="!hideFab" title="专场与主题设置" placement="right">
+    <a-button class="fab" type="default" shape="circle" size="large" @click="open = true">🎪</a-button>
   </a-tooltip>
 
-  <a-drawer v-model:open="open" title="🎃 主题设置" placement="right" width="380">
-    <div class="theme-row">
-      <div>
-        <div class="theme-title">万圣节专场</div>
-        <div class="small" style="color: #999">
-          南瓜、骷髅、暗夜配色；灵媒巫师 / 暗夜巫婆 / 亡灵猎手 / 古堡守灵人分别对应预言家 / 女巫 / 猎人 / 守卫
-        </div>
+  <a-drawer v-model:open="open" title="🎪 专场集合" placement="right" width="380">
+    <div
+      v-for="o in options"
+      :key="o.id"
+      class="special-row"
+      :class="{ active: currentId() === o.id }"
+      @click="setTheme(o.id as ThemeId)"
+    >
+      <div class="special-emoji">{{ o.emoji }}</div>
+      <div class="special-body">
+        <div class="special-name">{{ o.name }}</div>
+        <div class="small" style="color: #999">{{ o.desc }}</div>
       </div>
-      <a-switch :checked="isHalloween" @change="setTheme($event ? 'halloween' : 'classic')" />
+      <div class="special-check">{{ currentId() === o.id ? "●" : "○" }}</div>
     </div>
   </a-drawer>
 </template>
@@ -35,16 +61,37 @@ const { isHalloween, setTheme } = useTheme()
   justify-content: center;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
-.theme-row {
+.special-row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  border: 1px solid #ffffff1a;
+  background: #1b1b2b;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
 }
-.theme-title {
+.special-row.active {
+  border-color: #ff9a3d;
+  background: #ff7a1814;
+}
+.special-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+.special-body {
+  flex: 1;
+  min-width: 0;
+}
+.special-name {
   color: #eee;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+}
+.special-check {
+  color: #ff9a3d;
+  font-size: 14px;
 }
 </style>
