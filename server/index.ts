@@ -394,6 +394,86 @@ app.post("/api/sync-feishu", async (c) => {
   }
 })
 
+/**
+ * 回滚某局（本地桥接 LEGACY 14 列布局）：
+ * 扣回排名贡献 + 法官分，并清空该局复盘块（至少清掉 A 列 gameId 以便重试再同步）。
+ */
+async function rollbackGame(body: SyncPayload): Promise<{ found: boolean }> {
+  const gameId = String(body.gameId || "").trim()
+  if (!gameId) return { found: false }
+  const monthTabId = await ensureMonthTab(body.date)
+  const allRows = await readSheet(monthTabId, "A1:N5000")
+  const startIdx = allRows.findIndex((r) => String(r?.[0] ?? "").trim() === gameId)
+  if (startIdx < 0) return { found: false }
+
+  // 排名扣回（C场次/D胜/E负/F胜率/G积分）
+  const rankRows = await readSheet(RANK_SHEET_ID, "A1:K200")
+  const nameToRow = new Map<string, number>()
+  for (let i = 1; i < rankRows.length; i++) {
+    const nick = String(rankRows[i]?.[1] ?? "").trim()
+    if (nick) nameToRow.set(nick, i + 1)
+  }
+  for (const p of body.players || []) {
+    const row = nameToRow.get(String(p.name).trim())
+    if (!row) continue
+    const prev = rankRows[row - 1] || []
+    const games = Math.max(0, Number(prev[2] ?? 0) - 1)
+    const wins = Math.max(0, Number(prev[3] ?? 0) - (p.win ? 1 : 0))
+    const losses = Math.max(0, Number(prev[4] ?? 0) - (p.win ? 0 : 1))
+    const score = Math.round((Number(prev[6] ?? 0) - (p.base + p.skill + p.vote)) * 10) / 10
+    const rate = games ? `${((wins / games) * 100).toFixed(2)}%` : "0.00%"
+    const vals = [games, wins, losses, rate, score]
+    const r = await runLark(["sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", RANK_SHEET_ID, "--start-cell", `C${row}`, "--csv", vals.map(csvCell).join(","), "--format", "json"])
+    if (!r.ok) throw new Error(r.error?.message || "扣回排名失败")
+  }
+  // 法官扣分（只减 G 列）
+  if (body.judge?.name && body.judge.score) {
+    let jrow = -1
+    for (let i = 1; i < rankRows.length; i++) {
+      if (String(rankRows[i]?.[1] ?? "").trim() === String(body.judge.name).trim()) {
+        jrow = i + 1
+        break
+      }
+    }
+    if (jrow > 0) {
+      const prev = rankRows[jrow - 1] || []
+      const s = Math.round((Number(prev[6] ?? 0) - body.judge.score) * 10) / 10
+      const r = await runLark(["sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", RANK_SHEET_ID, "--start-cell", `G${jrow}`, "--csv", csvCell(s), "--format", "json"])
+      if (!r.ok) throw new Error(r.error?.message || "扣回法官分失败")
+    }
+  }
+  // 清空复盘块：从 gameId 行到下一个非空 A 行之前
+  let endIdx = allRows.length - 1
+  for (let i = startIdx + 1; i < allRows.length; i++) {
+    if (String(allRows[i]?.[0] ?? "").trim() !== "") {
+      endIdx = i - 1
+      break
+    }
+  }
+  const startRow = startIdx + 1
+  const emptyLine = new Array<string>(14).fill("").map(csvCell).join(",")
+  const emptyBlock = Array.from({ length: endIdx - startIdx + 1 }, () => emptyLine).join("\n")
+  const cr = await runLark(["sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", monthTabId, "--start-cell", `A${startRow}`, "--csv", emptyBlock, "--format", "json"])
+  if (!cr.ok) {
+    // 合并单元格可能导致整行写入失败：至少清掉 A 列 gameId，保证重试不被幂等拦截
+    for (let row = startRow; row <= endIdx + 1; row++) {
+      await runLark(["sheets", "+csv-put", "--url", SPREADSHEET_URL, "--sheet-id", monthTabId, "--start-cell", `A${row}`, "--csv", csvCell(""), "--format", "json"])
+    }
+  }
+  return { found: true }
+}
+
+app.post("/api/sync-feishu-rollback", async (c) => {
+  try {
+    const body = (await c.req.json()) as SyncPayload
+    if (!body.gameId || !body.date) return c.json({ error: "gameId/date 不能为空" }, 400)
+    const result = await rollbackGame(body)
+    return c.json({ ok: true, found: result.found })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
 serve({ fetch: app.fetch, port: PORT }, (info) => {
   console.log(`🛰️ 飞书群成员桥接服务已启动: http://localhost:${info.port}`)
   console.log(`📊 飞书表格同步已启用: ${SPREADSHEET_URL}`)

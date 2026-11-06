@@ -533,6 +533,70 @@ async function hasGameId(token, gameId, monthTabId) {
   return false
 }
 
+/**
+ * 在月度复盘 A 列中定位某局的表行号（1 起）。找不到返回 null。
+ * - F 布局 / 带 #gameId 标记：A 列首行含 gameId 即命中
+ * - 旧 G 布局无标记：按「原始时间串 + 第N局」匹配（时间精确到秒，唯一）
+ */
+function locateGameRowIndex(rows, body, layoutName) {
+  const gameId = String((body && body.gameId) || "").trim()
+  const ju = (String(gameId).match(/第(\d+)局/) || [])[1]
+  const dateText = String((body && body.date) || "")
+  for (let i = 0; i < rows.length; i++) {
+    const cell = rows[i] && rows[i][0]
+    if (gameId && cellHasGameId(cell, gameId)) return i + 1
+    const firstLine = String(cell == null ? "" : cell).split("\n")[0]
+    if (dateText && ju && firstLine.includes(dateText) && firstLine.includes(`第${ju}局`)) return i + 1
+  }
+  return null
+}
+
+/**
+ * 计算回滚时的排名扣减（纯函数）。rankValues = 排名表 A2:K 的数据行。
+ * entries = [{ name, win, score }]，返回 { updates:[{row, vals:[场次,胜,负,胜率,积分]}], missing:[name] }。
+ * row 为实际表行号（数据行索引 i 对应表行 i+2）。
+ */
+function deductRankingRows(rankValues, entries) {
+  const nameToRow = new Map()
+  for (let i = 0; i < rankValues.length; i++) {
+    const nick = String(rankValues[i] && rankValues[i][1] != null ? rankValues[i][1] : "").trim()
+    if (nick) nameToRow.set(nick, i + 2)
+  }
+  const updates = []
+  const missing = []
+  for (const e of entries || []) {
+    if (!e || !e.name) continue
+    const row = nameToRow.get(String(e.name).trim())
+    if (!row) {
+      missing.push(e.name)
+      continue
+    }
+    const prev = rankValues[row - 2] || []
+    const games = Math.max(0, Number(prev[2] || 0) - 1)
+    const wins = Math.max(0, Number(prev[3] || 0) - (e.win ? 1 : 0))
+    const losses = Math.max(0, Number(prev[4] || 0) - (e.win ? 0 : 1))
+    const score = Math.round((Number(prev[6] || 0) - Number(e.score || 0)) * 10) / 10
+    const rate = games ? ((wins / games) * 100).toFixed(2) + "%" : "0.00%"
+    updates.push({ row, vals: [games, wins, losses, rate, score] })
+  }
+  return { updates, missing }
+}
+
+/** 计算回滚时的法官积分扣减（纯函数）。返回 { row, score } 或 null。 */
+function deductJudgeRow(rankValues, judge) {
+  if (!judge || !judge.name) return null
+  const score = Number(judge.score || 0)
+  if (!score) return null
+  for (let i = 0; i < rankValues.length; i++) {
+    const nick = String(rankValues[i] && rankValues[i][1] != null ? rankValues[i][1] : "").trim()
+    if (nick === String(judge.name).trim()) {
+      const s = Math.round((Number(rankValues[i][6] || 0) - score) * 10) / 10
+      return { row: i + 2, score: s }
+    }
+  }
+  return null
+}
+
 // ===== 季度存档 + 排名清零 =====
 /** 把 rankRows 的前三按 quarterKey 追加到「历赛季前三」，并清零排名表 */
 async function archiveAndReset(token, seasonsId, cfgRows, rankRows, quarterKey) {
@@ -901,6 +965,108 @@ async function reSortRanking(token) {
   if (styleRes.code && styleRes.code !== 0) throw new Error("排名表边框失败: " + styleRes.code + " " + styleRes.msg)
 }
 
+// ===== 回滚：撤销某局已同步的数据（复盘行 + 排名贡献 + 法官分） =====
+/** 读排名表 A2:K200 数据行 */
+async function readRankValues(token) {
+  const res = await fetchJson(
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values/${ENV.RANK_SHEET_ID}!A2:K200`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (res.code && res.code !== 0) throw new Error("读排名失败: " + res.code)
+  return (res.data && res.data.valueRange && res.data.valueRange.values) || []
+}
+
+/** 批量写回玩家排名 C:G */
+async function writeRankPlayerUpdates(token, updates) {
+  if (!updates.length) return
+  const res = await fetchJson(
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ valueRanges: updates.map((u) => ({ range: `${ENV.RANK_SHEET_ID}!C${u.row}:G${u.row}`, values: [u.vals] })) }),
+    },
+  )
+  if (res.code && res.code !== 0) throw new Error("扣回排名失败: " + res.code + " " + res.msg)
+}
+
+/** 写回法官积分（仅 G 列） */
+async function writeJudgeScoreCell(token, row, score) {
+  const res = await fetchJson(
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/values_batch_update?valueInputOption=RAW`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ valueRanges: [{ range: `${ENV.RANK_SHEET_ID}!G${row}:G${row}`, values: [[score]] }] }),
+    },
+  )
+  if (res.code && res.code !== 0) throw new Error("扣回法官分失败: " + res.code + " " + res.msg)
+}
+
+/** 删除行（dimension_range DELETE）；失败时抛错由调用方降级清空 */
+async function deleteRowsAt(token, sheetId, startIndex, count) {
+  const res = await fetchJson(
+    `${ENV.FEISHU_BASE}/open-apis/sheets/v2/spreadsheets/${ENV.SPREADSHEET_TOKEN}/dimension_range`,
+    {
+      method: "DELETE",
+      headers: authHeaders(token),
+      body: JSON.stringify({ dimension: { sheetId, majorDimension: "ROWS", startIndex, endIndex: startIndex + count } }),
+    },
+  )
+  if (res.code && res.code !== 0) throw new Error("删除复盘行失败: " + res.code + " " + (res.msg || ""))
+}
+
+/** 降级清空行内容（保留合并结构与行，仅清掉文字，避免删行接口不可用时卡住回滚） */
+async function clearRowsAt(token, sheetId, startRow, count) {
+  for (let i = 0; i < count; i++) {
+    await writeValues(token, sheetId, `A${startRow + i}`, [[""]])
+  }
+}
+
+/**
+ * 回滚一局的飞书数据。返回 { found }。
+ * 顺序：扣排名 → 扣法官分 → 重排 → 删复盘行（提交点）。
+ * 用 rollback:gameId 的步骤日志，保证半失败重试不重复扣分。
+ */
+async function rollbackGame(token, body) {
+  const title = monthTabTitle(body.date)
+  const sheets = await listSheets(token)
+  const sheetId = sheets.get(title)
+  if (!sheetId) return { found: false }
+
+  const rows = await readValues(token, sheetId, `A1:A${RECORD_READ_LIMIT}`)
+  const startRow = locateGameRowIndex(rows, body, LAYOUT)
+  if (!startRow) return { found: false }
+
+  const gid = String(body.gameId || "").trim()
+  const journal = gid ? stepJournalFor("rollback:" + gid) : null
+
+  const entries = (body.players || []).map((p) => ({ name: p.name, win: p.win, score: Number(p.base || 0) + Number(p.skill || 0) + Number(p.vote || 0) }))
+
+  await runStep(journal, "rb:rank", "扣回排名", async () => {
+    const rankValues = await readRankValues(token)
+    const { updates } = deductRankingRows(rankValues, entries)
+    await writeRankPlayerUpdates(token, updates)
+  })
+  await runStep(journal, "rb:judge", "扣回法官分", async () => {
+    const rankValues = await readRankValues(token)
+    const u = deductJudgeRow(rankValues, body.judge)
+    if (u) await writeJudgeScoreCell(token, u.row, u.score)
+  })
+  await runStep(journal, "rb:sort", "重排排名", () => reSortRanking(token))
+
+  const count = LAYOUT === "G" ? 2 : 1
+  await runStep(journal, "rb:record", "删除复盘行", async () => {
+    try {
+      await deleteRowsAt(token, sheetId, startRow, count)
+    } catch (e) {
+      await clearRowsAt(token, sheetId, startRow, count)
+    }
+  })
+  if (gid) clearStepJournal("rollback:" + gid)
+  return { found: true }
+}
+
 function sendJson(res, code, obj) {
   const body = JSON.stringify(obj)
   res.writeHead(code, {
@@ -1022,6 +1188,16 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: true })
       return
     }
+    // 回滚某局：撤销已写入飞书的复盘行 + 排名贡献 + 法官分（入参为该局完整 payload）
+    if (path === "/api/sync-rollback" && req.method === "POST") {
+      if (!checkAuth(req)) return sendJson(res, 401, { ok: false, error: "unauthorized" })
+      const body = JSON.parse((await readBody(req)) || "{}")
+      if (!body.gameId || !body.date) return sendJson(res, 400, { ok: false, error: "gameId/date 不能为空" })
+      const token = await getTenantToken()
+      const result = await rollbackGame(token, body)
+      sendJson(res, 200, { ok: true, found: result.found })
+      return
+    }
     sendJson(res, 404, { ok: false, error: "not found" })
   } catch (e) {
     sendJson(res, 500, { ok: false, error: (e && e.message) || String(e) })
@@ -1043,6 +1219,10 @@ module.exports = {
   fetchGroupMembers,
   fetchJson,
   cellHasGameId,
+  locateGameRowIndex,
+  deductRankingRows,
+  deductJudgeRow,
+  rollbackGame,
   isRetryableError,
   backoffMs,
   nextPinnedIp,

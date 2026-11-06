@@ -121,7 +121,9 @@ function gameRows(payload, layoutName) {
   const judgeName = (payload.judge && payload.judge.name) || "-"
   const winCamp = payload.winner || "-"
   const timePart = d ? d.replace(" ", " ") : "-"
-  const titleText = `${timePart}  ${ju}  🧑‍⚖️ 法官：${judgeName}  ${winCamp}`.trim()
+  // 标题行尾部埋 #gameId 标记：供同步幂等去重与回滚定位（旧数据无标记时仍可按时间+第N局匹配）
+  const marker = g ? `  ｜ #${g}` : ""
+  const titleText = `${timePart}  ${ju}  🧑‍⚖️ 法官：${judgeName}  ${winCamp}${marker}`.trim()
   const titleRow = new Array(L.cols).fill("")
   titleRow[s.title] = titleText
 

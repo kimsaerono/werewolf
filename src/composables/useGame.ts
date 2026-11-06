@@ -4,7 +4,7 @@ import { predictWinRate, checkForcedWin } from "@/game/win-predictor"
 import type { GameState, Player, WinCamp } from "@/game/logic"
 import { roleAvatar } from "@/assets/roles"
 import { speak } from "@/utils/speech"
-import { syncGameToFeishu } from "@/api/feishuSync"
+import { syncGameToFeishu, rollbackGameFromFeishu, buildSyncPayload } from "@/api/feishuSync"
 
 /** 重构版存储键：与线上稳定版(stable-v1.0 读写的 v8/无后缀键)完全隔离，
  *  保证任意时刻回退线上版本时法官数据零损失。旧键只读迁移、绝不回写。 */
@@ -201,6 +201,91 @@ async function autoSyncRecord(rec: GameRecord): Promise<void> {
   setTimeout(() => {
     syncStatus.value = ""
   }, 6000)
+}
+
+/** 修正历史对局的入参：胜负/原因/荣誉 + 逐人本轮分 */
+export interface RecordPatch {
+  winner: string
+  reason: string
+  mvp: string
+  svp: string
+  beiguo: string
+  scores: { name: string; scoreRound: number }[]
+}
+
+/** 修正历史对局（仅本地）：改胜负/原因/荣誉/逐人本轮分；分数改动顺延到该局之后所有同模式记录 */
+function correctRecord(rec: GameRecord, patch: RecordPatch): string | null {
+  rec.winner = patch.winner
+  rec.reason = patch.reason
+  rec.mvp = patch.mvp
+  rec.svp = patch.svp
+  rec.beiguo = patch.beiguo
+  rec.honorConfirmed = true
+
+  const changes = new Map<string, number>()
+  for (const s of patch.scores || []) {
+    const p = rec.players.find((x) => x.name === s.name)
+    if (!p) continue
+    const newRound = Math.round(Number(s.scoreRound || 0) * 10) / 10
+    const delta = Math.round((newRound - p.scoreRound) * 10) / 10
+    if (delta === 0) continue
+    p.scoreRound = newRound
+    p.scoreTotal = Math.round((p.scoreTotal + delta) * 10) / 10
+    // 明细重写为单条手动修正：保证 buildSyncPayload 拆出的 base+skill 合计等于本轮分（排名权威）
+    p.scoreDetail = [newRound === 0 ? "手动修正+0" : `手动修正${newRound > 0 ? "+" : ""}${newRound}`]
+    changes.set(p.name, delta)
+  }
+
+  const idx = history.value.indexOf(rec)
+  if (changes.size && idx >= 0) {
+    for (let i = idx + 1; i < history.value.length; i++) {
+      const h = history.value[i]
+      if (h.sim !== rec.sim) continue
+      for (const p of h.players) {
+        const d = changes.get(p.name)
+        if (d) p.scoreTotal = Math.round((p.scoreTotal + d) * 10) / 10
+      }
+    }
+  }
+  saveHistory()
+  return null
+}
+
+/** 修改并同步飞书：已同步局先按旧值回滚飞书数据，再改本地、再写新值，避免重复计分 */
+async function editAndResync(rec: GameRecord, patch: RecordPatch): Promise<string | null> {
+  if (state.simMode) return "当前为模拟模式，不会同步到飞书"
+  if (syncingRefs.value.has(rec)) return "该局正在同步中"
+  const gameId = gameIdFor(rec)
+  // 必须在改本地之前抓旧值：回滚要扣的是当初真正写进飞书的数
+  const oldPayload = rec.synced ? buildSyncPayload(rec) : null
+  if (oldPayload) oldPayload.gameId = gameId
+  syncingRefs.value.add(rec)
+  syncStatus.value = "syncing"
+  try {
+    if (oldPayload) {
+      const rbErr = await rollbackGameFromFeishu(oldPayload)
+      if (rbErr) {
+        syncStatus.value = `⚠️ ${gameId} 回滚失败：${rbErr}`
+        return rbErr
+      }
+      rec.synced = false
+      saveHistory()
+    }
+    correctRecord(rec, patch)
+    const syncErr = await syncGameToFeishu(rec, gameId)
+    if (syncErr) {
+      syncStatus.value = `⚠️ ${gameId} 同步失败：${syncErr}`
+      rec.synced = false
+      saveHistory()
+      return syncErr
+    }
+    rec.synced = true
+    saveHistory()
+    syncStatus.value = `✅ ${gameId} 已更新到飞书`
+    return null
+  } finally {
+    syncingRefs.value.delete(rec)
+  }
 }
 
 function persist(): void {
@@ -802,6 +887,10 @@ export function useGame() {
         syncingRefs.value.delete(rec)
       }
     },
+    /** 修正历史对局（仅本地）：改胜负/原因/荣誉/逐人本轮分，分数顺延后续累计 */
+    correctRecord,
+    /** 修正并同步飞书：已同步局自动先回滚旧数据再写新值 */
+    editAndResync,
     /** 清空所有历史数据：保留板子/法官/胜负模式，清玩家/角色/积分/日志/历史/法官累计分（全新周期） */
     clearAllData() {
       const s = g.resetWholeGame(state)

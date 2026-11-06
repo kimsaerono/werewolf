@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed, reactive, ref } from "vue"
 import { App as AntApp } from "ant-design-vue"
-import { decorateLog, cleanLogLine } from "@/game/logic"
+import { decorateLog, cleanLogLine, isWolfRole, GOD_LIST } from "@/game/logic"
 import { themeRoleShort, themeText } from "@/composables/useTheme"
 import type { Game } from "@/types"
-import type { GameRecord } from "@/composables/useGame"
+import type { GameRecord, RecordPatch } from "@/composables/useGame"
 import { getRoleInstance } from "@/game/roles/builtin"
 
 const { message, modal } = AntApp.useApp()
@@ -65,6 +66,91 @@ async function syncOne(h: GameRecord) {
   if (err) message.error(err)
 }
 
+/** ===== 修改本局（保存并同步飞书）===== */
+const editOpen = ref(false)
+const editing = ref<GameRecord | null>(null)
+const saving = ref(false)
+const form = reactive({
+  winner: "",
+  reason: "",
+  mvp: "",
+  svp: "",
+  beiguo: "",
+  scores: {} as Record<string, number | null>,
+})
+const winnerOptions = ["狼人胜利", "好人胜利", "第三方胜利", "平局"].map((v) => ({ value: v }))
+const reasonOptions = [
+  "屠边：神职全灭",
+  "屠边：平民全灭",
+  "屠城：所有好人出局",
+  "所有狼人已出局，好人胜利",
+  "第三方胜利",
+  "平局",
+].map((v) => ({ value: v }))
+const playerOptions = computed(() =>
+  (editing.value?.players || []).map((p) => ({ value: p.name, label: `${p.no}.${p.name}（${p.role}）` })),
+)
+
+function openEdit(h: GameRecord) {
+  editing.value = h
+  form.winner = h.winner
+  form.reason = h.reason
+  form.mvp = h.mvp || ""
+  form.svp = h.svp || ""
+  form.beiguo = h.beiguo || ""
+  const m: Record<string, number | null> = {}
+  for (const p of h.players) m[p.name] = p.scoreRound
+  form.scores = m
+  editOpen.value = true
+}
+
+/** 按当前选择的胜负，给每人填基础分（狼胜狼+3、其余0；好人胜神/民按 3/2、狼0），技能分可再手调 */
+function autoFillByResult() {
+  const h = editing.value
+  if (!h) return
+  const winWolf = form.winner.includes("狼人")
+  const winThird = form.winner.includes("第三方")
+  for (const p of h.players) {
+    const role = getRoleInstance(p.role)
+    const wolf = isWolfRole(p.role)
+    const god = GOD_LIST.includes(p.role)
+    const isCivil = role && role.def.camp === "villager"
+    const isCupid = role && role.def.id === "丘比特"
+    const thirdWin = winThird && (isCupid || (h.lovers || []).includes(p.name))
+    const win = thirdWin ? true : winThird ? false : wolf ? winWolf : !winWolf
+    form.scores[p.name] = win ? (wolf ? 3 : god ? 3 : isCivil ? 2 : 3) : 0
+  }
+}
+
+async function submitEdit() {
+  const h = editing.value
+  if (!h) return
+  const picks = [form.mvp, form.svp, form.beiguo].filter(Boolean)
+  if (new Set(picks).size !== picks.length) {
+    message.error("MVP / SVP / 背锅侠不能选同一名玩家")
+    return
+  }
+  const patch: RecordPatch = {
+    winner: form.winner,
+    reason: form.reason,
+    mvp: form.mvp,
+    svp: form.svp,
+    beiguo: form.beiguo,
+    scores: h.players.map((p) => ({ name: p.name, scoreRound: Number(form.scores[p.name] || 0) })),
+  }
+  saving.value = true
+  try {
+    const err = await actions.editAndResync(h, patch)
+    if (err) message.error(err)
+    else {
+      message.success("已保存并同步到飞书")
+      editOpen.value = false
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
 /** 清空所有历史数据（二次确认） */
 function onClearAll() {
   modal.confirm({
@@ -104,6 +190,7 @@ function onClearAll() {
                 <template v-if="!state.simMode">
                   <span v-if="h.synced" class="game-sync synced">✅已同步</span>
                   <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
+                  <a-button size="small" @click.stop="openEdit(h)">✏️ 修改</a-button>
                 </template>
               </span>
             </template>
@@ -127,6 +214,46 @@ function onClearAll() {
         </a-collapse>
       </div>
     </a-card>
+
+    <a-modal
+      v-model:open="editOpen"
+      title="✏️ 修改本局（保存并同步飞书）"
+      :confirm-loading="saving"
+      ok-text="确定（保存并同步飞书）"
+      cancel-text="取消"
+      :width="680"
+      @ok="submitEdit"
+    >
+      <div v-if="editing" class="edit-form">
+        <a-form layout="vertical">
+          <a-form-item label="胜负">
+            <a-select v-model:value="form.winner" :options="winnerOptions" />
+          </a-form-item>
+          <a-form-item label="原因">
+            <a-auto-complete v-model:value="form.reason" :options="reasonOptions" placeholder="可下拉选择或直接输入" />
+          </a-form-item>
+          <a-form-item label="荣誉">
+            <a-space :wrap="true">
+              <a-select v-model:value="form.mvp" :options="playerOptions" placeholder="MVP" allow-clear style="width: 170px" />
+              <a-select v-model:value="form.svp" :options="playerOptions" placeholder="SVP" allow-clear style="width: 170px" />
+              <a-select v-model:value="form.beiguo" :options="playerOptions" placeholder="背锅侠" allow-clear style="width: 170px" />
+            </a-space>
+          </a-form-item>
+          <a-form-item>
+            <template #label>
+              <span>逐人本轮分</span>
+              <a-button size="small" type="link" @click="autoFillByResult">按当前胜负自动填基础分</a-button>
+            </template>
+            <div class="score-grid">
+              <div v-for="p in editing.players" :key="p.name" class="score-row">
+                <span class="score-label">{{ p.no }}.{{ p.name }}（{{ p.role }}）</span>
+                <a-input-number v-model:value="form.scores[p.name]" :step="0.5" style="width: 120px" />
+              </div>
+            </div>
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -163,6 +290,24 @@ function onClearAll() {
 }
 .game-sync.synced {
   color: #2ed573;
+}
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+.score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.score-label {
+  font-size: 13px;
+  color: #ddd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .logbox {
   max-height: 200px;

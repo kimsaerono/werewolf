@@ -163,6 +163,32 @@ export async function syncGameToFeishu(record: GameRecord, gameId?: string): Pro
   }
 }
 
+/**
+ * 回滚某局已写入飞书的数据（入参必须是「改动之前」的旧 payload）。
+ * 部署端走 /api/sync-rollback；本地桥接(dev)走 /api/sync-feishu-rollback。
+ * 返回错误信息，成功/该局不在表内返回 null。
+ */
+export async function rollbackGameFromFeishu(payload: SyncPayload): Promise<string | null> {
+  if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
+  const endpoint = SYNC_URL ? `${SYNC_URL}/api/sync-rollback` : "/api/sync-feishu-rollback"
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: syncHeaders(),
+      body: JSON.stringify(payload),
+    })
+    if (!res.ok) {
+      const t = await res.text()
+      return `回滚失败(${res.status})：${t.slice(0, 120)}`
+    }
+    const data = (await res.json()) as { ok?: boolean; error?: string }
+    if (!data.ok) return data.error || "回滚失败"
+    return null
+  } catch (e) {
+    return `回滚请求异常：${(e as Error).message}（请确认本地桥接已启动：bun run server）`
+  }
+}
+
 /** 测试飞书同步连接（只校验口令与可达性，不改动任何表格数据）；成功返回 null */
 export async function testSyncConnection(): Promise<string | null> {
   if (!SYNC_ENABLED) return "未启用飞书同步（本地桥接未运行）"
