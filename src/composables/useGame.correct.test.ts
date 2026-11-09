@@ -3,14 +3,20 @@ import { useGame } from "./useGame"
 import { SYNC_ENABLED } from "@/api/feishuSync"
 import type { GameRecord } from "./useGame"
 
+function todayKey(): string {
+  const d = new Date()
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+}
+
 function makeRec(opts: {
   sim?: boolean
   winner?: string
+  time?: string
   players: { name: string; role?: string; round: number; total: number; detail?: string[] }[]
 }): GameRecord {
   return {
-    title: "真实·第1局 · 2026年11月6日",
-    time: "2026/11/6 12:26:31",
+    title: `真实·第1局 · ${todayKey()}`,
+    time: opts.time ?? new Date().toLocaleString(),
     board: "9人标准板",
     boardFinal: "狼人×3 预言家×1 女巫×1 猎人×1 平民×3",
     winner: opts.winner ?? "好人胜利",
@@ -191,5 +197,27 @@ describe("editAndResync（同步未启用时的安全边界）", () => {
     expect(rec.winner).toBe("狼人胜利")
     expect(rec.synced).toBe(false)
     expect(rec.players[0].scoreTotal).toBe(3)
+  })
+
+  it("非当天对局：editAndResync 被拒绝，本地不变、synced 不变", async () => {
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const a = makeRec({ winner: "好人胜利", time: yesterday.toLocaleString(), players: [{ name: "柴秀彬", role: "狼人", round: 0, total: 0 }] })
+    game.history.value = [a]
+    const rec = game.history.value[0]
+
+    const err = await game.actions.editAndResync(rec, {
+      winner: "狼人胜利",
+      reason: "屠边：神职全灭",
+      mvp: "",
+      svp: "",
+      beiguo: "",
+      scores: [{ name: "柴秀彬", scoreRound: 3 }],
+    })
+
+    expect(err).toContain("只能修改当天的对局")
+    expect(rec.winner).toBe("好人胜利")
+    expect(rec.synced).toBe(false)
+    expect(rec.players[0].scoreTotal).toBe(0)
   })
 })

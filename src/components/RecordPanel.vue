@@ -104,12 +104,13 @@ function openEdit(h: GameRecord) {
   editOpen.value = true
 }
 
-/** 按当前选择的胜负，给每人填基础分（狼胜狼+3、其余0；好人胜神/民按 3/2、狼0），技能分可再手调 */
-function autoFillByResult() {
+/** 重算逐人本轮分：胜负基础分 + 荣誉规则分（MVP +1，SVP +0.5，背锅侠 -0.5） */
+function recomputeScores() {
   const h = editing.value
   if (!h) return
   const winWolf = form.winner.includes("狼人")
   const winThird = form.winner.includes("第三方")
+  const base: Record<string, number> = {}
   for (const p of h.players) {
     const role = getRoleInstance(p.role)
     const wolf = isWolfRole(p.role)
@@ -118,8 +119,25 @@ function autoFillByResult() {
     const isCupid = role && role.def.id === "丘比特"
     const thirdWin = winThird && (isCupid || (h.lovers || []).includes(p.name))
     const win = thirdWin ? true : winThird ? false : wolf ? winWolf : !winWolf
-    form.scores[p.name] = win ? (wolf ? 3 : god ? 3 : isCivil ? 2 : 3) : 0
+    base[p.name] = win ? (wolf ? 3 : god ? 3 : isCivil ? 2 : 3) : 0
   }
+  const honorDelta: Record<string, number> = {}
+  if (form.mvp) honorDelta[form.mvp] = (honorDelta[form.mvp] || 0) + 1
+  if (form.svp) honorDelta[form.svp] = (honorDelta[form.svp] || 0) + 0.5
+  if (form.beiguo) honorDelta[form.beiguo] = (honorDelta[form.beiguo] || 0) - 0.5
+  for (const p of h.players) {
+    form.scores[p.name] = Math.round((base[p.name] + (honorDelta[p.name] || 0)) * 10) / 10
+  }
+}
+
+/** 判断记录时间是否为今天（本地日期），仅当天可修改 */
+function isToday(time: string): boolean {
+  const d = new Date(time)
+  if (isNaN(d.getTime())) return false
+  const today = new Date()
+  return d.getFullYear() === today.getFullYear() &&
+    d.getMonth() === today.getMonth() &&
+    d.getDate() === today.getDate()
 }
 
 async function submitEdit() {
@@ -190,7 +208,7 @@ function onClearAll() {
                 <template v-if="!state.simMode">
                   <span v-if="h.synced" class="game-sync synced">✅已同步</span>
                   <a-button v-else size="small" type="primary" :loading="isSyncing(h)" @click.stop="syncOne(h)">☁️ 同步</a-button>
-                  <a-button size="small" @click.stop="openEdit(h)">✏️ 修改</a-button>
+                  <a-button v-if="isToday(h.time)" size="small" @click.stop="openEdit(h)">✏️ 修改</a-button>
                 </template>
               </span>
             </template>
@@ -227,22 +245,24 @@ function onClearAll() {
       <div v-if="editing" class="edit-form">
         <a-form layout="vertical">
           <a-form-item label="胜负">
-            <a-select v-model:value="form.winner" :options="winnerOptions" />
+            <a-select v-model:value="form.winner" :options="winnerOptions" @change="recomputeScores" />
           </a-form-item>
           <a-form-item label="原因">
             <a-auto-complete v-model:value="form.reason" :options="reasonOptions" placeholder="可下拉选择或直接输入" />
           </a-form-item>
-          <a-form-item label="荣誉">
-            <a-space :wrap="true">
-              <a-select v-model:value="form.mvp" :options="playerOptions" placeholder="MVP" allow-clear style="width: 170px" />
-              <a-select v-model:value="form.svp" :options="playerOptions" placeholder="SVP" allow-clear style="width: 170px" />
-              <a-select v-model:value="form.beiguo" :options="playerOptions" placeholder="背锅侠" allow-clear style="width: 170px" />
-            </a-space>
+          <a-form-item label="MVP">
+            <a-select v-model:value="form.mvp" :options="playerOptions" placeholder="请选择" allow-clear style="width: 170px" @change="recomputeScores" />
+          </a-form-item>
+          <a-form-item label="SVP">
+            <a-select v-model:value="form.svp" :options="playerOptions" placeholder="请选择" allow-clear style="width: 170px" @change="recomputeScores" />
+          </a-form-item>
+          <a-form-item label="背锅侠">
+            <a-select v-model:value="form.beiguo" :options="playerOptions" placeholder="请选择" allow-clear style="width: 170px" @change="recomputeScores" />
           </a-form-item>
           <a-form-item>
             <template #label>
               <span>逐人本轮分</span>
-              <a-button size="small" type="link" @click="autoFillByResult">按当前胜负自动填基础分</a-button>
+              <a-button size="small" type="link" @click="recomputeScores">按当前胜负自动填基础分</a-button>
             </template>
             <div class="score-grid">
               <div v-for="p in editing.players" :key="p.name" class="score-row">

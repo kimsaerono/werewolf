@@ -254,6 +254,8 @@ function correctRecord(rec: GameRecord, patch: RecordPatch): string | null {
 /** 修改并同步飞书：已同步局先按旧值回滚飞书数据，再改本地、再写新值，避免重复计分 */
 async function editAndResync(rec: GameRecord, patch: RecordPatch): Promise<string | null> {
   if (state.simMode) return "当前为模拟模式，不会同步到飞书"
+  // 仅当天可修改：已过当天的对局禁止改分/改胜负，防止篡改历史
+  if (dayKey(rec.time) !== dayKey(new Date().toLocaleString())) return "只能修改当天的对局（已过当天不可修改）"
   if (syncingRefs.value.has(rec)) return "该局正在同步中"
   const gameId = gameIdFor(rec)
   // 必须在改本地之前抓旧值：回滚要扣的是当初真正写进飞书的数
