@@ -151,7 +151,7 @@ function onTabChange(key: string) {
         </a-tooltip>
         <SyncSettings v-if="leftActionsOpen && !state.simMode" key="sync" />
         <SeatDisplaySettings v-if="leftActionsOpen" key="seatDisplay" />
-        <ThemeSettings v-if="leftActionsOpen" :open="themeDrawerOpen" @update:open="themeDrawerOpen = $event" key="theme" />
+        <ThemeSettings v-if="leftActionsOpen" hide-fab :open="themeDrawerOpen" @update:open="themeDrawerOpen = $event" key="theme" />
       </TransitionGroup>
       <!-- 左下悬浮：固定在底部的 toggle -->
       <a-button class="fab fab-toggle left-toggle" shape="circle" size="large" @click="leftActionsOpen = !leftActionsOpen">⚙️</a-button>
